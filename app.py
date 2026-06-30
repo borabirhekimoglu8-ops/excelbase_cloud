@@ -9,10 +9,12 @@ import streamlit.components.v1 as components
 from excelbase_core import ReadResult, dataframe_to_csv, dataframe_to_xlsx
 from gate_visa_reader import read_gate_visa_file_bytes
 from operation_helpers import (
+    DATE_FILTER_FIELDS,
     active_filter_count,
     apply_filters,
     editable_passenger_fields,
     filterable_headers,
+    parse_date_value,
     passenger_card_view,
     unique_values,
 )
@@ -36,7 +38,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.2.3"
+APP_VERSION = "4.3.0"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -439,6 +441,7 @@ def init_state() -> None:
         "loaded_files": [],
         "selected_idx": None,
         "column_filters": {},
+        "date_filters": {},
         "photo_log": [],
         "photo_signature": "",
     }
@@ -565,6 +568,12 @@ def render_active_filter_chips(filters: dict[str, str | None]) -> None:
     st.markdown(f'<div class="filter-chips">{chips}</div>', unsafe_allow_html=True)
 
 
+def total_active_filters() -> int:
+    cols = sum(1 for v in st.session_state.column_filters.values() if v)
+    dates = sum(1 for v in st.session_state.get("date_filters", {}).values() if v)
+    return cols + dates
+
+
 def render_header_filters(base_df: pd.DataFrame) -> None:
     headers = filterable_headers(base_df)
     if not headers:
@@ -573,8 +582,41 @@ def render_header_filters(base_df: pd.DataFrame) -> None:
 
     render_active_filter_chips(st.session_state.column_filters)
 
+    date_fields = [h for h in headers if h in DATE_FILTER_FIELDS]
+    other_fields = [h for h in headers if h not in DATE_FILTER_FIELDS]
+
+    # Takvim ile tarih aralığı filtreleri
+    for field in date_fields:
+        parsed = [parse_date_value(v) for v in base_df[field].tolist()]
+        parsed = [d for d in parsed if d is not None]
+        date_kwargs = {}
+        if parsed:
+            date_kwargs["min_value"] = min(parsed)
+            date_kwargs["max_value"] = max(parsed)
+        current = st.session_state.date_filters.get(field)
+        default_value = current if current else ()
+        picked = st.date_input(
+            f"{field} (takvimden seç)",
+            value=default_value,
+            key=f"date_{field}",
+            format="YYYY-MM-DD",
+            **date_kwargs,
+        )
+        if isinstance(picked, (list, tuple)):
+            if len(picked) == 2:
+                st.session_state.date_filters[field] = (picked[0], picked[1])
+            elif len(picked) == 1:
+                st.session_state.date_filters[field] = (picked[0], picked[0])
+            else:
+                st.session_state.date_filters[field] = None
+        elif picked:
+            st.session_state.date_filters[field] = (picked, picked)
+        else:
+            st.session_state.date_filters[field] = None
+
+    # Diğer alanlar — açılır menü
     cols = st.columns(2)
-    for idx, field in enumerate(headers):
+    for idx, field in enumerate(other_fields):
         options = ["Tümü"] + unique_values(base_df, field)
         current = st.session_state.column_filters.get(field) or "Tümü"
         with cols[idx % 2]:
@@ -588,6 +630,7 @@ def render_header_filters(base_df: pd.DataFrame) -> None:
 
     if st.button("Filtreleri temizle", use_container_width=True):
         st.session_state.column_filters = {}
+        st.session_state.date_filters = {}
         st.rerun()
 
 
@@ -826,16 +869,18 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
 
     search = st.text_input("Ara", placeholder="Ad, pasaport, voucher, tarih…", label_visibility="collapsed")
 
-    with st.expander("Başlıklara göre filtrele", expanded=active_filter_count(st.session_state.column_filters) > 0):
+    filter_count = total_active_filters()
+    with st.expander("Başlıklara göre filtrele", expanded=filter_count > 0):
         render_header_filters(base_df)
 
     active = {k: v for k, v in st.session_state.column_filters.items() if v}
-    view_df = apply_filters(base_df, search, active)
+    active_dates = {k: v for k, v in st.session_state.date_filters.items() if v}
+    view_df = apply_filters(base_df, search, active, active_dates)
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Yolcu", len(view_df))
     c2.metric("Kaynak", len(st.session_state.loaded_files))
-    c3.metric("Filtre", active_filter_count(st.session_state.column_filters))
+    c3.metric("Filtre", total_active_filters())
 
     if view_df.empty:
         st.warning("Filtreye uyan yolcu bulunamadı.")
