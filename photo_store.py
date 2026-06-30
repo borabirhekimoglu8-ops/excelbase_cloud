@@ -23,7 +23,7 @@ except Exception:  # Pillow yoksa görüntü işleme atlanır.
     Image = None  # type: ignore
 
 
-def _process_image(data: bytes, max_dim: int = 720) -> tuple[bytes, str]:
+def _process_image(data: bytes, max_dim: int = 480) -> tuple[bytes, str]:
     """Görüntüyü tarayıcı dostu, küçük boyutlu JPEG'e çevirir.
 
     iPhone HEIC fotoğrafları ve büyük dosyalar tarayıcıda kart içinde
@@ -34,16 +34,30 @@ def _process_image(data: bytes, max_dim: int = 720) -> tuple[bytes, str]:
         return data, ""
     try:
         img = Image.open(BytesIO(data))
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-        elif img.mode == "L":
+        if img.mode != "RGB":
             img = img.convert("RGB")
         img.thumbnail((max_dim, max_dim))
         out = BytesIO()
-        img.save(out, format="JPEG", quality=82, optimize=True)
+        img.save(out, format="JPEG", quality=80, optimize=True)
         return out.getvalue(), ".jpg"
     except Exception:
         return data, ""
+
+
+def make_thumb(data: bytes, max_dim: int, quality: int) -> bytes | None:
+    """Verilen görüntü baytlarından küçük bir JPEG küçük resim üretir."""
+    if Image is None:
+        return None
+    try:
+        img = Image.open(BytesIO(data))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img.thumbnail((max_dim, max_dim))
+        out = BytesIO()
+        img.save(out, format="JPEG", quality=quality, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return None
 
 # Biyometrik fotoğraflar diskte saklanır; veriyle birlikte kalıcıdır.
 PHOTO_DIR = os.environ.get(
@@ -171,8 +185,8 @@ def photo_abs_path(filename: str) -> str | None:
     return path if os.path.exists(path) else None
 
 
-def photo_data_uri(filename: str) -> str | None:
-    """Kart HTML'ine gömmek için base64 data-uri üretir."""
+def photo_raw_bytes(filename: str) -> tuple[str, bytes] | None:
+    """Kayıtlı fotoğrafın ham baytlarını (mime, data) döndürür (DB veya disk)."""
     if not filename:
         return None
 
@@ -180,18 +194,29 @@ def photo_data_uri(filename: str) -> str | None:
         result = db.load_photo(filename)
         if result is not None:
             mime, encoded = result
-            return f"data:{mime};base64,{encoded}"
+            try:
+                return mime, base64.b64decode(encoded)
+            except Exception:
+                return None
 
     path = photo_abs_path(filename)
     if not path:
         return None
-    ext = os.path.splitext(path)[1]
     try:
         with open(path, "rb") as handle:
-            encoded = base64.b64encode(handle.read()).decode("ascii")
+            return _mime_for_ext(os.path.splitext(path)[1]), handle.read()
     except Exception:
         return None
-    return f"data:{_mime_for_ext(ext)};base64,{encoded}"
+
+
+def photo_data_uri(filename: str) -> str | None:
+    """Kart HTML'ine gömmek için base64 data-uri üretir."""
+    raw = photo_raw_bytes(filename)
+    if raw is None:
+        return None
+    mime, data = raw
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
 
 
 def match_photos_to_dataframe(
