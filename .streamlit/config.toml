@@ -1,7 +1,6 @@
 [server]
 maxUploadSize = 200
 enableXsrfProtection = true
-enableCORS = false
 
 [browser]
 gatherUsageStats = false
@@ -9,7 +8,7 @@ gatherUsageStats = false
 [theme]
 base = "light"
 primaryColor = "#4F46E5"
-backgroundColor = "#F4F6FB"
+backgroundColor = "#EEF2FF"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#0F172A"
 font = "sans serif"

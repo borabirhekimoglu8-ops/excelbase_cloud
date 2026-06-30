@@ -14,6 +14,8 @@ from excelbase_core import (
     read_file_bytes,
 )
 
+APP_VERSION = "2.1.0"
+
 st.set_page_config(
     page_title="ExcelBase",
     page_icon="📊",
@@ -23,8 +25,6 @@ st.set_page_config(
 
 APP_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
 :root {
   --bg: #f4f6fb;
   --surface: #ffffff;
@@ -47,7 +47,7 @@ APP_CSS = """
 }
 
 html, body, [class*="css"] {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif !important;
 }
 
 .stApp {
@@ -482,16 +482,17 @@ def make_demo() -> pd.DataFrame:
 
 
 def render_hero() -> None:
-    st.markdown(
-        """
-        <div class="hero">
-          <div class="hero-badge">📱 Mobil uyumlu · Excel & CSV</div>
-          <p class="app-title">ExcelBase</p>
-          <p class="app-subtitle">Excel yükle, tek tabloda birleştir, telefondan düzenle ve indir.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
+        badge_cols = st.columns([1, 3])
+        with badge_cols[0]:
+            st.markdown(f"**v{APP_VERSION}**")
+        with badge_cols[1]:
+            st.caption("Mobil uyumlu · Excel & CSV")
+        st.title("ExcelBase")
+        st.markdown(
+            "Excel yükle, tek tabloda birleştir, telefondan düzenle ve indir. "
+            "Sol üstteki **☰** menüsünden dosya seç."
+        )
 
 
 def render_log_item(text: str, kind: str = "ok") -> None:
@@ -503,6 +504,7 @@ init_state()
 render_hero()
 
 with st.sidebar:
+    st.markdown(f"### ExcelBase `{APP_VERSION}`")
     st.markdown('<p class="sidebar-label">Yükleme</p>', unsafe_allow_html=True)
     mode = st.selectbox("Tablo modu", list(PRESETS.keys()), index=0, label_visibility="collapsed")
     append_mode = st.toggle("Yeni yüklemeleri mevcut tabloya ekle", value=False)
@@ -541,116 +543,109 @@ with st.sidebar:
 
 log_col, action_col = st.columns([1.15, 0.85])
 with log_col:
-    st.markdown(
-        '<div class="card"><p class="card-title">Durum</p><p class="card-desc">Yükleme sonucu ve hata kaydı.</p></div>',
-        unsafe_allow_html=True,
-    )
-    if st.session_state.read_log:
-        for item in st.session_state.read_log[:6]:
-            render_log_item(item)
-        if len(st.session_state.read_log) > 6:
-            render_log_item(f"+ {len(st.session_state.read_log) - 6} sayfa daha okundu.", kind="info")
-    elif st.session_state.base_df.empty:
-        st.info("Henüz dosya yok. Sol üst menüden ☰ ile dosya yükle veya Demo’ya bas.")
-    if st.session_state.errors:
-        for item in st.session_state.errors:
-            st.error(item)
+    with st.container(border=True):
+        st.subheader("Durum")
+        st.caption("Yükleme sonucu ve hata kaydı.")
+        if st.session_state.read_log:
+            for item in st.session_state.read_log[:6]:
+                render_log_item(item)
+            if len(st.session_state.read_log) > 6:
+                render_log_item(f"+ {len(st.session_state.read_log) - 6} sayfa daha okundu.", kind="info")
+        elif st.session_state.base_df.empty:
+            st.info("Henüz dosya yok. ☰ menüsünden Excel/CSV yükle veya Demo’ya bas.")
+        if st.session_state.errors:
+            for item in st.session_state.errors:
+                st.error(item)
 
 with action_col:
     st.markdown('<div class="desktop-actions">', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="card"><p class="card-title">Çıktı</p><p class="card-desc">Düzenledikten sonra indir.</p></div>',
-        unsafe_allow_html=True,
-    )
-    if not st.session_state.base_df.empty:
-        stamp = datetime.now().strftime("%Y%m%d-%H%M")
-        st.download_button(
-            "⬇ Excel indir",
-            data=dataframe_to_xlsx(st.session_state.base_df),
-            file_name=f"excelbase-{stamp}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
-        st.download_button(
-            "⬇ CSV indir",
-            data=dataframe_to_csv(st.session_state.base_df),
-            file_name=f"excelbase-{stamp}.csv",
-            mime="text/csv",
-            use_container_width=True,
-            type="secondary",
-        )
-    else:
-        st.button("⬇ Excel indir", disabled=True, use_container_width=True)
-        st.button("⬇ CSV indir", disabled=True, use_container_width=True)
+    with st.container(border=True):
+        st.subheader("Çıktı")
+        st.caption("Düzenledikten sonra indir.")
+        if not st.session_state.base_df.empty:
+            stamp = datetime.now().strftime("%Y%m%d-%H%M")
+            st.download_button(
+                "⬇ Excel indir",
+                data=dataframe_to_xlsx(st.session_state.base_df),
+                file_name=f"excelbase-{stamp}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+            st.download_button(
+                "⬇ CSV indir",
+                data=dataframe_to_csv(st.session_state.base_df),
+                file_name=f"excelbase-{stamp}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                type="secondary",
+            )
+        else:
+            st.button("⬇ Excel indir", disabled=True, use_container_width=True)
+            st.button("⬇ CSV indir", disabled=True, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 base_df = st.session_state.base_df.copy()
 
 st.markdown('<div class="metric-grid">', unsafe_allow_html=True)
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Satır", len(base_df))
-m2.metric("Kolon", len(base_df.columns))
-m3.metric("Dosya", len(st.session_state.loaded_files))
-m4.metric("Hata", len(st.session_state.errors))
+with st.container(border=True):
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Satır", len(base_df))
+    m2.metric("Kolon", len(base_df.columns))
+    m3.metric("Dosya", len(st.session_state.loaded_files))
+    m4.metric("Hata", len(st.session_state.errors))
 st.markdown("</div>", unsafe_allow_html=True)
 
 if not base_df.empty:
-    st.markdown(
-        """
-        <div class="section-head">
-          <p class="section-title">Tablo</p>
-          <p class="section-hint">Hücrelere dokunarak düzenle</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
+        st.subheader("Tablo")
+        st.caption("Hücrelere dokunarak düzenle · Mobilde yatay kaydır")
 
-    search = st.text_input("Ara", placeholder="İsim, hat, acente, PNR…", label_visibility="collapsed")
+        search = st.text_input("Ara", placeholder="İsim, hat, acente, PNR…", label_visibility="collapsed")
 
-    tool_a, tool_b = st.columns(2)
-    with tool_a:
-        if st.button("Tekrarlı satırları sil", use_container_width=True):
-            st.session_state.base_df = st.session_state.base_df.drop_duplicates().reset_index(drop=True)
-            st.rerun()
-        if st.button("Boş satırları sil", use_container_width=True):
-            st.session_state.base_df = (
-                st.session_state.base_df.replace("", pd.NA).dropna(how="all").fillna("").reset_index(drop=True)
-            )
-            st.rerun()
-    with tool_b:
-        if st.button("Boş satır ekle", use_container_width=True):
-            empty = pd.DataFrame([{c: "" for c in st.session_state.base_df.columns}])
-            st.session_state.base_df = pd.concat([st.session_state.base_df, empty], ignore_index=True)
-            st.rerun()
+        tool_a, tool_b = st.columns(2)
+        with tool_a:
+            if st.button("Tekrarlı satırları sil", use_container_width=True):
+                st.session_state.base_df = st.session_state.base_df.drop_duplicates().reset_index(drop=True)
+                st.rerun()
+            if st.button("Boş satırları sil", use_container_width=True):
+                st.session_state.base_df = (
+                    st.session_state.base_df.replace("", pd.NA).dropna(how="all").fillna("").reset_index(drop=True)
+                )
+                st.rerun()
+        with tool_b:
+            if st.button("Boş satır ekle", use_container_width=True):
+                empty = pd.DataFrame([{c: "" for c in st.session_state.base_df.columns}])
+                st.session_state.base_df = pd.concat([st.session_state.base_df, empty], ignore_index=True)
+                st.rerun()
 
-    view_df = base_df
-    if search:
-        mask = view_df.apply(lambda row: row.astype(str).str.contains(search, case=False, na=False).any(), axis=1)
-        view_df = view_df.loc[mask]
-        st.caption(f"Arama: {len(view_df)} satır gösteriliyor. Aramayı temizleyince tüm tablo düzenlenir.")
+        view_df = base_df
+        if search:
+            mask = view_df.apply(lambda row: row.astype(str).str.contains(search, case=False, na=False).any(), axis=1)
+            view_df = view_df.loc[mask]
+            st.caption(f"Arama: {len(view_df)} satır gösteriliyor. Aramayı temizleyince tüm tablo düzenlenir.")
 
-    st.markdown(
-        '<p class="table-scroll-hint">↔ Mobilde tabloyu yatay kaydırabilirsin. Kolon başlıkları sabit kalır.</p>',
-        unsafe_allow_html=True,
-    )
-    st.markdown('<div class="table-shell">', unsafe_allow_html=True)
-
-    table_height = 520 if len(base_df) > 8 else 380
-
-    if search:
-        st.dataframe(view_df, use_container_width=True, height=table_height, hide_index=True)
-    else:
-        edited = st.data_editor(
-            base_df,
-            use_container_width=True,
-            height=table_height,
-            num_rows="dynamic",
-            hide_index=True,
-            key="main_editor",
+        st.markdown(
+            '<p class="table-scroll-hint">↔ Mobilde tabloyu yatay kaydırabilirsin.</p>',
+            unsafe_allow_html=True,
         )
-        st.session_state.base_df = edited
+        st.markdown('<div class="table-shell">', unsafe_allow_html=True)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+        table_height = 520 if len(base_df) > 8 else 380
+
+        if search:
+            st.dataframe(view_df, use_container_width=True, height=table_height, hide_index=True)
+        else:
+            edited = st.data_editor(
+                base_df,
+                use_container_width=True,
+                height=table_height,
+                num_rows="dynamic",
+                hide_index=True,
+                key="main_editor",
+            )
+            st.session_state.base_df = edited
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
     if not st.session_state.base_df.empty:
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
@@ -676,13 +671,6 @@ if not base_df.empty:
             )
         st.markdown("</div>", unsafe_allow_html=True)
 else:
-    st.markdown(
-        """
-        <div class="empty-state">
-          <div class="empty-icon">📂</div>
-          <p class="empty-title">Henüz tablo yok</p>
-          <p class="empty-desc">Sol üstteki ☰ menüsünden Excel/CSV yükle veya Demo ile başla.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
+        st.subheader("Henüz tablo yok")
+        st.markdown("Sol üstteki **☰** menüsünden Excel/CSV yükle veya sidebar’daki **Demo** ile başla.")
