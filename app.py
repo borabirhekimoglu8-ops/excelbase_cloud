@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime
 
 import pandas as pd
@@ -24,8 +25,9 @@ from photo_store import (
     extract_images_from_zip,
     is_zip,
     looks_like_image,
+    make_thumb,
     match_photos_to_dataframe,
-    photo_data_uri,
+    photo_raw_bytes,
 )
 from passenger_schema import (
     ALL_COLUMNS,
@@ -38,7 +40,8 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.4.0"
+APP_VERSION = "4.5.0"
+PAGE_SIZE = 10
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -376,6 +379,8 @@ def init_state() -> None:
         "date_filters": {},
         "photo_log": [],
         "photo_signature": "",
+        "pax_page": 0,
+        "arch_page": 0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -477,6 +482,7 @@ def process_photos(photo_files) -> None:
         sample_pp = [p for p in st.session_state.base_df["Pasaport No"].astype(str).tolist() if p.strip()][:6]
         log.append("Karttaki pasaport no örnekleri: " + (", ".join(sample_pp) if sample_pp else "(boş)"))
     st.session_state.photo_log = log
+    thumb_uri.clear()
     persist()
 
 
@@ -566,10 +572,31 @@ def render_header_filters(base_df: pd.DataFrame) -> None:
         st.rerun()
 
 
-def photo_html(row: pd.Series, css_class: str = "pax-photo") -> str:
-    uri = photo_data_uri(str(row.get("Foto", "") or ""))
-    if uri:
-        return f'<img class="{css_class}" src="{uri}" alt="foto" />'
+@st.cache_data(show_spinner=False, max_entries=1024)
+def thumb_uri(ref: str, max_dim: int, quality: int) -> str | None:
+    """Foto referansından küçük, önbelleğe alınmış JPEG data-uri üretir.
+
+    Listede her kart için tam boy base64 foto gömmek iPhone'da sayfayı
+    kilitliyordu. Burada küçük bir küçük resim üretip önbelleğe alıyoruz;
+    böylece HTML yükü çok küçük kalıyor ve resize işlemi foto başına bir kez yapılıyor.
+    """
+    raw = photo_raw_bytes(ref)
+    if raw is None:
+        return None
+    _, data = raw
+    thumb = make_thumb(data, max_dim, quality)
+    if thumb is None:
+        return None
+    encoded = base64.b64encode(thumb).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def photo_html(row: pd.Series, css_class: str = "pax-photo", size: str = "list") -> str:
+    ref = str(row.get("Foto", "") or "")
+    if ref:
+        uri = thumb_uri(ref, 96, 55) if size == "list" else thumb_uri(ref, 380, 82)
+        if uri:
+            return f'<img class="{css_class}" src="{uri}" alt="foto" loading="lazy" decoding="async" />'
     return f'<div class="{css_class} pax-photo-empty">👤</div>'
 
 
@@ -622,7 +649,7 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
         f"""
         <div class="app-panel">
           <div class="pax-card-row">
-            {photo_html(row, css_class="pax-photo-lg")}
+            {photo_html(row, css_class="pax-photo-lg", size="detail")}
             <div class="pax-card-body">
               <p class="app-panel-title">{card["title"]}</p>
               <p class="app-panel-sub">{card["subtitle"]}</p>
@@ -717,6 +744,8 @@ def render_import_tab() -> None:
             st.session_state.warnings = []
             st.session_state.loaded_files = ["demo.xlsx"]
             st.session_state.selected_idx = None
+            st.session_state.pax_page = 0
+            st.session_state.arch_page = 0
             persist()
             st.rerun()
     with t3:
@@ -729,6 +758,10 @@ def render_import_tab() -> None:
             st.session_state.loaded_files = []
             st.session_state.selected_idx = None
             st.session_state.column_filters = {}
+            st.session_state.date_filters = {}
+            st.session_state.pax_page = 0
+            st.session_state.arch_page = 0
+            thumb_uri.clear()
             persist()
             st.rerun()
 
@@ -794,6 +827,39 @@ def render_import_tab() -> None:
         )
 
 
+def render_pagination(state_key: str, page: int, pages: int, nav_prefix: str) -> None:
+    if pages <= 1:
+        return
+    prev_c, mid_c, next_c = st.columns([1, 1.4, 1])
+    if prev_c.button("‹ Önceki", key=f"{nav_prefix}_prev", use_container_width=True, disabled=page <= 0):
+        st.session_state[state_key] = page - 1
+        st.rerun()
+    mid_c.markdown(
+        f'<p style="text-align:center;margin:0;padding-top:0.55rem;font-weight:700;color:#6b7688;">'
+        f"Sayfa {page + 1} / {pages}</p>",
+        unsafe_allow_html=True,
+    )
+    if next_c.button("Sonraki ›", key=f"{nav_prefix}_next", use_container_width=True, disabled=page >= pages - 1):
+        st.session_state[state_key] = page + 1
+        st.rerun()
+
+
+def render_card_page(view_df: pd.DataFrame, state_key: str, key_prefix: str) -> None:
+    """Kartları sayfalayarak gösterir; iPhone'da tek seferde çok kart yüklenmesini engeller."""
+    total = len(view_df)
+    pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = min(max(0, int(st.session_state.get(state_key, 0))), pages - 1)
+    st.session_state[state_key] = page
+
+    start = page * PAGE_SIZE
+    chunk = view_df.iloc[start : start + PAGE_SIZE]
+
+    render_pagination(state_key, page, pages, f"{key_prefix}_top")
+    for idx, row in chunk.iterrows():
+        render_passenger_card(int(idx), row, key_prefix=key_prefix)
+    render_pagination(state_key, page, pages, f"{key_prefix}_bot")
+
+
 def render_passengers_tab(base_df: pd.DataFrame) -> None:
     if base_df.empty:
         st.info("Henüz yolcu yok. **Import** sekmesinden Excel yükle.")
@@ -809,6 +875,12 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
     active_dates = {k: v for k, v in st.session_state.date_filters.items() if v}
     view_df = apply_filters(base_df, search, active, active_dates)
 
+    # Arama/filtre değişince sayfayı başa al
+    sig = f"{search}|{sorted(active.items())}|{sorted(active_dates.keys())}"
+    if st.session_state.get("pax_filter_sig") != sig:
+        st.session_state.pax_filter_sig = sig
+        st.session_state.pax_page = 0
+
     c1, c2, c3 = st.columns(3)
     c1.metric("Yolcu", len(view_df))
     c2.metric("Kaynak", len(st.session_state.loaded_files))
@@ -819,8 +891,7 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
         return
 
     st.markdown(f'<p class="section-label">{len(view_df)} yolcu</p>', unsafe_allow_html=True)
-    for idx, row in view_df.iterrows():
-        render_passenger_card(int(idx), row)
+    render_card_page(view_df, "pax_page", "list")
 
 
 def render_archive_tab(base_df: pd.DataFrame) -> None:
@@ -845,11 +916,17 @@ def render_archive_tab(base_df: pd.DataFrame) -> None:
     c2.metric("Toplam yolcu", len(base_df))
 
     st.markdown('<p class="section-label">Tarihe göre arşiv</p>', unsafe_allow_html=True)
-    for date_key in ordered:
-        idxs = groups[date_key]
-        with st.expander(f"📅 {date_key}  ·  {len(idxs)} yolcu", expanded=False):
-            for idx in idxs:
-                render_passenger_card(idx, base_df.loc[idx], key_prefix=f"arch_{date_key}")
+    labels = [f"{d}  ·  {len(groups[d])} yolcu" for d in ordered]
+    selected = st.selectbox("Tarih seç", options=labels, key="archive_date_pick")
+    date_key = ordered[labels.index(selected)] if selected in labels else ordered[0]
+
+    # Tarih değişince sayfayı başa al
+    if st.session_state.get("arch_sig") != date_key:
+        st.session_state.arch_sig = date_key
+        st.session_state.arch_page = 0
+
+    sub_df = base_df.loc[groups[date_key]]
+    render_card_page(sub_df, "arch_page", "arch")
 
 
 def render_bottom_bar(base_df: pd.DataFrame) -> None:
