@@ -21,7 +21,7 @@ PASSENGER_FIELDS: list[str] = [
     "Vize Ücreti Çocuk",
 ]
 
-META_FIELDS: list[str] = ["Kaynak Dosya", "Sayfa"]
+META_FIELDS: list[str] = ["Kaynak Dosya", "Sayfa", "Foto"]
 ALL_COLUMNS: list[str] = PASSENGER_FIELDS + META_FIELDS
 
 # Başlığa göre filtreleme — tüm yolcu kolonları (birleşik alan hariç)

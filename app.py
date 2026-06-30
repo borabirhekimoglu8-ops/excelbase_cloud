@@ -16,6 +16,7 @@ from operation_helpers import (
     unique_values,
 )
 from persistence import load_store, save_store
+from photo_store import match_photos_to_dataframe, photo_data_uri
 from passenger_schema import (
     ALL_COLUMNS,
     TEMPLATE_NAME,
@@ -27,7 +28,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "3.6.0"
+APP_VERSION = "3.7.0"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -74,8 +75,10 @@ html, body, [class*="css"] {
 }
 
 .block-container {
-  padding-top: 0.75rem;
-  padding-bottom: 2.5rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-bottom: max(2.5rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
   max-width: 720px;
 }
 
@@ -190,6 +193,23 @@ div[data-testid="stForm"] {
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
 }
+.pax-card-row { display: flex; gap: 0.75rem; align-items: flex-start; }
+.pax-card-body { flex: 1; min-width: 0; }
+.pax-photo {
+  width: 64px; height: 80px; border-radius: 10px; object-fit: cover;
+  border: 2px solid var(--border); flex-shrink: 0; background: #f0f9ff;
+  box-shadow: 0 2px 6px rgba(13, 94, 175, 0.12);
+}
+.pax-photo-empty {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.8rem; color: #93c5fd;
+}
+.pax-photo-lg {
+  width: 92px; height: 116px; border-radius: 12px; object-fit: cover;
+  border: 2px solid var(--border); flex-shrink: 0; background: #f0f9ff;
+  box-shadow: 0 2px 8px rgba(13, 94, 175, 0.14);
+  display: flex; align-items: center; justify-content: center; font-size: 2.4rem; color: #93c5fd;
+}
 .pax-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; }
 .pax-no {
   font-size: 0.7rem; font-weight: 800; padding: 3px 9px; border-radius: 999px;
@@ -247,6 +267,19 @@ div[data-testid="stForm"] {
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
+# iPhone "Ana Ekrana Ekle" / tam ekran uygulama davranışı için meta etiketleri
+st.markdown(
+    """
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Gate Visa PAX">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0d5eaf">
+    """,
+    unsafe_allow_html=True,
+)
+
 
 def init_state() -> None:
     if "base_df" not in st.session_state:
@@ -262,6 +295,8 @@ def init_state() -> None:
         "loaded_files": [],
         "selected_idx": None,
         "column_filters": {},
+        "photo_log": [],
+        "photo_signature": "",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -321,6 +356,23 @@ def process_uploads(files, append_mode: bool) -> None:
     persist()
 
 
+def process_photos(photo_files) -> None:
+    if st.session_state.base_df.empty:
+        st.session_state.photo_log = ["⚠ Önce yolcu Excel'i yükleyin, sonra fotoğrafları ekleyin."]
+        return
+
+    uploaded = [(f.name, f.getvalue()) for f in photo_files or []]
+    updated, matched, unmatched = match_photos_to_dataframe(st.session_state.base_df, uploaded)
+    st.session_state.base_df = normalize_passenger_dataframe(updated)
+
+    log: list[str] = [f"✓ {matched} fotoğraf yolcuyla eşleşti."]
+    if unmatched:
+        log.append("✕ Eşleşmeyen: " + ", ".join(unmatched[:8]) + (" …" if len(unmatched) > 8 else ""))
+        log.append("Dosya adı **TARİH_İSİM_SOYİSİM_PASAPORT** olmalı (pasaport no kartla eşleşmeli).")
+    st.session_state.photo_log = log
+    persist()
+
+
 def render_topbar() -> None:
     st.markdown(
         f"""
@@ -367,6 +419,13 @@ def render_header_filters(base_df: pd.DataFrame) -> None:
         st.rerun()
 
 
+def photo_html(row: pd.Series, css_class: str = "pax-photo") -> str:
+    uri = photo_data_uri(str(row.get("Foto", "") or ""))
+    if uri:
+        return f'<img class="{css_class}" src="{uri}" alt="foto" />'
+    return f'<div class="{css_class} pax-photo-empty">👤</div>'
+
+
 def render_passenger_card(idx: int, row: pd.Series) -> None:
     card = passenger_card_view(row)
     tags_html = "".join(f'<span class="pax-tag">{t["label"]}: {t["value"]}</span>' for t in card["tags"])
@@ -375,15 +434,20 @@ def render_passenger_card(idx: int, row: pd.Series) -> None:
     st.markdown(
         f"""
         <div class="pax-card">
-          <div class="pax-card-top">
-            <span class="pax-no">{card["status"] or "Yolcu"}</span>
-            <span class="pax-date">{card["date"] or "—"}</span>
+          <div class="pax-card-row">
+            {photo_html(row)}
+            <div class="pax-card-body">
+              <div class="pax-card-top">
+                <span class="pax-no">{card["status"] or "Yolcu"}</span>
+                <span class="pax-date">{card["date"] or "—"}</span>
+              </div>
+              <div class="pax-name">{card["title"]}</div>
+              <div class="pax-line">{card["subtitle"]}</div>
+              <div class="pax-tags">{tags_html}</div>
+              {"<div class='pax-fee'>" + card["amount"] + "</div>" if card["amount"] else ""}
+              <div class="pax-meta">{meta}</div>
+            </div>
           </div>
-          <div class="pax-name">{card["title"]}</div>
-          <div class="pax-line">{card["subtitle"]}</div>
-          <div class="pax-tags">{tags_html}</div>
-          {"<div class='pax-fee'>" + card["amount"] + "</div>" if card["amount"] else ""}
-          <div class="pax-meta">{meta}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -410,8 +474,13 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
     st.markdown(
         f"""
         <div class="app-panel">
-          <p class="app-panel-title">{card["title"]}</p>
-          <p class="app-panel-sub">{card["subtitle"]}</p>
+          <div class="pax-card-row">
+            {photo_html(row, css_class="pax-photo-lg")}
+            <div class="pax-card-body">
+              <p class="app-panel-title">{card["title"]}</p>
+              <p class="app-panel-sub">{card["subtitle"]}</p>
+            </div>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -521,6 +590,39 @@ def render_import_tab() -> None:
             "sütunları içerdiğinden emin olun. **Şablon indir** ile doğru formatı indirebilirsiniz."
         )
 
+    # Biyometrik fotoğraf toplu import
+    st.markdown(
+        """
+        <div class="app-panel">
+          <p class="app-panel-title">Biyometrik fotoğraflar</p>
+          <p class="app-panel-sub">Toplu yükle — dosya adı kartla otomatik eşleşir</p>
+          <div class="format-box">Dosya adı: <b>TARİH_İSİM_SOYİSİM_PASAPORT</b><br>
+          Örn: <code>2026-07-01_JOHN_DOE_AB123456.jpg</code><br>
+          Eşleşme pasaport numarasına göre yapılır.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    photo_files = st.file_uploader(
+        "Fotoğrafları yükle",
+        type=["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif"],
+        accept_multiple_files=True,
+        key="photo_uploader",
+    )
+    photo_sig = uploaded_signature(photo_files)
+    if photo_files and photo_sig != st.session_state.photo_signature:
+        process_photos(photo_files)
+        st.session_state.photo_signature = photo_sig
+        st.rerun()
+
+    for item in st.session_state.photo_log:
+        if item.startswith("✓"):
+            st.success(item)
+        elif item.startswith("✕") or item.startswith("⚠"):
+            st.warning(item)
+        else:
+            st.caption(item)
+
     # Yüklenen veriyi hemen burada göster — kullanıcı sekme değiştirmeden görsün
     preview_df = st.session_state.base_df
     if not preview_df.empty:
@@ -560,6 +662,35 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
         render_passenger_card(int(idx), row)
 
 
+def render_archive_tab(base_df: pd.DataFrame) -> None:
+    if base_df.empty:
+        st.info("Henüz yolcu yok. **Import** sekmesinden Excel yükle.")
+        return
+
+    date_field = "Gidiş Tarihi"
+    dates = base_df[date_field].astype(str).str.strip()
+    groups: dict[str, list[int]] = {}
+    for idx, value in dates.items():
+        key = value if value else "Tarihsiz"
+        groups.setdefault(key, []).append(int(idx))
+
+    def sort_key(item: str) -> tuple[int, str]:
+        return (1, "") if item == "Tarihsiz" else (0, item)
+
+    ordered = sorted(groups.keys(), key=sort_key)
+
+    c1, c2 = st.columns(2)
+    c1.metric("Tarih", len([d for d in ordered if d != "Tarihsiz"]))
+    c2.metric("Toplam yolcu", len(base_df))
+
+    st.markdown('<p class="section-label">Tarihe göre arşiv</p>', unsafe_allow_html=True)
+    for date_key in ordered:
+        idxs = groups[date_key]
+        with st.expander(f"📅 {date_key}  ·  {len(idxs)} yolcu", expanded=False):
+            for idx in idxs:
+                render_passenger_card(idx, base_df.loc[idx])
+
+
 def render_bottom_bar(base_df: pd.DataFrame) -> None:
     if base_df.empty:
         return
@@ -596,9 +727,11 @@ st.session_state.base_df = base_df
 if st.session_state.selected_idx is not None and not base_df.empty:
     render_detail_view(st.session_state.base_df)
 else:
-    tab_passengers, tab_import = st.tabs(["Yolcu Kartları", "Import"])
+    tab_passengers, tab_archive, tab_import = st.tabs(["Yolcu Kartları", "Arşiv", "Import"])
     with tab_passengers:
         render_passengers_tab(st.session_state.base_df)
+    with tab_archive:
+        render_archive_tab(st.session_state.base_df)
     with tab_import:
         render_import_tab()
 
