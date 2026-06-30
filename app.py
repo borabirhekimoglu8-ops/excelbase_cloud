@@ -50,7 +50,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.8.0"
+APP_VERSION = "4.9.0"
 PAGE_SIZE = 10
 
 
@@ -176,13 +176,17 @@ p, span, label, h1, h2, h3, .pax-name, .pax-line, .app-title, .app-sub {
     right: max(12px, env(safe-area-inset-right));
     bottom: max(10px, env(safe-area-inset-bottom));
     z-index: 999;
-    display: grid !important;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex !important;
+    overflow-x: auto;
+    scrollbar-width: none;
     border-radius: 22px;
     padding: 7px;
     box-shadow: 0 12px 34px rgba(16, 24, 40, 0.18);
   }
+  .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
   .stTabs [data-baseweb="tab"] {
+    flex: 0 0 auto;
+    min-width: 86px;
     min-height: 50px;
     padding: 8px 6px !important;
     justify-content: center;
@@ -444,6 +448,58 @@ div[data-testid="stForm"] {
   text-transform: uppercase;
   color: var(--muted);
   margin: 0.8rem 0 0.5rem;
+}
+
+.cc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0.75rem 0; }
+.cc-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  padding: 0.95rem; box-shadow: var(--shadow);
+}
+.cc-kicker { margin: 0; font-size: 0.68rem; color: var(--muted); font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; }
+.cc-value { margin: 0.18rem 0 0; font-size: 1.38rem; color: var(--ink); font-weight: 900; line-height: 1.1; }
+.cc-sub { margin: 0.25rem 0 0; font-size: 0.78rem; color: var(--muted); line-height: 1.35; }
+.progress-wrap { height: 12px; background: #e9eef7; border-radius: 999px; overflow: hidden; border: 1px solid #dbe3ef; }
+.progress-bar { height: 100%; background: linear-gradient(90deg, #2563eb, #06b6d4); border-radius: inherit; }
+.quick-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0.8rem 0; }
+.quick-action {
+  border: 1px solid #dbeafe; background: #f8fbff; color: var(--accent-dark);
+  padding: 0.75rem; border-radius: 14px; font-weight: 900; font-size: 0.86rem;
+}
+.empty-hero {
+  text-align: center; background: linear-gradient(180deg, #ffffff, #f8fbff);
+  border: 1px dashed #c9d7ee; border-radius: 18px; padding: 1.35rem 1rem;
+  box-shadow: var(--shadow);
+}
+.empty-hero .big { font-size: 2.2rem; margin: 0; }
+.empty-hero h3 { margin: 0.25rem 0; color: var(--ink); }
+.timeline { border-left: 3px solid #dbeafe; margin: 0.8rem 0 0 0.45rem; padding-left: 0.9rem; }
+.timeline-item { position: relative; margin-bottom: 0.75rem; color: var(--ink-soft); font-size: 0.82rem; }
+.timeline-item::before {
+  content: ""; position: absolute; left: -1.27rem; top: 0.2rem;
+  width: 10px; height: 10px; border-radius: 999px; background: var(--accent);
+  box-shadow: 0 0 0 4px #eaf1ff;
+}
+.wizard-steps { display: flex; gap: 6px; margin: 0.7rem 0 0.2rem; }
+.wizard-step {
+  flex: 1; text-align: center; padding: 0.45rem 0.2rem; border-radius: 999px;
+  background: #eef2f7; color: #64748b; font-size: 0.68rem; font-weight: 900;
+}
+.wizard-step.on { background: var(--accent); color: #fff; }
+.filter-sheet {
+  background: #ffffff; border: 1px solid #dbeafe; border-radius: 18px;
+  padding: 0.75rem 0.9rem; margin: 0.7rem 0; box-shadow: var(--shadow);
+}
+.gallery-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.gallery-card {
+  background: #fff; border: 1px solid var(--border); border-radius: 14px;
+  padding: 0.55rem; box-shadow: var(--shadow); min-width: 0;
+}
+.gallery-card img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 10px; background: var(--bg); }
+.gallery-card p { margin: 0.4rem 0 0; font-size: 0.68rem; color: var(--ink-soft); font-weight: 800; line-height: 1.25; }
+
+@media (max-width: 420px) {
+  .cc-grid, .quick-actions { grid-template-columns: 1fr 1fr; }
+  .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-weight: 700; }
@@ -1143,6 +1199,326 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
         st.rerun()
 
 
+def readiness_metrics(df: pd.DataFrame) -> dict:
+    """Operasyon hazırlık yüzdesi ve eksik sayıları."""
+    total = len(df)
+    if total == 0:
+        return {
+            "pct": 0,
+            "total": 0,
+            "photo_missing": 0,
+            "passport_missing": 0,
+            "voucher_missing": 0,
+            "fee_missing": 0,
+            "duplicates": 0,
+            "photo_ok": 0,
+            "passport_ok": 0,
+            "voucher_ok": 0,
+            "fee_ok": 0,
+        }
+
+    photo_missing = int(df["Foto"].astype(str).str.strip().eq("").sum())
+    passport_missing = int(df["Pasaport No"].astype(str).str.strip().eq("").sum())
+    voucher_missing = int(df["Voucher"].astype(str).str.strip().eq("").sum())
+    adult = df["Vize Ücreti Yetişkin"].astype(str).str.strip()
+    child = df["Vize Ücreti Çocuk"].astype(str).str.strip()
+    fee_missing = int((adult.eq("") & child.eq("")).sum())
+    passport_norm = df["Pasaport No"].astype(str).map(_norm_match)
+    duplicates = int(passport_norm[passport_norm.ne("") & passport_norm.duplicated(keep=False)].count())
+
+    photo_ok = total - photo_missing
+    passport_ok = total - passport_missing - duplicates
+    voucher_ok = total - voucher_missing
+    fee_ok = total - fee_missing
+    pct = round(max(0, (photo_ok + passport_ok + voucher_ok + fee_ok) / (total * 4) * 100))
+    return {
+        "pct": int(pct),
+        "total": total,
+        "photo_missing": photo_missing,
+        "passport_missing": passport_missing,
+        "voucher_missing": voucher_missing,
+        "fee_missing": fee_missing,
+        "duplicates": duplicates,
+        "photo_ok": photo_ok,
+        "passport_ok": max(0, passport_ok),
+        "voucher_ok": voucher_ok,
+        "fee_ok": fee_ok,
+    }
+
+
+def set_missing_filter(choice: str) -> None:
+    st.session_state.missing_filter = choice
+    st.session_state.pax_page = 0
+
+
+def render_smart_empty_state() -> None:
+    st.markdown(
+        """
+        <div class="empty-hero">
+          <p class="big">🛂</p>
+          <h3>Henüz operasyon yok</h3>
+          <p class="app-panel-sub">Excel yükleyerek başlayın, şablon indirin veya demo veriyle uygulamayı deneyin.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    c1, c2 = st.columns(2)
+    if c1.button("Demo veri yükle", type="primary", use_container_width=True, key="empty_demo"):
+        st.session_state.base_df = normalize_passenger_dataframe(make_demo_passengers())
+        st.session_state.read_log = ["✓ Demo: 3 yolcu kartı"]
+        persist()
+        st.rerun()
+    c2.download_button(
+        "Şablon indir",
+        data=passenger_template_xlsx(),
+        file_name="gate-visa-pax-sablonu.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="empty_template",
+    )
+
+
+def render_readiness_panel(df: pd.DataFrame, prefix: str) -> dict:
+    m = readiness_metrics(df)
+    st.markdown(
+        f"""
+        <div class="app-panel">
+          <p class="app-panel-title">Operasyon hazırlığı: %{m['pct']}</p>
+          <div class="progress-wrap"><div class="progress-bar" style="width:{m['pct']}%;"></div></div>
+          <p class="app-panel-sub">{m['photo_ok']}/{m['total']} foto · {m['passport_ok']}/{m['total']} pasaport ·
+          {m['voucher_ok']}/{m['total']} voucher · {m['fee_ok']}/{m['total']} ücret</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    return m
+
+
+def render_command_center(base_df: pd.DataFrame) -> None:
+    if base_df.empty:
+        render_smart_empty_state()
+        return
+
+    m = render_readiness_panel(base_df, "home")
+    summ = summarize_group(base_df)
+    st.markdown(
+        f"""
+        <div class="cc-grid">
+          <div class="cc-card"><p class="cc-kicker">Yolcu</p><p class="cc-value">{summ['count']}</p><p class="cc-sub">Toplam kayıt</p></div>
+          <div class="cc-card"><p class="cc-kicker">Toplam ücret</p><p class="cc-value">{_fmt_amount(summ['total'])}</p><p class="cc-sub">Yetişkin + çocuk</p></div>
+          <div class="cc-card"><p class="cc-kicker">Fotosuz</p><p class="cc-value">{m['photo_missing']}</p><p class="cc-sub">Düzeltilecek foto</p></div>
+          <div class="cc-card"><p class="cc-kicker">Risk</p><p class="cc-value">{m['passport_missing'] + m['duplicates']}</p><p class="cc-sub">Pasaport/duplicate</p></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('<p class="section-label">Hızlı aksiyonlar</p>', unsafe_allow_html=True)
+    a1, a2 = st.columns(2)
+    if a1.button("Fotosuzları göster", use_container_width=True, key="home_fotosuz"):
+        set_missing_filter("Fotosuz")
+        st.toast("Yolcular sekmesinde Fotosuz filtresi hazır", icon="📷")
+    if a2.button("Eksikleri düzelt", use_container_width=True, key="home_fix"):
+        st.session_state.quick_fix_focus = "Fotosuz"
+        st.toast("Eksikler sekmesine geç", icon="⚠️")
+    a3, a4 = st.columns(2)
+    a3.download_button(
+        "Tüm Excel",
+        data=dataframe_to_xlsx(base_df),
+        file_name=f"yolcular-{datetime.now().strftime('%Y%m%d-%H%M')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="home_xlsx",
+    )
+    if a4.button("Import'a git", use_container_width=True, key="home_import_hint"):
+        st.toast("Alttaki ⬆️ Import sekmesini aç", icon="⬆️")
+
+    render_operation_timeline(base_df, compact=True)
+
+
+def issue_indexes(base_df: pd.DataFrame, category: str) -> list[int]:
+    if base_df.empty:
+        return []
+    if category == "Fotosuz":
+        return [int(i) for i in base_df[base_df["Foto"].astype(str).str.strip().eq("")].index]
+    if category == "Pasaportsuz":
+        return [int(i) for i in base_df[base_df["Pasaport No"].astype(str).str.strip().eq("")].index]
+    if category == "Voucher eksik":
+        return [int(i) for i in base_df[base_df["Voucher"].astype(str).str.strip().eq("")].index]
+    if category == "Ücretsiz":
+        adult = base_df["Vize Ücreti Yetişkin"].astype(str).str.strip()
+        child = base_df["Vize Ücreti Çocuk"].astype(str).str.strip()
+        return [int(i) for i in base_df[adult.eq("") & child.eq("")].index]
+    if category == "Tekrarlı":
+        dups = st.session_state.get("dup_passports", set())
+        return [int(i) for i in base_df[base_df["Pasaport No"].map(lambda v: _norm_match(v) in dups and bool(_norm_match(v)))].index]
+    return []
+
+
+def render_quick_fix_card(idx: int, row: pd.Series, category: str) -> None:
+    name = cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu"
+    pp = cell_text(row.get("Pasaport No")) or "—"
+    st.markdown(
+        f"""
+        <div class="app-panel">
+          <p class="app-panel-title">{html.escape(name)}</p>
+          <p class="app-panel-sub">{html.escape(pp)} · {html.escape(category)}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    c1, c2 = st.columns(2)
+    if c1.button("Detayı aç", key=f"qf_open_{category}_{idx}", use_container_width=True):
+        st.session_state.selected_idx = idx
+        st.rerun()
+    if c2.button("Yolcular filtresi", key=f"qf_filter_{category}_{idx}", use_container_width=True):
+        set_missing_filter("Fotosuz" if category == "Voucher eksik" else category)
+        st.toast("Yolcular sekmesinde filtre hazır", icon="✅")
+
+
+def render_issues_center(base_df: pd.DataFrame) -> None:
+    if base_df.empty:
+        render_smart_empty_state()
+        return
+
+    categories = ["Fotosuz", "Pasaportsuz", "Voucher eksik", "Ücretsiz", "Tekrarlı"]
+    counts = {c: len(issue_indexes(base_df, c)) for c in categories}
+    st.markdown(
+        "".join(
+            [
+                '<div class="cc-grid">',
+                *[
+                    f'<div class="cc-card"><p class="cc-kicker">{html.escape(c)}</p><p class="cc-value">{counts[c]}</p>'
+                    f'<p class="cc-sub">Düzelt →</p></div>'
+                    for c in categories
+                ],
+                "</div>",
+            ]
+        ),
+        unsafe_allow_html=True,
+    )
+
+    default = st.session_state.get("quick_fix_focus", "Fotosuz")
+    category = st.selectbox(
+        "Düzeltilecek kategori",
+        options=categories,
+        index=categories.index(default) if default in categories else 0,
+        key="issues_category",
+    )
+    idxs = issue_indexes(base_df, category)
+    if not idxs:
+        st.success(f"{category} için eksik yok.")
+        return
+    st.markdown(f'<p class="section-label">{len(idxs)} hızlı düzeltme</p>', unsafe_allow_html=True)
+    for idx in idxs[:20]:
+        render_quick_fix_card(idx, base_df.loc[idx], category)
+
+
+def render_operation_timeline(base_df: pd.DataFrame, compact: bool = False) -> None:
+    history = list(st.session_state.get("import_history", []))
+    meta = st.session_state.get("date_meta", {})
+    items: list[str] = []
+    for h in history[:8]:
+        items.append(
+            f'{html.escape(str(h.get("time", "")))} · {html.escape(str(h.get("files", "Import")))} · '
+            f'{int(h.get("rows", 0) or 0)} yolcu'
+        )
+    for date_key, info in list(meta.items())[:5]:
+        items.append(
+            f'{html.escape(str(date_key))} · Operasyon {html.escape(str(info.get("status", "Hazırlanıyor")))}'
+        )
+    if not items and not base_df.empty:
+        items.append(f"{len(base_df)} yolcu hazırlandı")
+    if not items:
+        return
+    title = "Son hareketler" if compact else "Operation Timeline"
+    st.markdown(f'<p class="section-label">{title}</p><div class="timeline">' + "".join(
+        f'<div class="timeline-item">{item}</div>' for item in items
+    ) + "</div>", unsafe_allow_html=True)
+
+
+def render_photo_gallery(base_df: pd.DataFrame) -> None:
+    if base_df.empty:
+        render_smart_empty_state()
+        return
+    rows = [(int(i), r) for i, r in base_df.iterrows() if str(r.get("Foto", "") or "").strip()]
+    pending = st.session_state.get("pending_photos", [])
+    c1, c2 = st.columns(2)
+    c1.metric("Eşleşmiş foto", len(rows))
+    c2.metric("Eşleşmeyen", len(pending))
+    if pending:
+        render_unmatched_photos()
+    if not rows:
+        st.info("Henüz eşleşmiş fotoğraf yok. Import sekmesinden fotoğraf veya ZIP yükleyin.")
+        return
+    page_size = 12
+    pages = max(1, (len(rows) + page_size - 1) // page_size)
+    page = min(max(0, int(st.session_state.get("gallery_page", 0))), pages - 1)
+    chunk = rows[page * page_size : page * page_size + page_size]
+    cards = []
+    for idx, row in chunk:
+        uri = thumb_uri(str(row.get("Foto", "") or ""), 180, 70)
+        if not uri:
+            continue
+        name = html.escape(cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu")
+        pp = html.escape(cell_text(row.get("Pasaport No")) or "")
+        cards.append(f'<div class="gallery-card"><img src="{uri}" loading="lazy" decoding="async"><p>{name}<br>{pp}</p></div>')
+    st.markdown('<div class="gallery-grid">' + "".join(cards) + "</div>", unsafe_allow_html=True)
+    render_pagination("gallery_page", page, pages, "gallery")
+
+
+def build_operation_package(base_df: pd.DataFrame) -> bytes:
+    buf = BytesIO()
+    report = {
+        "version": APP_VERSION,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "summary": summarize_group(base_df),
+        "readiness": readiness_metrics(base_df),
+        "import_history": st.session_state.get("import_history", []),
+        "date_meta": st.session_state.get("date_meta", {}),
+    }
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("yolcular.xlsx", dataframe_to_xlsx(base_df))
+        zf.writestr("yolcular.csv", dataframe_to_csv(base_df))
+        zf.writestr("rapor.json", json.dumps(report, ensure_ascii=False, indent=2))
+        photo_zip = build_date_photo_zip(base_df)
+        if photo_zip:
+            zf.writestr("fotograflar.zip", photo_zip)
+    return buf.getvalue()
+
+
+def render_package_builder(base_df: pd.DataFrame) -> None:
+    if base_df.empty:
+        render_smart_empty_state()
+        return
+    m = readiness_metrics(base_df)
+    summ = summarize_group(base_df)
+    st.markdown(
+        f"""
+        <div class="app-panel">
+          <p class="app-panel-title">Teslim Paketi</p>
+          <div class="format-box">
+          ✅ Yolcu Excel<br>
+          {'✅' if summ['with_photo'] else '⚠️'} Foto ZIP ({summ['with_photo']} foto)<br>
+          ✅ Ücret özeti ({_fmt_amount(summ['total'])})<br>
+          {'✅' if m['pct'] >= 90 else '⚠️'} Hazırlık raporu (%{m['pct']})<br>
+          ✅ Operasyon notları
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.download_button(
+        "Teslim Paketini Oluştur (ZIP)",
+        data=build_operation_package(base_df),
+        file_name=f"gatevisa-operation-package-{datetime.now().strftime('%Y%m%d-%H%M')}.zip",
+        mime="application/zip",
+        type="primary",
+        use_container_width=True,
+        key="package_builder_zip",
+    )
+
+
 def build_backup_json() -> bytes:
     df = st.session_state.base_df.fillna("").astype(str) if not st.session_state.base_df.empty else pd.DataFrame(columns=ALL_COLUMNS)
     payload = {
@@ -1272,6 +1648,21 @@ def render_import_history() -> None:
 
 
 def render_import_tab() -> None:
+    step = 1
+    if st.session_state.get("staging_df") is not None:
+        step = 2
+    elif st.session_state.get("read_log"):
+        step = 4
+    steps = ["1 Dosya", "2 Önizleme", "3 Onay", "4 Tamam"]
+    st.markdown(
+        '<div class="wizard-steps">'
+        + "".join(
+            f'<div class="wizard-step {"on" if i <= step else ""}">{label}</div>'
+            for i, label in enumerate(steps, start=1)
+        )
+        + "</div>",
+        unsafe_allow_html=True,
+    )
     st.markdown(
         f"""
         <div class="app-panel">
@@ -1460,6 +1851,8 @@ def apply_missing_filter(df: pd.DataFrame, choice: str) -> pd.DataFrame:
         return df[df["Foto"].astype(str).str.strip().eq("")]
     if choice == "Pasaportsuz":
         return df[df["Pasaport No"].astype(str).str.strip().eq("")]
+    if choice == "Voucher eksik":
+        return df[df["Voucher"].astype(str).str.strip().eq("")]
     if choice == "Ücretsiz":
         adult = df["Vize Ücreti Yetişkin"].astype(str).str.strip()
         child = df["Vize Ücreti Çocuk"].astype(str).str.strip()
@@ -1491,10 +1884,16 @@ def apply_sort(df: pd.DataFrame, choice: str) -> pd.DataFrame:
 
 def render_passengers_tab(base_df: pd.DataFrame) -> None:
     if base_df.empty:
-        st.info("Henüz yolcu yok. **Import** sekmesinden Excel yükle.")
+        render_smart_empty_state()
         return
 
     search = st.text_input("Ara", placeholder="Ad, pasaport, voucher, tarih…", label_visibility="collapsed")
+
+    st.markdown(
+        '<div class="filter-sheet"><p class="app-panel-title">Filtre paneli</p>'
+        '<p class="app-panel-sub">Mobilde bottom-sheet hissi: görünüm, eksikler ve sıralama tek yerde.</p></div>',
+        unsafe_allow_html=True,
+    )
 
     opt_c1, opt_c2 = st.columns([1, 1])
     with opt_c1:
@@ -1518,7 +1917,7 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
 
     opt_c3, opt_c4 = st.columns([1, 1])
     with opt_c3:
-        miss_opts = ["Tümü", "Fotosuz", "Pasaportsuz", "Ücretsiz", "Tekrarlı"]
+        miss_opts = ["Tümü", "Fotosuz", "Pasaportsuz", "Voucher eksik", "Ücretsiz", "Tekrarlı"]
         cur_miss = st.session_state.get("missing_filter", "Tümü")
         st.session_state.missing_filter = st.selectbox(
             "Hızlı filtre",
@@ -1805,12 +2204,22 @@ st.session_state.dup_passports = set(_pp_norm[_pp_norm.ne("") & _pp_norm.duplica
 if st.session_state.selected_idx is not None and not base_df.empty:
     render_detail_view(st.session_state.base_df)
 else:
-    tab_passengers, tab_archive, tab_import = st.tabs(["👥 Yolcular", "📁 Arşiv", "⬆️ Import"])
+    tab_home, tab_passengers, tab_issues, tab_gallery, tab_archive, tab_import, tab_package = st.tabs(
+        ["🏠 Ana", "👥 Yolcular", "⚠️ Eksikler", "📷 Galeri", "📁 Arşiv", "⬆️ Import", "📦 Paket"]
+    )
+    with tab_home:
+        render_command_center(st.session_state.base_df)
     with tab_passengers:
         render_passengers_tab(st.session_state.base_df)
+    with tab_issues:
+        render_issues_center(st.session_state.base_df)
+    with tab_gallery:
+        render_photo_gallery(st.session_state.base_df)
     with tab_archive:
         render_archive_tab(st.session_state.base_df)
     with tab_import:
         render_import_tab()
+    with tab_package:
+        render_package_builder(st.session_state.base_df)
 
 render_bottom_bar(st.session_state.base_df)
