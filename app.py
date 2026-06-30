@@ -26,7 +26,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "3.5.1"
+APP_VERSION = "3.5.2"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -488,12 +488,18 @@ def render_import_tab() -> None:
             st.session_state.column_filters = {}
             st.rerun()
 
-    for item in st.session_state.read_log[:5]:
+    for item in st.session_state.read_log[:10]:
         st.success(item)
     for item in st.session_state.warnings:
         st.warning(item)
-    for item in st.session_state.errors:
-        st.error(item)
+    if st.session_state.errors:
+        for item in st.session_state.errors:
+            st.error(item)
+        st.info(
+            "**İpucu:** Yüklenen dosya Gate Visa PAX LIST şablonuna uymuyorsa da yolcu "
+            "verisi tespit edilmeye çalışılır. Dosyanın NAME / SURNAME / PASSPORT NUMBER "
+            "sütunları içerdiğinden emin olun. **Şablon indir** ile doğru formatı indirebilirsiniz."
+        )
 
 
 def render_passengers_tab(base_df: pd.DataFrame) -> None:

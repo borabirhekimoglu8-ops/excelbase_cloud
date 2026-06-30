@@ -33,12 +33,21 @@ def norm_cell(value: Any) -> str:
 
 
 def is_gate_visa_raw(raw: pd.DataFrame) -> bool:
-    flat = " ".join(norm_cell(v) for row in raw.head(8).itertuples(index=False) for v in row)
+    """Returns True if the sheet looks like a Gate Visa / passenger-list Excel."""
+    flat = " ".join(norm_cell(v) for row in raw.head(10).itertuples(index=False) for v in row)
     if "gate visa" in flat or "pax list" in flat:
         return True
-    for i in range(min(12, len(raw))):
+    # Look wider (up to row 20) and be permissive: 2 out of 3 key words is enough
+    for i in range(min(20, len(raw))):
         cells = [norm_cell(v) for v in raw.iloc[i].tolist()]
-        if "name" in cells and "surname" in cells and any("passport" in c for c in cells):
+        has_name = "name" in cells
+        has_surname = "surname" in cells
+        has_passport = any("passport" in c for c in cells)
+        has_voucher = any("voucher" in c for c in cells)
+        has_no = "no" in cells or "#" in cells
+        if (has_name and has_surname) or (has_name and has_passport) or (has_surname and has_passport):
+            return True
+        if has_name and has_voucher and has_no:
             return True
     return False
 
@@ -160,27 +169,83 @@ def read_gate_visa_sheet(excel: pd.ExcelFile, sheet: str) -> pd.DataFrame:
     return parse_gate_visa_raw(raw)
 
 
-def read_gate_visa_file_bytes(file_name: str, raw: bytes) -> list[ReadResult]:
+def _fallback_parse(sheet_df: pd.DataFrame, file_name: str, sheet_name: str) -> "pd.DataFrame | None":
+    """Try to extract passenger data from any Excel that has recognisable columns."""
+    from excelbase_core import detect_header_row_index, make_unique_columns, format_cell_value, is_blank
+    sheet_df = sheet_df.dropna(how="all").dropna(axis=1, how="all")
+    if sheet_df.empty:
+        return None
+    hdr_idx = detect_header_row_index(sheet_df)
+    raw_headers = sheet_df.iloc[hdr_idx].tolist()
+    data = sheet_df.iloc[hdr_idx + 1:].copy()
+    if data.empty:
+        return None
+    data.columns = make_unique_columns(raw_headers)
+    data = data.dropna(how="all")
+    for col in data.columns:
+        data[col] = data[col].map(format_cell_value)
+    data = data[~data.apply(lambda r: all(is_blank(v) for v in r), axis=1)]
+    if data.empty:
+        return None
+
+    EXCEL_COL_MAP = {
+        "NO": ["no", "#", "sira", "sıra"],
+        "NAME": ["name", "ad", "isim", "first name", "firstname"],
+        "SURNAME": ["surname", "soyad", "soyisim", "last name", "lastname"],
+        "PASSPORT NUMBER": ["passport", "pasaport", "passport number", "passport no", "doc no"],
+        "VOUCHER": ["voucher", "pnr", "bilet", "ticket", "reservation"],
+        "DEPARTURE": ["departure", "gidis", "gidiş", "depart"],
+        "ARRIVAL": ["arrival", "varis", "varış", "arrive"],
+        "ADULT": ["adult", "yetiskin", "yetişkin", "adult fee"],
+        "CHILD": ["child", "cocuk", "çocuk", "child fee"],
+    }
+
+    def find_col(candidates: list[str]) -> "str | None":
+        for col in data.columns:
+            col_n = norm_cell(col).replace(" ", "")
+            for cand in candidates:
+                cand_n = norm_cell(cand).replace(" ", "")
+                if cand_n and (cand_n in col_n or col_n in cand_n):
+                    return col
+        return None
+
+    out = pd.DataFrame()
+    for field, syns in EXCEL_COL_MAP.items():
+        src = find_col(syns)
+        out[field] = data[src].astype(str) if src and src in data.columns else ""
+    out = out[~out.apply(lambda r: all(is_blank(v) for v in r), axis=1)]
+    return out.reset_index(drop=True) if not out.empty else None
+
+
+def read_gate_visa_file_bytes(file_name: str, raw_bytes: bytes) -> list[ReadResult]:
     lower = file_name.lower()
     if lower.endswith(".csv"):
-        text = raw.decode("utf-8-sig", errors="replace")
+        text = raw_bytes.decode("utf-8-sig", errors="replace")
         df_raw = pd.read_csv(io.StringIO(text), header=None, dtype=object)
-        if not is_gate_visa_raw(df_raw):
-            raise ValueError("CSV Gate Visa şablonu formatında değil.")
-        df = parse_gate_visa_raw(df_raw)
+        if is_gate_visa_raw(df_raw):
+            df = parse_gate_visa_raw(df_raw)
+        else:
+            fallback = _fallback_parse(df_raw, file_name, "CSV")
+            if fallback is None or fallback.empty:
+                raise ValueError("CSV Gate Visa şablonu formatında değil.")
+            df = fallback
         return [ReadResult(file_name, "CSV", len(df), len(df.columns), df)]
 
     if not lower.endswith((".xlsx", ".xls", ".xlsm", ".ods")):
         raise ValueError("Desteklenen dosya türleri: .xlsx, .xls, .xlsm, .ods, .csv")
 
-    excel = pd.ExcelFile(io.BytesIO(raw))
+    excel = pd.ExcelFile(io.BytesIO(raw_bytes))
     results: list[ReadResult] = []
     for sheet in excel.sheet_names:
         try:
-            raw = pd.read_excel(excel, sheet_name=sheet, header=None, dtype=object)
-            if not is_gate_visa_raw(raw):
-                continue
-            df = parse_gate_visa_raw(raw)
+            sheet_df = pd.read_excel(excel, sheet_name=sheet, header=None, dtype=object)
+            if is_gate_visa_raw(sheet_df):
+                df = parse_gate_visa_raw(sheet_df)
+            else:
+                fallback = _fallback_parse(sheet_df, file_name, str(sheet))
+                if fallback is None or fallback.empty:
+                    continue
+                df = fallback
             if len(df) > 0:
                 results.append(ReadResult(file_name, str(sheet), len(df), len(df.columns), df))
         except Exception as exc:
@@ -190,8 +255,8 @@ def read_gate_visa_file_bytes(file_name: str, raw: bytes) -> list[ReadResult]:
 
     if not results:
         raise ValueError(
-            "Gate Visa PAX şablonu bulunamadı. Excel'de GATE VISA PAX LIST başlığı ve "
-            "NAME / SURNAME / PASSPORT NUMBER kolonları olmalı."
+            "Excel'de okunabilir yolcu verisi bulunamadı.\n"
+            "Beklenen format: GATE VISA PAX LIST (NAME / SURNAME / PASSPORT NUMBER kolonları)."
         )
     return results
 
