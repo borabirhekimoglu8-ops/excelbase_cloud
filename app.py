@@ -18,7 +18,13 @@ from operation_helpers import (
 )
 import db
 from persistence import load_store, save_store
-from photo_store import looks_like_image, match_photos_to_dataframe, photo_data_uri
+from photo_store import (
+    extract_images_from_zip,
+    is_zip,
+    looks_like_image,
+    match_photos_to_dataframe,
+    photo_data_uri,
+)
 from passenger_schema import (
     ALL_COLUMNS,
     TEMPLATE_NAME,
@@ -30,7 +36,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.1.2"
+APP_VERSION = "4.2.0"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -505,9 +511,17 @@ def process_photos(photo_files) -> None:
 
     uploaded: list[tuple[str, bytes]] = []
     skipped: list[str] = []
+    zip_count = 0
     for f in photo_files or []:
         data = f.getvalue()
-        if looks_like_image(f.name, data):
+        if is_zip(f.name, data):
+            images = extract_images_from_zip(data)
+            if images:
+                uploaded.extend(images)
+                zip_count += 1
+            else:
+                skipped.append(f"{f.name} (ZIP içinde görüntü yok)")
+        elif looks_like_image(f.name, data):
             uploaded.append((f.name, data))
         else:
             skipped.append(f.name)
@@ -519,7 +533,10 @@ def process_photos(photo_files) -> None:
         st.session_state.base_df["Foto"].astype(str).str.strip().ne("").sum()
     )
 
-    log: list[str] = [f"✓ {matched} fotoğraf eşleşti · toplam {total_with_photo} yolcuda foto var."]
+    zip_note = f" ({zip_count} ZIP açıldı, {len(uploaded)} görüntü)" if zip_count else ""
+    log: list[str] = [
+        f"✓ {matched} fotoğraf eşleşti{zip_note} · toplam {total_with_photo} yolcuda foto var."
+    ]
     if unmatched:
         log.append("✕ Eşleşmeyen: " + ", ".join(unmatched[:8]) + (" …" if len(unmatched) > 8 else ""))
         log.append("Dosya adı **TARİH_İSİM_SOYİSİM_PASAPORT** olmalı (pasaport no kartla eşleşmeli).")
@@ -762,19 +779,20 @@ def render_import_tab() -> None:
         """
         <div class="app-panel">
           <p class="app-panel-title">Biyometrik fotoğraflar</p>
-          <p class="app-panel-sub">Toplu yükle — dosya adı kartla otomatik eşleşir</p>
+          <p class="app-panel-sub">Tek tek veya ZIP ile toplu yükle — dosya adı kartla otomatik eşleşir</p>
           <div class="format-box">Dosya adı: <b>TARİH_İSİM_SOYİSİM_PASAPORT</b><br>
           Örn: <code>2026-07-01_JOHN_DOE_AB123456.jpg</code><br>
-          Eşleşme pasaport numarasına göre yapılır.</div>
+          Eşleşme pasaport numarasına göre yapılır.<br>
+          <b>Tek tek</b> foto veya hepsini <b>ZIP</b> olarak yükleyebilirsin.</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
     photo_files = st.file_uploader(
-        "Fotoğrafları yükle (iPhone: Fotoğraf Kitaplığı'ndan seç)",
+        "Fotoğraf veya ZIP yükle (iPhone: Fotoğraf Kitaplığı / Dosyalar)",
         accept_multiple_files=True,
         key="photo_uploader",
-        help="Tüm görüntü formatları desteklenir (JPEG, PNG, HEIC). iPhone fotoğrafları otomatik dönüştürülür.",
+        help="Tek tek görüntü (JPEG/PNG/HEIC) ya da tüm fotoğrafları içeren bir .zip yükleyebilirsin. iPhone fotoğrafları otomatik dönüştürülür.",
     )
     photo_sig = uploaded_signature(photo_files)
     if photo_files and photo_sig != st.session_state.photo_signature:

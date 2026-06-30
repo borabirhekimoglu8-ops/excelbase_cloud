@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import os
 import re
+import zipfile
 from io import BytesIO
 
 import pandas as pd
@@ -56,6 +57,37 @@ ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic", ".heif
 def _norm_key(value: object) -> str:
     """Pasaport / isim eşleştirmesi için sadeleştirir (boşluk, noktalama, büyük/küçük harf)."""
     return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def is_zip(filename: str, data: bytes) -> bool:
+    if filename.lower().endswith(".zip"):
+        return True
+    return len(data) >= 4 and data[:4] == b"PK\x03\x04"
+
+
+def extract_images_from_zip(data: bytes) -> list[tuple[str, bytes]]:
+    """ZIP içindeki tüm görüntüleri (alt klasörler dahil) çıkarır."""
+    out: list[tuple[str, bytes]] = []
+    try:
+        with zipfile.ZipFile(BytesIO(data)) as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                name = info.filename
+                if "__MACOSX" in name:
+                    continue
+                base = os.path.basename(name)
+                if not base or base.startswith("._") or base.startswith("."):
+                    continue
+                try:
+                    content = zf.read(info)
+                except Exception:
+                    continue
+                if looks_like_image(base, content):
+                    out.append((base, content))
+    except Exception:
+        pass
+    return out
 
 
 def looks_like_image(filename: str, data: bytes) -> bool:
