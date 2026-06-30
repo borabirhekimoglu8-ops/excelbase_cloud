@@ -26,7 +26,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "3.4.1"
+APP_VERSION = "3.5.0"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -38,157 +38,208 @@ st.set_page_config(
 APP_CSS = """
 <style>
 :root {
-  --gr-blue: #0d5eaf;
-  --gr-blue-dark: #0a3d7a;
+  --blue: #0d5eaf;
+  --blue-dark: #0a3d7a;
+  --blue-soft: #e0f2fe;
   --surface: #ffffff;
-  --text: #0f172a;
   --muted: #64748b;
-  --border: rgba(13, 94, 175, 0.22);
+  --border: #dbeafe;
+  --shadow: 0 10px 30px rgba(10, 61, 122, 0.10);
 }
 
-/* Sadece üst toolbar gizle — status/loading widget'a dokunma */
-header[data-testid="stHeader"] {
+/* Manage app / deploy / üst bar — status widget hariç */
+header[data-testid="stHeader"],
+[data-testid="stToolbar"],
+[data-testid="stToolbarActions"],
+[data-testid="stHeaderActionElements"],
+[data-testid="stMainMenu"],
+.stAppDeployButton,
+#MainMenu,
+footer {
+  display: none !important;
   visibility: hidden !important;
   height: 0 !important;
   min-height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  pointer-events: none !important;
   overflow: hidden !important;
+  pointer-events: none !important;
 }
-header[data-testid="stHeader"] * {
-  display: none !important;
-}
-footer { visibility: hidden !important; height: 0 !important; }
 
 html, body, [class*="css"] {
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
 
 .stApp {
-  background: linear-gradient(180deg, #bae6fd 0%, #38bdf8 30%, #0284c7 60%, #0c4a6e 100%);
-}
-
-[data-testid="stAppViewContainer"],
-section.main,
-.block-container {
-  position: relative;
-  z-index: 1;
+  background: linear-gradient(165deg, #dbeafe 0%, #7dd3fc 38%, #0284c7 100%);
 }
 
 .block-container {
-  padding-top: 0.25rem;
-  padding-bottom: 2rem;
-  max-width: 820px;
+  padding-top: 0.75rem;
+  padding-bottom: 2.5rem;
+  max-width: 720px;
 }
 
 [data-testid="stAppViewContainer"] > .main {
   background: transparent !important;
 }
 
+/* Sekmeler — pill stil */
 .stTabs [data-baseweb="tab-list"] {
-  gap: 8px;
-  background: transparent;
-  border-bottom: 2px solid rgba(255,255,255,0.35);
+  gap: 6px;
+  background: rgba(255,255,255,0.55);
+  border-radius: 14px;
+  padding: 4px;
+  border: 1px solid rgba(255,255,255,0.8);
 }
 .stTabs [data-baseweb="tab"] {
-  background: rgba(255,255,255,0.3) !important;
-  border-radius: 12px 12px 0 0 !important;
-  color: #e0f2fe !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: var(--blue-dark) !important;
   font-weight: 700 !important;
+  padding: 8px 16px !important;
+  border: none !important;
 }
 .stTabs [aria-selected="true"] {
   background: #fff !important;
-  color: var(--gr-blue) !important;
+  color: var(--blue) !important;
+  box-shadow: 0 2px 8px rgba(13, 94, 175, 0.12) !important;
 }
+.stTabs [data-baseweb="tab-panel"] { padding-top: 0.85rem; }
 
 div[data-testid="stMetric"] {
   background: var(--surface) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 16px !important;
-  padding: 12px 14px !important;
+  border-radius: 14px !important;
+  padding: 10px 12px !important;
+  box-shadow: var(--shadow);
 }
-div[data-testid="stMetricLabel"] { color: var(--gr-blue) !important; font-weight: 700 !important; }
-div[data-testid="stMetricValue"] { color: var(--gr-blue-dark) !important; font-weight: 800 !important; }
+div[data-testid="stMetricLabel"] {
+  color: var(--muted) !important;
+  font-size: 0.7rem !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+div[data-testid="stMetricValue"] { color: var(--blue-dark) !important; font-weight: 800 !important; }
 
 .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
   background: #fff !important;
   border: 1px solid var(--border) !important;
-  border-radius: 14px !important;
-  min-height: 44px;
+  border-radius: 12px !important;
+  min-height: 46px;
+  box-shadow: 0 2px 6px rgba(13, 94, 175, 0.04);
+}
+.stTextInput input:focus {
+  border-color: var(--blue) !important;
+  box-shadow: 0 0 0 3px rgba(13, 94, 175, 0.12) !important;
 }
 
 .stButton > button {
-  border-radius: 14px !important;
-  min-height: 44px;
+  border-radius: 12px !important;
+  min-height: 46px;
   font-weight: 700 !important;
+  border: 1px solid var(--border) !important;
 }
 .stDownloadButton > button[kind="primary"], .stButton > button[kind="primary"] {
-  background: linear-gradient(135deg, #0d5eaf, #0284c7) !important;
+  background: var(--blue) !important;
   color: #fff !important;
   border: none !important;
+  box-shadow: 0 4px 14px rgba(13, 94, 175, 0.28) !important;
 }
 
 [data-testid="stFileUploader"] section {
   background: #fff !important;
-  border: 2px dashed rgba(13, 94, 175, 0.35) !important;
-  border-radius: 16px !important;
+  border: 2px dashed #93c5fd !important;
+  border-radius: 14px !important;
 }
 
-.holo-hero {
-  border-radius: 20px;
-  padding: 1.15rem 1.2rem;
-  margin-bottom: 1rem;
-  background: #fff;
-  border: 2px solid rgba(255,255,255,0.9);
-  box-shadow: 0 12px 32px rgba(10, 61, 122, 0.15);
-  border-left: 6px solid var(--gr-blue);
-}
-.holo-title { margin: 0; font-size: clamp(1.35rem, 4vw, 1.75rem); font-weight: 800; color: var(--gr-blue-dark); }
-.holo-sub { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.88rem; }
-.holo-badge {
-  display: inline-flex; padding: 5px 12px; border-radius: 999px;
-  font-size: 0.72rem; font-weight: 800; background: var(--gr-blue); color: #fff; margin-bottom: 0.45rem;
-}
-
-.holo-card {
-  border-radius: 16px; padding: 1rem; margin-bottom: 0.65rem;
-  background: #fff; border: 1px solid var(--border);
-  box-shadow: 0 6px 20px rgba(10, 61, 122, 0.08);
-}
-.holo-card-top { display: flex; justify-content: space-between; margin-bottom: 0.45rem; }
-.holo-no { font-size: 0.72rem; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: #dbeafe; color: var(--gr-blue); }
-.holo-date { font-size: 0.78rem; color: var(--muted); }
-.holo-name { font-size: 1.05rem; font-weight: 800; color: var(--gr-blue-dark); margin-bottom: 0.2rem; }
-.holo-line { font-size: 0.84rem; color: var(--muted); margin-bottom: 0.5rem; }
-.holo-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.holo-tag { font-size: 0.7rem; font-weight: 700; padding: 4px 9px; border-radius: 999px; background: #eff6ff; color: var(--gr-blue); }
-.holo-fee { margin-top: 0.4rem; font-weight: 700; color: var(--gr-blue); }
-.holo-meta { margin-top: 0.4rem; font-size: 0.68rem; color: #94a3b8; }
-
-.holo-panel {
-  background: #fff; border: 1px solid var(--border); border-radius: 16px;
-  padding: 0.85rem; margin-bottom: 0.75rem;
-}
-.holo-panel-title { margin: 0; font-weight: 800; color: var(--gr-blue-dark); }
-.holo-panel-sub { margin: 0 0 0.5rem; font-size: 0.78rem; color: var(--muted); }
-.holo-active-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 0.5rem; }
-.holo-filter-chip { padding: 4px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; background: #dbeafe; color: var(--gr-blue-dark); }
-
-.greek-stripes {
-  height: 4px; border-radius: 999px; margin-bottom: 0.6rem;
-  background: repeating-linear-gradient(90deg, #0d5eaf 0 24px, #fff 24px 48px);
-}
-
-.format-box {
-  background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px;
-  padding: 0.7rem; font-size: 0.82rem; color: #475569;
-}
-
-div[data-testid="stExpander"] {
+div[data-testid="stExpander"],
+div[data-testid="stForm"] {
   background: #fff !important;
   border: 1px solid var(--border) !important;
   border-radius: 14px !important;
+  box-shadow: var(--shadow);
+}
+
+.app-hero {
+  background: #fff;
+  border-radius: 18px;
+  padding: 1.1rem 1.15rem;
+  margin-bottom: 0.85rem;
+  box-shadow: var(--shadow);
+  border: 1px solid #fff;
+}
+.app-title {
+  margin: 0;
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: var(--blue-dark);
+  letter-spacing: -0.02em;
+}
+.app-sub {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.pax-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 0.95rem 1rem;
+  margin-bottom: 0.6rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.pax-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; }
+.pax-no {
+  font-size: 0.7rem; font-weight: 800; padding: 3px 9px; border-radius: 999px;
+  background: var(--blue-soft); color: var(--blue);
+}
+.pax-date { font-size: 0.76rem; color: var(--muted); font-weight: 600; }
+.pax-name { font-size: 1.02rem; font-weight: 800; color: var(--blue-dark); margin-bottom: 0.15rem; }
+.pax-line { font-size: 0.82rem; color: var(--muted); line-height: 1.4; margin-bottom: 0.45rem; }
+.pax-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.pax-tag {
+  font-size: 0.68rem; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+  background: #f0f9ff; color: var(--blue);
+}
+.pax-fee { margin-top: 0.35rem; font-size: 0.84rem; font-weight: 700; color: var(--blue); }
+.pax-meta { margin-top: 0.35rem; font-size: 0.65rem; color: #94a3b8; }
+
+.app-panel {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.75rem;
+  box-shadow: var(--shadow);
+}
+.app-panel-title { margin: 0; font-weight: 800; color: var(--blue-dark); font-size: 0.95rem; }
+.app-panel-sub { margin: 0.2rem 0 0; font-size: 0.8rem; color: var(--muted); }
+
+.filter-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0.5rem 0; }
+.filter-chip {
+  padding: 4px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+  background: var(--blue-soft); color: var(--blue-dark);
+}
+
+.format-box {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 0.5rem;
+}
+
+.section-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0.5rem 0 0.35rem;
 }
 </style>
 """
@@ -255,13 +306,11 @@ def process_uploads(files, append_mode: bool) -> None:
 
 
 def render_topbar() -> None:
-    st.markdown('<div class="greek-stripes"></div>', unsafe_allow_html=True)
     st.markdown(
         f"""
-        <div class="holo-hero">
-          <span class="holo-badge">🇬🇷 Yunan Devlet Vizesi · Feribot</span>
-          <p class="holo-title">Gate Visa PAX</p>
-          <p class="holo-sub">Ege denizi · Ada hatları · Kapı vizesi yolcu listesi · v{APP_VERSION}</p>
+        <div class="app-hero">
+          <p class="app-title">Gate Visa PAX</p>
+          <p class="app-sub">{TEMPLATE_NAME} · Yolcu kartları · v{APP_VERSION}</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -272,26 +321,15 @@ def render_active_filter_chips(filters: dict[str, str | None]) -> None:
     active = [(field, value) for field, value in filters.items() if value]
     if not active:
         return
-    chips = "".join(
-        f'<span class="holo-filter-chip">{field}: {value}</span>' for field, value in active
-    )
-    st.markdown(f'<div class="holo-active-filters">{chips}</div>', unsafe_allow_html=True)
+    chips = "".join(f'<span class="filter-chip">{field}: {value}</span>' for field, value in active)
+    st.markdown(f'<div class="filter-chips">{chips}</div>', unsafe_allow_html=True)
 
 
 def render_header_filters(base_df: pd.DataFrame) -> None:
     headers = filterable_headers(base_df)
     if not headers:
+        st.caption("Filtrelenecek alan bulunamadı.")
         return
-
-    st.markdown(
-        """
-        <div class="holo-panel">
-          <p class="holo-panel-title">Başlıklara göre filtrele</p>
-          <p class="holo-panel-sub">Excel kolon başlığı seç · değere göre daralt</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
     render_active_filter_chips(st.session_state.column_filters)
 
@@ -315,26 +353,26 @@ def render_header_filters(base_df: pd.DataFrame) -> None:
 
 def render_passenger_card(idx: int, row: pd.Series) -> None:
     card = passenger_card_view(row)
-    tags_html = "".join(f'<span class="holo-tag">{t["label"]}: {t["value"]}</span>' for t in card["tags"])
+    tags_html = "".join(f'<span class="pax-tag">{t["label"]}: {t["value"]}</span>' for t in card["tags"])
     meta = " · ".join(x for x in [card["source"], card["sheet"]] if x)
 
     st.markdown(
         f"""
-        <div class="holo-card">
-          <div class="holo-card-top">
-            <span class="holo-no">{card["status"] or "YOLCU"}</span>
-            <span class="holo-date">{card["date"] or "—"}</span>
+        <div class="pax-card">
+          <div class="pax-card-top">
+            <span class="pax-no">{card["status"] or "Yolcu"}</span>
+            <span class="pax-date">{card["date"] or "—"}</span>
           </div>
-          <div class="holo-name">{card["title"]}</div>
-          <div class="holo-line">{card["subtitle"]}</div>
-          <div class="holo-tags">{tags_html}</div>
-          {"<div class='holo-fee'>" + card["amount"] + "</div>" if card["amount"] else ""}
-          <div class="holo-meta">{meta}</div>
+          <div class="pax-name">{card["title"]}</div>
+          <div class="pax-line">{card["subtitle"]}</div>
+          <div class="pax-tags">{tags_html}</div>
+          {"<div class='pax-fee'>" + card["amount"] + "</div>" if card["amount"] else ""}
+          <div class="pax-meta">{meta}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    if st.button("✦ Yolcu detayı", key=f"open_card_{idx}", use_container_width=True):
+    if st.button("Detay", key=f"open_card_{idx}", use_container_width=True):
         st.session_state.selected_idx = idx
         st.rerun()
 
@@ -355,9 +393,9 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
 
     st.markdown(
         f"""
-        <div class="holo-panel">
-          <p class="holo-title" style="font-size:1.2rem;">{card["title"]}</p>
-          <p class="holo-sub">{card["subtitle"]}</p>
+        <div class="app-panel">
+          <p class="app-panel-title">{card["title"]}</p>
+          <p class="app-panel-sub">{card["subtitle"]}</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -401,9 +439,9 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
 def render_import_tab() -> None:
     st.markdown(
         f"""
-        <div class="holo-panel">
-          <p class="holo-panel-title">Kaynak Import</p>
-          <p class="holo-sub">Sadece <b>{TEMPLATE_NAME}</b> şablonu</p>
+        <div class="app-panel">
+          <p class="app-panel-title">Kaynak Import</p>
+          <p class="app-panel-sub">{TEMPLATE_NAME} şablonu</p>
           <div class="format-box">{expected_headers_markdown()}</div>
         </div>
         """,
@@ -465,7 +503,7 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
 
     search = st.text_input("Ara", placeholder="Ad, pasaport, voucher, tarih…", label_visibility="collapsed")
 
-    with st.expander("▸ Başlıklara göre filtrele", expanded=active_filter_count(st.session_state.column_filters) > 0):
+    with st.expander("Başlıklara göre filtrele", expanded=active_filter_count(st.session_state.column_filters) > 0):
         render_header_filters(base_df)
 
     active = {k: v for k, v in st.session_state.column_filters.items() if v}
@@ -474,13 +512,13 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
     c1, c2, c3 = st.columns(3)
     c1.metric("Yolcu", len(view_df))
     c2.metric("Kaynak", len(st.session_state.loaded_files))
-    c3.metric("Aktif filtre", active_filter_count(st.session_state.column_filters))
+    c3.metric("Filtre", active_filter_count(st.session_state.column_filters))
 
     if view_df.empty:
         st.warning("Filtreye uyan yolcu bulunamadı.")
         return
 
-    st.caption(f"⛴ {len(view_df)} yolcu kartı — {TEMPLATE_NAME}")
+    st.markdown(f'<p class="section-label">{len(view_df)} yolcu</p>', unsafe_allow_html=True)
     for idx, row in view_df.iterrows():
         render_passenger_card(int(idx), row)
 
@@ -521,7 +559,7 @@ st.session_state.base_df = base_df
 if st.session_state.selected_idx is not None and not base_df.empty:
     render_detail_view(st.session_state.base_df)
 else:
-    tab_passengers, tab_import = st.tabs(["⛴ Yolcu Kartları", "📥 Kaynak Import"])
+    tab_passengers, tab_import = st.tabs(["Yolcu Kartları", "Import"])
     with tab_passengers:
         render_passengers_tab(st.session_state.base_df)
     with tab_import:
