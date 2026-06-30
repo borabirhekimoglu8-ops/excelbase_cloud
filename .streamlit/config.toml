@@ -8,10 +8,10 @@ gatherUsageStats = false
 [theme]
 base = "light"
 primaryColor = "#0D5EAF"
-backgroundColor = "#0284C7"
+backgroundColor = "#BAE6FD"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#0F172A"
 font = "sans serif"
 
 [client]
-toolbarMode = "off"
+toolbarMode = "minimal"

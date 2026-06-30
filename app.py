@@ -26,7 +26,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "3.4.0"
+APP_VERSION = "3.4.1"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -40,88 +40,45 @@ APP_CSS = """
 :root {
   --gr-blue: #0d5eaf;
   --gr-blue-dark: #0a3d7a;
-  --gr-blue-light: #3b82f6;
-  --aegean-deep: #0c4a6e;
-  --aegean-mid: #0284c7;
-  --aegean-sky: #bae6fd;
-  --gr-white: #f8fafc;
-  --gr-sand: #fef9c3;
-  --surface: rgba(255, 255, 255, 0.88);
-  --surface-dark: rgba(10, 61, 122, 0.82);
+  --surface: #ffffff;
   --text: #0f172a;
-  --text-light: #e2e8f0;
   --muted: #64748b;
   --border: rgba(13, 94, 175, 0.22);
 }
 
-/* Üst share / deploy header gizle */
-header[data-testid="stHeader"],
-[data-testid="stHeader"],
-[data-testid="stToolbar"],
-.stAppDeployButton,
-#MainMenu,
-footer,
-[data-testid="stStatusWidget"] {
-  display: none !important;
+/* Sadece üst toolbar gizle — status/loading widget'a dokunma */
+header[data-testid="stHeader"] {
   visibility: hidden !important;
   height: 0 !important;
-  max-height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  pointer-events: none !important;
   overflow: hidden !important;
 }
+header[data-testid="stHeader"] * {
+  display: none !important;
+}
+footer { visibility: hidden !important; height: 0 !important; }
 
 html, body, [class*="css"] {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif !important;
 }
 
 .stApp {
-  position: relative;
-  background-color: #0369a1;
-  background-image:
-    linear-gradient(180deg,
-      rgba(186, 230, 253, 0.95) 0%,
-      rgba(56, 189, 248, 0.85) 22%,
-      rgba(2, 132, 199, 0.92) 48%,
-      rgba(12, 74, 110, 0.96) 72%,
-      rgba(10, 61, 122, 1) 100%
-    );
-  background-attachment: fixed;
+  background: linear-gradient(180deg, #bae6fd 0%, #38bdf8 30%, #0284c7 60%, #0c4a6e 100%);
 }
 
-.stApp::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.35;
-  background-image:
-    radial-gradient(ellipse 55% 35% at 85% 8%, rgba(255,255,255,0.9), transparent 60%),
-    radial-gradient(ellipse 40% 25% at 12% 15%, rgba(255,255,255,0.55), transparent 55%);
-}
-
-.stApp::after {
-  content: "";
-  position: fixed;
-  left: 0; right: 0; bottom: 0;
-  height: 42vh;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='%23ffffff' fill-opacity='0.14' d='M0,192L48,197.3C96,203,192,213,288,229.3C384,245,480,267,576,250.7C672,235,768,181,864,181.3C960,181,1056,235,1152,234.7C1248,235,1344,181,1392,154.7L1440,128L1440,320L0,320Z'/%3E%3C/svg%3E") bottom center / cover no-repeat,
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 220'%3E%3Cpath fill='%23ffffff' fill-opacity='0.22' d='M0,96L60,112C120,128,240,160,360,165.3C480,171,600,149,720,138.7C840,128,960,128,1080,122.7C1200,117,1320,107,1380,101.3L1440,96L1440,220L0,220Z'/%3E%3C/svg%3E") bottom center / cover no-repeat;
-  animation: aegean-wave 14s ease-in-out infinite alternate;
-}
-
-@keyframes aegean-wave {
-  from { transform: translateY(0) scale(1); }
-  to { transform: translateY(-6px) scale(1.01); }
-}
-
+[data-testid="stAppViewContainer"],
+section.main,
 .block-container {
   position: relative;
   z-index: 1;
-  padding-top: 0.5rem;
-  padding-bottom: 6.5rem;
+}
+
+.block-container {
+  padding-top: 0.25rem;
+  padding-bottom: 2rem;
   max-width: 820px;
 }
 
@@ -129,23 +86,20 @@ html, body, [class*="css"] {
   background: transparent !important;
 }
 
-/* Tabs — Yunan mavi/beyaz */
 .stTabs [data-baseweb="tab-list"] {
   gap: 8px;
   background: transparent;
   border-bottom: 2px solid rgba(255,255,255,0.35);
 }
 .stTabs [data-baseweb="tab"] {
-  background: rgba(255,255,255,0.25) !important;
+  background: rgba(255,255,255,0.3) !important;
   border-radius: 12px 12px 0 0 !important;
   color: #e0f2fe !important;
   font-weight: 700 !important;
-  padding: 10px 18px !important;
 }
 .stTabs [aria-selected="true"] {
-  background: rgba(255,255,255,0.92) !important;
+  background: #fff !important;
   color: var(--gr-blue) !important;
-  box-shadow: 0 -4px 16px rgba(13, 94, 175, 0.15);
 }
 
 div[data-testid="stMetric"] {
@@ -153,188 +107,88 @@ div[data-testid="stMetric"] {
   border: 1px solid var(--border) !important;
   border-radius: 16px !important;
   padding: 12px 14px !important;
-  box-shadow: 0 8px 24px rgba(10, 61, 122, 0.12);
 }
-div[data-testid="stMetricLabel"] {
-  color: var(--gr-blue) !important;
-  font-size: 0.72rem !important;
-  font-weight: 700 !important;
-  text-transform: uppercase;
-}
-div[data-testid="stMetricValue"] {
-  color: var(--gr-blue-dark) !important;
-  font-weight: 800 !important;
-}
+div[data-testid="stMetricLabel"] { color: var(--gr-blue) !important; font-weight: 700 !important; }
+div[data-testid="stMetricValue"] { color: var(--gr-blue-dark) !important; font-weight: 800 !important; }
 
-.stTextInput input, .stSelectbox div[data-baseweb="select"] > div, textarea {
-  background: rgba(255,255,255,0.95) !important;
+.stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
+  background: #fff !important;
   border: 1px solid var(--border) !important;
   border-radius: 14px !important;
-  color: var(--text) !important;
   min-height: 44px;
-}
-.stTextInput input:focus {
-  border-color: var(--gr-blue) !important;
-  box-shadow: 0 0 0 3px rgba(13, 94, 175, 0.15) !important;
 }
 
 .stButton > button {
   border-radius: 14px !important;
   min-height: 44px;
   font-weight: 700 !important;
-  background: rgba(255,255,255,0.9) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--gr-blue-dark) !important;
 }
 .stDownloadButton > button[kind="primary"], .stButton > button[kind="primary"] {
-  background: linear-gradient(135deg, #0d5eaf 0%, #0284c7 100%) !important;
-  border: none !important;
+  background: linear-gradient(135deg, #0d5eaf, #0284c7) !important;
   color: #fff !important;
-  box-shadow: 0 8px 24px rgba(13, 94, 175, 0.35) !important;
+  border: none !important;
 }
 
 [data-testid="stFileUploader"] section {
-  background: rgba(255,255,255,0.85) !important;
-  border: 2px dashed rgba(13, 94, 175, 0.4) !important;
+  background: #fff !important;
+  border: 2px dashed rgba(13, 94, 175, 0.35) !important;
   border-radius: 16px !important;
 }
 
-/* Hero — feribot + vize */
 .holo-hero {
-  position: relative;
-  overflow: hidden;
-  border-radius: 22px;
-  padding: 1.2rem 1.25rem 1.15rem;
+  border-radius: 20px;
+  padding: 1.15rem 1.2rem;
   margin-bottom: 1rem;
-  background: linear-gradient(135deg, rgba(255,255,255,0.94) 0%, rgba(224,242,254,0.92) 100%);
-  border: 2px solid rgba(255,255,255,0.8);
-  box-shadow: 0 16px 48px rgba(10, 61, 122, 0.2);
+  background: #fff;
+  border: 2px solid rgba(255,255,255,0.9);
+  box-shadow: 0 12px 32px rgba(10, 61, 122, 0.15);
+  border-left: 6px solid var(--gr-blue);
 }
-.holo-hero::after {
-  content: "⛴";
-  position: absolute;
-  right: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 2.8rem;
-  opacity: 0.12;
-}
-.holo-hero::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 0;
-  width: 6px; height: 100%;
-  background: linear-gradient(180deg, #0d5eaf 0%, #ffffff 50%, #0d5eaf 100%);
-  border-radius: 22px 0 0 22px;
-}
-
-.holo-title {
-  margin: 0;
-  font-size: clamp(1.4rem, 4.5vw, 1.85rem);
-  font-weight: 800;
-  color: var(--gr-blue-dark);
-  letter-spacing: -0.02em;
-}
-.holo-sub { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.88rem; line-height: 1.5; }
+.holo-title { margin: 0; font-size: clamp(1.35rem, 4vw, 1.75rem); font-weight: 800; color: var(--gr-blue-dark); }
+.holo-sub { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.88rem; }
 .holo-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 800;
-  background: var(--gr-blue);
-  color: #fff;
-  margin-bottom: 0.5rem;
+  display: inline-flex; padding: 5px 12px; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 800; background: var(--gr-blue); color: #fff; margin-bottom: 0.45rem;
 }
 
 .holo-card {
-  border-radius: 18px;
-  padding: 1rem 1.05rem;
-  margin-bottom: 0.7rem;
-  background: rgba(255,255,255,0.93);
-  border: 1px solid var(--border);
-  box-shadow: 0 10px 32px rgba(10, 61, 122, 0.1);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border-radius: 16px; padding: 1rem; margin-bottom: 0.65rem;
+  background: #fff; border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(10, 61, 122, 0.08);
 }
-.holo-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 16px 40px rgba(13, 94, 175, 0.18);
-  border-color: rgba(13, 94, 175, 0.45);
-}
-
-.holo-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-.holo-no {
-  font-size: 0.72rem; font-weight: 800; padding: 4px 10px; border-radius: 999px;
-  background: #dbeafe; border: 1px solid #93c5fd; color: var(--gr-blue);
-}
-.holo-date { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
-.holo-name { font-size: 1.08rem; font-weight: 800; color: var(--gr-blue-dark); margin-bottom: 0.25rem; }
-.holo-line { font-size: 0.84rem; color: var(--muted); line-height: 1.45; margin-bottom: 0.55rem; }
+.holo-card-top { display: flex; justify-content: space-between; margin-bottom: 0.45rem; }
+.holo-no { font-size: 0.72rem; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: #dbeafe; color: var(--gr-blue); }
+.holo-date { font-size: 0.78rem; color: var(--muted); }
+.holo-name { font-size: 1.05rem; font-weight: 800; color: var(--gr-blue-dark); margin-bottom: 0.2rem; }
+.holo-line { font-size: 0.84rem; color: var(--muted); margin-bottom: 0.5rem; }
 .holo-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.holo-tag {
-  font-size: 0.7rem; font-weight: 700; padding: 4px 10px; border-radius: 999px;
-  background: #eff6ff; border: 1px solid #bfdbfe; color: var(--gr-blue);
-}
-.holo-fee { margin-top: 0.45rem; font-size: 0.88rem; font-weight: 700; color: var(--gr-blue); }
-.holo-meta { margin-top: 0.45rem; font-size: 0.68rem; color: #94a3b8; }
+.holo-tag { font-size: 0.7rem; font-weight: 700; padding: 4px 9px; border-radius: 999px; background: #eff6ff; color: var(--gr-blue); }
+.holo-fee { margin-top: 0.4rem; font-weight: 700; color: var(--gr-blue); }
+.holo-meta { margin-top: 0.4rem; font-size: 0.68rem; color: #94a3b8; }
 
 .holo-panel {
-  background: rgba(255,255,255,0.92);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  padding: 0.85rem 0.95rem;
-  margin-bottom: 0.85rem;
-  box-shadow: 0 8px 28px rgba(10, 61, 122, 0.08);
+  background: #fff; border: 1px solid var(--border); border-radius: 16px;
+  padding: 0.85rem; margin-bottom: 0.75rem;
 }
-.holo-panel-title { margin: 0 0 0.15rem; font-size: 0.92rem; font-weight: 800; color: var(--gr-blue-dark); }
-.holo-panel-sub { margin: 0 0 0.65rem; font-size: 0.78rem; color: var(--muted); }
+.holo-panel-title { margin: 0; font-weight: 800; color: var(--gr-blue-dark); }
+.holo-panel-sub { margin: 0 0 0.5rem; font-size: 0.78rem; color: var(--muted); }
+.holo-active-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 0.5rem; }
+.holo-filter-chip { padding: 4px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; background: #dbeafe; color: var(--gr-blue-dark); }
 
-.holo-active-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 0.65rem; }
-.holo-filter-chip {
-  padding: 5px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
-  background: #dbeafe; border: 1px solid #93c5fd; color: var(--gr-blue-dark);
-}
-
-.holo-search-wrap {
-  margin-bottom: 0.75rem;
-  padding: 2px;
-  border-radius: 16px;
-  background: linear-gradient(90deg, #0d5eaf, #38bdf8, #0d5eaf);
-}
-
-.bottom-bar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 999;
-  padding: 0.7rem 0.9rem calc(0.7rem + env(safe-area-inset-bottom));
-  background: rgba(255,255,255,0.94);
-  backdrop-filter: blur(16px);
-  border-top: 2px solid rgba(13, 94, 175, 0.2);
-  box-shadow: 0 -8px 32px rgba(10, 61, 122, 0.15);
+.greek-stripes {
+  height: 4px; border-radius: 999px; margin-bottom: 0.6rem;
+  background: repeating-linear-gradient(90deg, #0d5eaf 0 24px, #fff 24px 48px);
 }
 
 .format-box {
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
-  border-radius: 14px;
-  padding: 0.75rem 0.85rem;
-  font-size: 0.82rem;
-  color: #475569;
-  line-height: 1.55;
+  background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px;
+  padding: 0.7rem; font-size: 0.82rem; color: #475569;
 }
 
 div[data-testid="stExpander"] {
-  background: rgba(255,255,255,0.9) !important;
+  background: #fff !important;
   border: 1px solid var(--border) !important;
-  border-radius: 16px !important;
-}
-
-.greek-stripes {
-  height: 4px;
-  border-radius: 999px;
-  margin-bottom: 0.65rem;
-  background: repeating-linear-gradient(90deg, #0d5eaf 0 24px, #ffffff 24px 48px);
-  opacity: 0.85;
+  border-radius: 14px !important;
 }
 </style>
 """
@@ -609,9 +463,7 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
         st.info("Henüz yolcu yok. **Kaynak Import** sekmesinden Excel yükle.")
         return
 
-    st.markdown('<div class="holo-search-wrap">', unsafe_allow_html=True)
-    search = st.text_input("Ara", placeholder="🔍  Ad, pasaport, voucher, tarih…", label_visibility="collapsed")
-    st.markdown("</div>", unsafe_allow_html=True)
+    search = st.text_input("Ara", placeholder="Ad, pasaport, voucher, tarih…", label_visibility="collapsed")
 
     with st.expander("▸ Başlıklara göre filtrele", expanded=active_filter_count(st.session_state.column_filters) > 0):
         render_header_filters(base_df)
@@ -637,11 +489,11 @@ def render_bottom_bar(base_df: pd.DataFrame) -> None:
     if base_df.empty:
         return
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
-    st.markdown('<div class="bottom-bar">', unsafe_allow_html=True)
+    st.divider()
     c1, c2 = st.columns(2)
     with c1:
         st.download_button(
-            "⬇ Excel",
+            "Excel indir",
             data=dataframe_to_xlsx(base_df),
             file_name=f"yolcular-{stamp}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -651,14 +503,13 @@ def render_bottom_bar(base_df: pd.DataFrame) -> None:
         )
     with c2:
         st.download_button(
-            "⬇ CSV",
+            "CSV indir",
             data=dataframe_to_csv(base_df),
             file_name=f"yolcular-{stamp}.csv",
             mime="text/csv",
             use_container_width=True,
             key="bottom_csv",
         )
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 init_state()
