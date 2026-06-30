@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import re
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any, Iterable
 
 import pandas as pd
@@ -99,6 +100,80 @@ def normalize(value: Any) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def is_blank(value: Any) -> bool:
+    if value is None or pd.isna(value):
+        return True
+    text = str(value).strip()
+    return not text or text.lower() == "nan"
+
+
+def looks_like_number(value: Any) -> bool:
+    if is_blank(value):
+        return False
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return True
+    text = str(value).strip()
+    cleaned = text.replace(".", "").replace(",", ".")
+    try:
+        float(cleaned)
+        return True
+    except ValueError:
+        return False
+
+
+def score_header_row(row: pd.Series, next_row: pd.Series | None) -> float:
+    cells = [value for value in row if not is_blank(value)]
+    if len(cells) < 2:
+        return -1.0
+
+    non_numeric = sum(1 for value in cells if not looks_like_number(value))
+    ratio = non_numeric / len(cells)
+    unique = len({normalize(str(value)) for value in cells})
+    score = ratio * 10 + len(cells) + unique
+
+    if next_row is not None:
+        next_cells = [value for value in next_row if not is_blank(value)]
+        if len(next_cells) >= 2:
+            score += 3
+            if any(looks_like_number(value) for value in next_cells):
+                score += 2
+    return score
+
+
+def detect_header_row_index(raw: pd.DataFrame, max_rows: int = 30) -> int:
+    if raw.empty:
+        return 0
+
+    best_idx = 0
+    best_score = -1.0
+    limit = min(len(raw), max_rows)
+    for idx in range(limit):
+        next_row = raw.iloc[idx + 1] if idx + 1 < len(raw) else None
+        score = score_header_row(raw.iloc[idx], next_row)
+        if score > best_score:
+            best_score = score
+            best_idx = idx
+    return best_idx
+
+
+def format_cell_value(value: Any) -> Any:
+    if is_blank(value):
+        return ""
+    if isinstance(value, pd.Timestamp):
+        if value.hour == 0 and value.minute == 0 and value.second == 0:
+            return value.strftime("%Y-%m-%d")
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(value, datetime):
+        if value.hour == 0 and value.minute == 0 and value.second == 0:
+            return value.strftime("%Y-%m-%d")
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(value, date):
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, float) and not isinstance(value, bool) and value.is_integer():
+        return int(value)
+    return value
+
+
 def make_unique_columns(columns: Iterable[Any]) -> list[str]:
     seen: dict[str, int] = {}
     out: list[str] = []
@@ -117,10 +192,23 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(how="all")
     df = df.dropna(axis=1, how="all")
     df.columns = make_unique_columns(df.columns)
-    # Convert Excel timestamps and values to stable editable strings, but keep empty values blank.
     for col in df.columns:
-        df[col] = df[col].map(lambda x: "" if pd.isna(x) else x)
+        df[col] = df[col].map(format_cell_value)
     return df.reset_index(drop=True)
+
+
+def read_excel_sheet(excel: pd.ExcelFile, sheet: str) -> pd.DataFrame:
+    raw = pd.read_excel(excel, sheet_name=sheet, header=None, dtype=object)
+    raw = raw.dropna(how="all").dropna(axis=1, how="all")
+    if raw.empty:
+        return pd.DataFrame()
+
+    header_idx = detect_header_row_index(raw)
+    header = raw.iloc[header_idx].tolist()
+    data = raw.iloc[header_idx + 1 :].copy()
+    data.columns = make_unique_columns(header)
+    data = data.dropna(how="all")
+    return clean_dataframe(data)
 
 
 def read_csv_bytes(raw: bytes) -> pd.DataFrame:
@@ -159,8 +247,7 @@ def read_file_bytes(file_name: str, raw: bytes) -> list[ReadResult]:
     results: list[ReadResult] = []
     for sheet in excel.sheet_names:
         try:
-            df = pd.read_excel(excel, sheet_name=sheet, dtype=object)
-            df = clean_dataframe(df)
+            df = read_excel_sheet(excel, sheet)
             if len(df) > 0 and len(df.columns) > 0:
                 results.append(ReadResult(file_name, str(sheet), len(df), len(df.columns), df))
         except Exception as exc:
@@ -196,6 +283,7 @@ def best_header_match(target: str, headers: list[str]) -> str | None:
 
 def apply_preset(df: pd.DataFrame, preset_columns: list[str], file_name: str, sheet_name: str) -> pd.DataFrame:
     headers = list(df.columns)
+    used_headers: set[str] = set()
     out = pd.DataFrame(index=df.index)
     for col in preset_columns:
         if col == "Kaynak Dosya":
@@ -203,8 +291,13 @@ def apply_preset(df: pd.DataFrame, preset_columns: list[str], file_name: str, sh
         elif col == "Sayfa":
             out[col] = sheet_name
         else:
-            match = best_header_match(col, headers)
-            out[col] = df[match] if match else ""
+            available = [header for header in headers if header not in used_headers]
+            match = best_header_match(col, available)
+            if match:
+                used_headers.add(match)
+                out[col] = df[match]
+            else:
+                out[col] = ""
     return out.reset_index(drop=True)
 
 
@@ -228,7 +321,7 @@ def normalize_for_export(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out.columns = make_unique_columns(out.columns)
     for col in out.columns:
-        out[col] = out[col].map(lambda x: "" if pd.isna(x) else x)
+        out[col] = out[col].map(format_cell_value)
     return out
 
 
