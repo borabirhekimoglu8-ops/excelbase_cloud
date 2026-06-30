@@ -6,7 +6,6 @@ import pandas as pd
 import streamlit as st
 
 from excelbase_core import (
-    DEFAULT_PRESET,
     PRESETS,
     ReadResult,
     dataframe_to_csv,
@@ -15,27 +14,386 @@ from excelbase_core import (
     read_file_bytes,
 )
 
-st.set_page_config(page_title="ExcelBase", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
-
-st.markdown(
-    """
-    <style>
-    :root { --card:#ffffff; --line:#e7eaf0; --muted:#667085; --ink:#101828; --brand:#2563eb; }
-    .block-container { padding-top: 1.3rem; padding-bottom: 2rem; max-width: 1420px; }
-    [data-testid="stSidebar"] { background: #f8fafc; border-right: 1px solid #e5e7eb; }
-    .app-title { font-size: 2.05rem; font-weight: 800; letter-spacing: -0.04em; margin: 0; color: var(--ink); }
-    .app-subtitle { color: var(--muted); margin-top: .25rem; margin-bottom: 1rem; }
-    .card { background: var(--card); border:1px solid var(--line); border-radius:18px; padding:16px 18px; box-shadow:0 8px 28px rgba(16,24,40,.05); margin-bottom: 12px; }
-    .small-muted { color: var(--muted); font-size:.92rem; }
-    .ok-pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#ecfdf3; color:#027a48; font-weight:650; font-size:.86rem; }
-    .warn-pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#fffaeb; color:#b54708; font-weight:650; font-size:.86rem; }
-    div[data-testid="stMetric"] { background: #fff; border:1px solid #e7eaf0; border-radius:16px; padding: 12px 14px; box-shadow:0 4px 18px rgba(16,24,40,.04); }
-    div[data-testid="stDataFrame"] { border-radius: 16px; overflow: hidden; }
-    .stButton>button, .stDownloadButton>button { border-radius: 12px; font-weight: 700; }
-    </style>
-    """,
-    unsafe_allow_html=True,
+st.set_page_config(
+    page_title="ExcelBase",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
+
+APP_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-soft: #f8fafc;
+  --line: #e2e8f0;
+  --muted: #64748b;
+  --ink: #0f172a;
+  --brand: #4f46e5;
+  --brand-soft: #eef2ff;
+  --brand-dark: #3730a3;
+  --ok: #059669;
+  --ok-soft: #ecfdf5;
+  --warn: #d97706;
+  --warn-soft: #fffbeb;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.07);
+  --shadow-lg: 0 18px 40px rgba(15, 23, 42, 0.08);
+  --radius: 18px;
+  --radius-sm: 12px;
+}
+
+html, body, [class*="css"] {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+.stApp {
+  background:
+    radial-gradient(900px 420px at 0% -10%, rgba(79, 70, 229, 0.10), transparent 55%),
+    radial-gradient(700px 360px at 100% 0%, rgba(14, 165, 233, 0.08), transparent 50%),
+    var(--bg);
+}
+
+.block-container {
+  padding-top: 1rem;
+  padding-bottom: 5.5rem;
+  max-width: 1280px;
+}
+
+[data-testid="stSidebar"] {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-right: 1px solid var(--line);
+  box-shadow: 8px 0 24px rgba(15, 23, 42, 0.04);
+}
+
+[data-testid="stSidebar"] .block-container {
+  padding-top: 1.25rem;
+}
+
+[data-testid="stHeader"] {
+  background: rgba(244, 246, 251, 0.82);
+  backdrop-filter: blur(10px);
+}
+
+.hero {
+  background: linear-gradient(135deg, #ffffff 0%, #f8faff 52%, #eef2ff 100%);
+  border: 1px solid rgba(79, 70, 229, 0.12);
+  border-radius: 24px;
+  padding: 1.25rem 1.35rem 1.15rem;
+  box-shadow: var(--shadow-md);
+  margin-bottom: 1rem;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.55rem;
+}
+
+.app-title {
+  font-size: clamp(1.65rem, 4vw, 2.15rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.app-subtitle {
+  color: var(--muted);
+  margin: 0.45rem 0 0;
+  font-size: clamp(0.92rem, 2.5vw, 1rem);
+  line-height: 1.5;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 0.75rem;
+}
+
+.card-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 0.2rem;
+}
+
+.card-desc {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.35rem 0 0.85rem;
+}
+
+.section-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.section-hint {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.metric-grid [data-testid="stMetric"] {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 0.95rem;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.metric-grid [data-testid="stMetric"]:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.metric-grid [data-testid="stMetricLabel"] {
+  color: var(--muted) !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.metric-grid [data-testid="stMetricValue"] {
+  color: var(--ink) !important;
+  font-weight: 800 !important;
+  font-size: 1.45rem !important;
+}
+
+.table-shell {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 0.35rem;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.table-shell-caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.55rem 0.75rem 0.35rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.table-scroll-hint {
+  display: none;
+  margin: 0 0 0.65rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+div[data-testid="stDataFrame"],
+div[data-testid="stDataEditor"] {
+  border-radius: 16px !important;
+  overflow: hidden;
+}
+
+div[data-testid="stDataFrame"] > div,
+div[data-testid="stDataEditor"] > div {
+  border-radius: 16px !important;
+}
+
+.stTextInput input {
+  border-radius: 12px !important;
+  border: 1px solid var(--line) !important;
+  min-height: 44px;
+  background: var(--surface-soft) !important;
+}
+
+.stTextInput input:focus {
+  border-color: rgba(79, 70, 229, 0.45) !important;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12) !important;
+}
+
+.stButton > button,
+.stDownloadButton > button {
+  border-radius: 12px !important;
+  font-weight: 700 !important;
+  min-height: 44px;
+  border: 1px solid var(--line) !important;
+  background: var(--surface) !important;
+  color: var(--ink) !important;
+  transition: all 0.15s ease !important;
+}
+
+.stDownloadButton > button {
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 8px 18px rgba(79, 70, 229, 0.25) !important;
+}
+
+.stDownloadButton > button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 22px rgba(79, 70, 229, 0.28) !important;
+}
+
+.stButton > button:hover {
+  border-color: rgba(79, 70, 229, 0.25) !important;
+  background: #fafbff !important;
+}
+
+[data-testid="stFileUploader"] section {
+  border-radius: 16px !important;
+  border: 1.5px dashed rgba(79, 70, 229, 0.28) !important;
+  background: #fafbff !important;
+  padding: 0.35rem !important;
+}
+
+[data-testid="stFileUploader"] section:hover {
+  border-color: rgba(79, 70, 229, 0.55) !important;
+  background: #f5f7ff !important;
+}
+
+.log-item-ok,
+.log-item-info {
+  border-radius: 12px;
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.log-item-ok {
+  background: var(--ok-soft);
+  color: #047857;
+  border: 1px solid rgba(5, 150, 105, 0.15);
+}
+
+.log-item-info {
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  border: 1px solid rgba(79, 70, 229, 0.12);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 2.2rem 1rem 2rem;
+  border-radius: 20px;
+  border: 1px dashed rgba(100, 116, 139, 0.35);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.empty-icon {
+  font-size: 2.2rem;
+  margin-bottom: 0.35rem;
+}
+
+.empty-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0;
+}
+
+.empty-desc {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0.35rem 0 0;
+}
+
+.mobile-actions {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  padding: 0.65rem 0.85rem calc(0.65rem + env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.sidebar-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.35rem;
+}
+
+@media (max-width: 768px) {
+  .block-container {
+    padding-top: 0.65rem;
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+
+  .hero {
+    border-radius: 18px;
+    padding: 1rem;
+  }
+
+  .table-scroll-hint {
+    display: block;
+  }
+
+  .mobile-actions {
+    display: block;
+  }
+
+  .desktop-actions {
+    display: none;
+  }
+
+  div[data-testid="column"] {
+    min-width: 0 !important;
+  }
+
+  .metric-grid [data-testid="stMetricValue"] {
+    font-size: 1.2rem !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .mobile-actions {
+    display: none !important;
+  }
+}
+</style>
+"""
+
+st.markdown(APP_CSS, unsafe_allow_html=True)
 
 
 def init_state() -> None:
@@ -123,14 +481,30 @@ def make_demo() -> pd.DataFrame:
     )
 
 
-init_state()
+def render_hero() -> None:
+    st.markdown(
+        """
+        <div class="hero">
+          <div class="hero-badge">📱 Mobil uyumlu · Excel & CSV</div>
+          <p class="app-title">ExcelBase</p>
+          <p class="app-subtitle">Excel yükle, tek tabloda birleştir, telefondan düzenle ve indir.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-st.markdown('<p class="app-title">ExcelBase</p>', unsafe_allow_html=True)
-st.markdown('<p class="app-subtitle">Excel yükle · tek tabloya çevir · telefonda düzenle · Excel olarak indir</p>', unsafe_allow_html=True)
+
+def render_log_item(text: str, kind: str = "ok") -> None:
+    css_class = "log-item-info" if kind == "info" else "log-item-ok"
+    st.markdown(f'<div class="{css_class}">{text}</div>', unsafe_allow_html=True)
+
+
+init_state()
+render_hero()
 
 with st.sidebar:
-    st.markdown("### Yükleme")
-    mode = st.selectbox("Tablo modu", list(PRESETS.keys()), index=0)
+    st.markdown('<p class="sidebar-label">Yükleme</p>', unsafe_allow_html=True)
+    mode = st.selectbox("Tablo modu", list(PRESETS.keys()), index=0, label_visibility="collapsed")
     append_mode = st.toggle("Yeni yüklemeleri mevcut tabloya ekle", value=False)
     files = st.file_uploader(
         "Excel / CSV seç",
@@ -146,102 +520,169 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    if st.button("Demo tabloyu aç", use_container_width=True):
-        st.session_state.base_df = make_demo()
-        st.session_state.read_log = ["✓ Demo tablo açıldı: 2 satır, 12 kolon"]
-        st.session_state.errors = []
-        st.rerun()
-
-    if st.button("Tabloyu sıfırla", use_container_width=True):
-        st.session_state.base_df = pd.DataFrame()
-        st.session_state.last_signature = ""
-        st.session_state.read_log = []
-        st.session_state.errors = []
-        st.session_state.loaded_files = []
-        st.rerun()
+    btn_a, btn_b = st.columns(2)
+    with btn_a:
+        if st.button("Demo", use_container_width=True, help="Örnek tabloyu aç"):
+            st.session_state.base_df = make_demo()
+            st.session_state.read_log = ["✓ Demo tablo açıldı: 2 satır, 12 kolon"]
+            st.session_state.errors = []
+            st.rerun()
+    with btn_b:
+        if st.button("Sıfırla", use_container_width=True, help="Tabloyu temizle"):
+            st.session_state.base_df = pd.DataFrame()
+            st.session_state.last_signature = ""
+            st.session_state.read_log = []
+            st.session_state.errors = []
+            st.session_state.loaded_files = []
+            st.rerun()
 
     st.divider()
-    st.markdown("### Mantık")
-    st.caption("Varsayılan mod Excel başlıklarını aynen alır. Kapı Vizesi / Feribot modları kolonları otomatik eşleştirir.")
+    st.caption("Varsayılan mod Excel başlıklarını aynen alır. Diğer modlar kolonları otomatik eşleştirir.")
 
-log_col, action_col = st.columns([1.2, 1])
+log_col, action_col = st.columns([1.15, 0.85])
 with log_col:
-    st.markdown('<div class="card"><b>Durum</b><br><span class="small-muted">Yükleme sonucu ve hata kaydı burada görünür.</span></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="card"><p class="card-title">Durum</p><p class="card-desc">Yükleme sonucu ve hata kaydı.</p></div>',
+        unsafe_allow_html=True,
+    )
     if st.session_state.read_log:
-        for item in st.session_state.read_log[:8]:
-            st.success(item)
-        if len(st.session_state.read_log) > 8:
-            st.info(f"+ {len(st.session_state.read_log) - 8} sayfa daha okundu.")
+        for item in st.session_state.read_log[:6]:
+            render_log_item(item)
+        if len(st.session_state.read_log) > 6:
+            render_log_item(f"+ {len(st.session_state.read_log) - 6} sayfa daha okundu.", kind="info")
     elif st.session_state.base_df.empty:
-        st.info("Henüz dosya yüklenmedi. Soldan Excel/CSV seç veya demo tabloyu aç.")
+        st.info("Henüz dosya yok. Sol üst menüden ☰ ile dosya yükle veya Demo’ya bas.")
     if st.session_state.errors:
         for item in st.session_state.errors:
             st.error(item)
 
 with action_col:
-    st.markdown('<div class="card"><b>Çıktı</b><br><span class="small-muted">Düzenledikten sonra Excel veya CSV indir.</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="desktop-actions">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="card"><p class="card-title">Çıktı</p><p class="card-desc">Düzenledikten sonra indir.</p></div>',
+        unsafe_allow_html=True,
+    )
     if not st.session_state.base_df.empty:
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
         st.download_button(
-            "Excel indir",
+            "⬇ Excel indir",
             data=dataframe_to_xlsx(st.session_state.base_df),
             file_name=f"excelbase-{stamp}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
         st.download_button(
-            "CSV indir",
+            "⬇ CSV indir",
             data=dataframe_to_csv(st.session_state.base_df),
             file_name=f"excelbase-{stamp}.csv",
             mime="text/csv",
             use_container_width=True,
+            type="secondary",
         )
     else:
-        st.button("Excel indir", disabled=True, use_container_width=True)
-        st.button("CSV indir", disabled=True, use_container_width=True)
+        st.button("⬇ Excel indir", disabled=True, use_container_width=True)
+        st.button("⬇ CSV indir", disabled=True, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 base_df = st.session_state.base_df.copy()
 
+st.markdown('<div class="metric-grid">', unsafe_allow_html=True)
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Satır", len(base_df))
 m2.metric("Kolon", len(base_df.columns))
-m3.metric("Yüklenen dosya", len(st.session_state.loaded_files))
+m3.metric("Dosya", len(st.session_state.loaded_files))
 m4.metric("Hata", len(st.session_state.errors))
+st.markdown("</div>", unsafe_allow_html=True)
 
 if not base_df.empty:
-    st.markdown("### Base")
-    tools = st.columns([2, 1, 1, 1])
-    search = tools[0].text_input("Ara", placeholder="İsim, hat, acente, PNR…")
-    if tools[1].button("Tekrarlı satırları sil", use_container_width=True):
-        st.session_state.base_df = st.session_state.base_df.drop_duplicates().reset_index(drop=True)
-        st.rerun()
-    if tools[2].button("Boş satırları sil", use_container_width=True):
-        st.session_state.base_df = st.session_state.base_df.replace("", pd.NA).dropna(how="all").fillna("").reset_index(drop=True)
-        st.rerun()
-    if tools[3].button("Bir boş satır ekle", use_container_width=True):
-        empty = pd.DataFrame([{c: "" for c in st.session_state.base_df.columns}])
-        st.session_state.base_df = pd.concat([st.session_state.base_df, empty], ignore_index=True)
-        st.rerun()
+    st.markdown(
+        """
+        <div class="section-head">
+          <p class="section-title">Tablo</p>
+          <p class="section-hint">Hücrelere dokunarak düzenle</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    search = st.text_input("Ara", placeholder="İsim, hat, acente, PNR…", label_visibility="collapsed")
+
+    tool_a, tool_b = st.columns(2)
+    with tool_a:
+        if st.button("Tekrarlı satırları sil", use_container_width=True):
+            st.session_state.base_df = st.session_state.base_df.drop_duplicates().reset_index(drop=True)
+            st.rerun()
+        if st.button("Boş satırları sil", use_container_width=True):
+            st.session_state.base_df = (
+                st.session_state.base_df.replace("", pd.NA).dropna(how="all").fillna("").reset_index(drop=True)
+            )
+            st.rerun()
+    with tool_b:
+        if st.button("Boş satır ekle", use_container_width=True):
+            empty = pd.DataFrame([{c: "" for c in st.session_state.base_df.columns}])
+            st.session_state.base_df = pd.concat([st.session_state.base_df, empty], ignore_index=True)
+            st.rerun()
 
     view_df = base_df
     if search:
         mask = view_df.apply(lambda row: row.astype(str).str.contains(search, case=False, na=False).any(), axis=1)
         view_df = view_df.loc[mask]
-        st.caption(f"Arama görünümü: {len(view_df)} satır. Aramayı temizleyince tüm tablo düzenlenir.")
+        st.caption(f"Arama: {len(view_df)} satır gösteriliyor. Aramayı temizleyince tüm tablo düzenlenir.")
 
-    # Avoid losing hidden rows while filtered. Full-table editing updates base; filtered editing is read-only.
+    st.markdown(
+        '<p class="table-scroll-hint">↔ Mobilde tabloyu yatay kaydırabilirsin. Kolon başlıkları sabit kalır.</p>',
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="table-shell">', unsafe_allow_html=True)
+
+    table_height = 520 if len(base_df) > 8 else 380
+
     if search:
-        st.dataframe(view_df, use_container_width=True, height=560, hide_index=True)
+        st.dataframe(view_df, use_container_width=True, height=table_height, hide_index=True)
     else:
         edited = st.data_editor(
             base_df,
             use_container_width=True,
-            height=620,
+            height=table_height,
             num_rows="dynamic",
             hide_index=True,
             key="main_editor",
         )
         st.session_state.base_df = edited
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if not st.session_state.base_df.empty:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M")
+        st.markdown('<div class="mobile-actions">', unsafe_allow_html=True)
+        dl1, dl2 = st.columns(2)
+        with dl1:
+            st.download_button(
+                "Excel",
+                data=dataframe_to_xlsx(st.session_state.base_df),
+                file_name=f"excelbase-{stamp}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="mobile_xlsx",
+            )
+        with dl2:
+            st.download_button(
+                "CSV",
+                data=dataframe_to_csv(st.session_state.base_df),
+                file_name=f"excelbase-{stamp}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="mobile_csv",
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
 else:
-    st.markdown("### Base")
-    st.warning("Tablo yok. Sol menüden dosya yükle veya demo tabloyu aç.")
+    st.markdown(
+        """
+        <div class="empty-state">
+          <div class="empty-icon">📂</div>
+          <p class="empty-title">Henüz tablo yok</p>
+          <p class="empty-desc">Sol üstteki ☰ menüsünden Excel/CSV yükle veya Demo ile başla.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
