@@ -36,7 +36,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.2.2"
+APP_VERSION = "4.2.3"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -411,13 +411,9 @@ components.html(
           Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
           head.appendChild(el);
         };
-        add('link', { rel: 'manifest', href: '/app/static/manifest.json' });
         add('link', { rel: 'apple-touch-icon', href: '/app/static/icon-180.png' });
         add('link', { rel: 'apple-touch-icon', sizes: '180x180', href: '/app/static/icon-180.png' });
         add('link', { rel: 'icon', type: 'image/png', href: '/app/static/icon-192.png' });
-        add('meta', { name: 'apple-mobile-web-app-capable', content: 'yes' });
-        add('meta', { name: 'mobile-web-app-capable', content: 'yes' });
-        add('meta', { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' });
         add('meta', { name: 'apple-mobile-web-app-title', content: 'Gate Visa' });
         add('meta', { name: 'application-name', content: 'Gate Visa' });
         add('meta', { name: 'theme-color', content: '#0d5eaf' });

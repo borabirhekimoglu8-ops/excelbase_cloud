@@ -4,7 +4,7 @@
   "description": "Kapı vizesi yolcu listesi ve biyometrik foto yönetimi",
   "start_url": "../",
   "scope": "../",
-  "display": "standalone",
+  "display": "browser",
   "orientation": "portrait",
   "background_color": "#dbeafe",
   "theme_color": "#0d5eaf",
