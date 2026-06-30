@@ -6,12 +6,12 @@ enableXsrfProtection = true
 gatherUsageStats = false
 
 [theme]
-base = "dark"
-primaryColor = "#22D3EE"
-backgroundColor = "#070B14"
-secondaryBackgroundColor = "#0F172A"
-textColor = "#E2E8F0"
+base = "light"
+primaryColor = "#0D5EAF"
+backgroundColor = "#0284C7"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F172A"
 font = "sans serif"
 
 [client]
-toolbarMode = "minimal"
+toolbarMode = "off"

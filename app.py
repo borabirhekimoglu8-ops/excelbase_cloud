@@ -26,7 +26,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.4.0"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -38,276 +38,303 @@ st.set_page_config(
 APP_CSS = """
 <style>
 :root {
-  --holo-bg: #070b14;
-  --holo-surface: rgba(15, 23, 42, 0.72);
-  --holo-border: rgba(148, 163, 184, 0.18);
-  --holo-text: #e2e8f0;
-  --holo-muted: #94a3b8;
-  --holo-cyan: #22d3ee;
-  --holo-violet: #a78bfa;
-  --holo-pink: #f472b6;
-  --holo-blue: #60a5fa;
+  --gr-blue: #0d5eaf;
+  --gr-blue-dark: #0a3d7a;
+  --gr-blue-light: #3b82f6;
+  --aegean-deep: #0c4a6e;
+  --aegean-mid: #0284c7;
+  --aegean-sky: #bae6fd;
+  --gr-white: #f8fafc;
+  --gr-sand: #fef9c3;
+  --surface: rgba(255, 255, 255, 0.88);
+  --surface-dark: rgba(10, 61, 122, 0.82);
+  --text: #0f172a;
+  --text-light: #e2e8f0;
+  --muted: #64748b;
+  --border: rgba(13, 94, 175, 0.22);
+}
+
+/* Üst share / deploy header gizle */
+header[data-testid="stHeader"],
+[data-testid="stHeader"],
+[data-testid="stToolbar"],
+.stAppDeployButton,
+#MainMenu,
+footer,
+[data-testid="stStatusWidget"] {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
 }
 
 html, body, [class*="css"] {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif !important;
-  color: var(--holo-text);
 }
 
 .stApp {
-  background:
-    radial-gradient(ellipse 120% 80% at 10% -20%, rgba(34, 211, 238, 0.18), transparent 50%),
-    radial-gradient(ellipse 90% 60% at 90% 0%, rgba(167, 139, 250, 0.16), transparent 45%),
-    radial-gradient(ellipse 70% 50% at 50% 100%, rgba(244, 114, 182, 0.10), transparent 40%),
-    linear-gradient(180deg, #070b14 0%, #0c1222 45%, #070b14 100%);
+  position: relative;
+  background-color: #0369a1;
+  background-image:
+    linear-gradient(180deg,
+      rgba(186, 230, 253, 0.95) 0%,
+      rgba(56, 189, 248, 0.85) 22%,
+      rgba(2, 132, 199, 0.92) 48%,
+      rgba(12, 74, 110, 0.96) 72%,
+      rgba(10, 61, 122, 1) 100%
+    );
   background-attachment: fixed;
 }
 
+.stApp::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.35;
+  background-image:
+    radial-gradient(ellipse 55% 35% at 85% 8%, rgba(255,255,255,0.9), transparent 60%),
+    radial-gradient(ellipse 40% 25% at 12% 15%, rgba(255,255,255,0.55), transparent 55%);
+}
+
+.stApp::after {
+  content: "";
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 42vh;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='%23ffffff' fill-opacity='0.14' d='M0,192L48,197.3C96,203,192,213,288,229.3C384,245,480,267,576,250.7C672,235,768,181,864,181.3C960,181,1056,235,1152,234.7C1248,235,1344,181,1392,154.7L1440,128L1440,320L0,320Z'/%3E%3C/svg%3E") bottom center / cover no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 220'%3E%3Cpath fill='%23ffffff' fill-opacity='0.22' d='M0,96L60,112C120,128,240,160,360,165.3C480,171,600,149,720,138.7C840,128,960,128,1080,122.7C1200,117,1320,107,1380,101.3L1440,96L1440,220L0,220Z'/%3E%3C/svg%3E") bottom center / cover no-repeat;
+  animation: aegean-wave 14s ease-in-out infinite alternate;
+}
+
+@keyframes aegean-wave {
+  from { transform: translateY(0) scale(1); }
+  to { transform: translateY(-6px) scale(1.01); }
+}
+
 .block-container {
-  padding-top: 0.85rem;
+  position: relative;
+  z-index: 1;
+  padding-top: 0.5rem;
   padding-bottom: 6.5rem;
   max-width: 820px;
 }
 
-[data-testid="stHeader"] {
-  background: rgba(7, 11, 20, 0.75) !important;
-  backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--holo-border);
+[data-testid="stAppViewContainer"] > .main {
+  background: transparent !important;
 }
 
-/* Tabs */
+/* Tabs — Yunan mavi/beyaz */
 .stTabs [data-baseweb="tab-list"] {
   gap: 8px;
   background: transparent;
-  border-bottom: 1px solid var(--holo-border);
+  border-bottom: 2px solid rgba(255,255,255,0.35);
 }
 .stTabs [data-baseweb="tab"] {
-  background: rgba(15, 23, 42, 0.5) !important;
+  background: rgba(255,255,255,0.25) !important;
   border-radius: 12px 12px 0 0 !important;
-  border: 1px solid transparent !important;
-  color: var(--holo-muted) !important;
+  color: #e0f2fe !important;
   font-weight: 700 !important;
   padding: 10px 18px !important;
 }
 .stTabs [aria-selected="true"] {
-  background: linear-gradient(135deg, rgba(34,211,238,0.15), rgba(167,139,250,0.15)) !important;
-  border-color: rgba(34, 211, 238, 0.35) !important;
-  color: var(--holo-cyan) !important;
-  box-shadow: 0 0 20px rgba(34, 211, 238, 0.12);
+  background: rgba(255,255,255,0.92) !important;
+  color: var(--gr-blue) !important;
+  box-shadow: 0 -4px 16px rgba(13, 94, 175, 0.15);
 }
 
-/* Metrics */
 div[data-testid="stMetric"] {
-  background: var(--holo-surface) !important;
-  border: 1px solid var(--holo-border) !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
   border-radius: 16px !important;
   padding: 12px 14px !important;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255,255,255,0.04);
+  box-shadow: 0 8px 24px rgba(10, 61, 122, 0.12);
 }
-div[data-testid="stMetricLabel"] { color: var(--holo-muted) !important; font-size: 0.72rem !important; text-transform: uppercase; letter-spacing: 0.06em; }
+div[data-testid="stMetricLabel"] {
+  color: var(--gr-blue) !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+}
 div[data-testid="stMetricValue"] {
-  background: linear-gradient(90deg, #22d3ee, #a78bfa, #f472b6);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--gr-blue-dark) !important;
   font-weight: 800 !important;
 }
 
-/* Inputs */
 .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, textarea {
-  background: rgba(15, 23, 42, 0.85) !important;
-  border: 1px solid var(--holo-border) !important;
+  background: rgba(255,255,255,0.95) !important;
+  border: 1px solid var(--border) !important;
   border-radius: 14px !important;
-  color: var(--holo-text) !important;
+  color: var(--text) !important;
   min-height: 44px;
 }
 .stTextInput input:focus {
-  border-color: rgba(34, 211, 238, 0.55) !important;
-  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12), 0 0 24px rgba(34, 211, 238, 0.08) !important;
+  border-color: var(--gr-blue) !important;
+  box-shadow: 0 0 0 3px rgba(13, 94, 175, 0.15) !important;
 }
 
 .stButton > button {
   border-radius: 14px !important;
   min-height: 44px;
   font-weight: 700 !important;
-  background: rgba(15, 23, 42, 0.9) !important;
-  border: 1px solid var(--holo-border) !important;
-  color: var(--holo-text) !important;
-  transition: all 0.2s ease !important;
-}
-.stButton > button:hover {
-  border-color: rgba(167, 139, 250, 0.5) !important;
-  box-shadow: 0 0 20px rgba(167, 139, 250, 0.15) !important;
+  background: rgba(255,255,255,0.9) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--gr-blue-dark) !important;
 }
 .stDownloadButton > button[kind="primary"], .stButton > button[kind="primary"] {
-  background: linear-gradient(135deg, #0891b2 0%, #7c3aed 50%, #db2777 100%) !important;
+  background: linear-gradient(135deg, #0d5eaf 0%, #0284c7 100%) !important;
   border: none !important;
   color: #fff !important;
-  box-shadow: 0 8px 28px rgba(124, 58, 237, 0.35) !important;
+  box-shadow: 0 8px 24px rgba(13, 94, 175, 0.35) !important;
 }
 
 [data-testid="stFileUploader"] section {
-  background: rgba(15, 23, 42, 0.6) !important;
-  border: 1.5px dashed rgba(34, 211, 238, 0.35) !important;
+  background: rgba(255,255,255,0.85) !important;
+  border: 2px dashed rgba(13, 94, 175, 0.4) !important;
   border-radius: 16px !important;
 }
 
-/* Holographic components */
+/* Hero — feribot + vize */
 .holo-hero {
   position: relative;
   overflow: hidden;
   border-radius: 22px;
-  padding: 1.15rem 1.2rem;
+  padding: 1.2rem 1.25rem 1.15rem;
   margin-bottom: 1rem;
-  background: var(--holo-surface);
-  backdrop-filter: blur(20px);
-  border: 1px solid transparent;
-  background-clip: padding-box;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+  background: linear-gradient(135deg, rgba(255,255,255,0.94) 0%, rgba(224,242,254,0.92) 100%);
+  border: 2px solid rgba(255,255,255,0.8);
+  box-shadow: 0 16px 48px rgba(10, 61, 122, 0.2);
+}
+.holo-hero::after {
+  content: "⛴";
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 2.8rem;
+  opacity: 0.12;
 }
 .holo-hero::before {
   content: "";
   position: absolute;
-  inset: 0;
-  border-radius: 22px;
-  padding: 1px;
-  background: linear-gradient(135deg, rgba(34,211,238,0.6), rgba(167,139,250,0.5), rgba(244,114,182,0.4), rgba(34,211,238,0.6));
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  animation: holo-shift 6s ease infinite;
-  background-size: 200% 200%;
-}
-@keyframes holo-shift {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+  top: 0; left: 0;
+  width: 6px; height: 100%;
+  background: linear-gradient(180deg, #0d5eaf 0%, #ffffff 50%, #0d5eaf 100%);
+  border-radius: 22px 0 0 22px;
 }
 
 .holo-title {
   margin: 0;
-  font-size: clamp(1.45rem, 4.5vw, 1.9rem);
+  font-size: clamp(1.4rem, 4.5vw, 1.85rem);
   font-weight: 800;
-  letter-spacing: -0.03em;
-  background: linear-gradient(90deg, #67e8f9, #c4b5fd, #f9a8d4, #67e8f9);
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: holo-text 4s linear infinite;
+  color: var(--gr-blue-dark);
+  letter-spacing: -0.02em;
 }
-@keyframes holo-text {
-  to { background-position: 200% center; }
-}
-
-.holo-sub { margin: 0.35rem 0 0; color: var(--holo-muted); font-size: 0.88rem; line-height: 1.5; }
+.holo-sub { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.88rem; line-height: 1.5; }
 .holo-badge {
   display: inline-flex;
-  padding: 5px 11px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.04em;
-  background: linear-gradient(135deg, rgba(34,211,238,0.2), rgba(167,139,250,0.2));
-  border: 1px solid rgba(34, 211, 238, 0.35);
-  color: #67e8f9;
+  background: var(--gr-blue);
+  color: #fff;
+  margin-bottom: 0.5rem;
 }
 
 .holo-card {
-  position: relative;
-  border-radius: 20px;
+  border-radius: 18px;
   padding: 1rem 1.05rem;
   margin-bottom: 0.7rem;
-  background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  box-shadow: 0 10px 36px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+  background: rgba(255,255,255,0.93);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 32px rgba(10, 61, 122, 0.1);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .holo-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 16px 48px rgba(34, 211, 238, 0.08), 0 10px 36px rgba(0,0,0,0.35);
-  border-color: rgba(34, 211, 238, 0.25);
+  box-shadow: 0 16px 40px rgba(13, 94, 175, 0.18);
+  border-color: rgba(13, 94, 175, 0.45);
 }
 
 .holo-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
 .holo-no {
   font-size: 0.72rem; font-weight: 800; padding: 4px 10px; border-radius: 999px;
-  background: linear-gradient(135deg, rgba(96,165,250,0.25), rgba(167,139,250,0.25));
-  border: 1px solid rgba(96, 165, 250, 0.4); color: #93c5fd;
+  background: #dbeafe; border: 1px solid #93c5fd; color: var(--gr-blue);
 }
-.holo-date { font-size: 0.78rem; color: var(--holo-muted); font-weight: 600; }
-.holo-name { font-size: 1.08rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.25rem; }
-.holo-line { font-size: 0.84rem; color: var(--holo-muted); line-height: 1.45; margin-bottom: 0.55rem; }
+.holo-date { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.holo-name { font-size: 1.08rem; font-weight: 800; color: var(--gr-blue-dark); margin-bottom: 0.25rem; }
+.holo-line { font-size: 0.84rem; color: var(--muted); line-height: 1.45; margin-bottom: 0.55rem; }
 .holo-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .holo-tag {
   font-size: 0.7rem; font-weight: 700; padding: 4px 10px; border-radius: 999px;
-  background: rgba(34, 211, 238, 0.08); border: 1px solid rgba(34, 211, 238, 0.22); color: #a5f3fc;
+  background: #eff6ff; border: 1px solid #bfdbfe; color: var(--gr-blue);
 }
-.holo-fee {
-  margin-top: 0.45rem; font-size: 0.88rem; font-weight: 700;
-  background: linear-gradient(90deg, #22d3ee, #a78bfa);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-}
-.holo-meta { margin-top: 0.45rem; font-size: 0.68rem; color: #64748b; }
+.holo-fee { margin-top: 0.45rem; font-size: 0.88rem; font-weight: 700; color: var(--gr-blue); }
+.holo-meta { margin-top: 0.45rem; font-size: 0.68rem; color: #94a3b8; }
 
 .holo-panel {
-  background: var(--holo-surface);
-  backdrop-filter: blur(18px);
-  border: 1px solid var(--holo-border);
+  background: rgba(255,255,255,0.92);
+  border: 1px solid var(--border);
   border-radius: 18px;
   padding: 0.85rem 0.95rem;
   margin-bottom: 0.85rem;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  box-shadow: 0 8px 28px rgba(10, 61, 122, 0.08);
 }
-.holo-panel-title {
-  margin: 0 0 0.15rem;
-  font-size: 0.92rem;
-  font-weight: 800;
-  color: #cbd5e1;
-  letter-spacing: 0.02em;
-}
-.holo-panel-sub { margin: 0 0 0.65rem; font-size: 0.78rem; color: var(--holo-muted); }
+.holo-panel-title { margin: 0 0 0.15rem; font-size: 0.92rem; font-weight: 800; color: var(--gr-blue-dark); }
+.holo-panel-sub { margin: 0 0 0.65rem; font-size: 0.78rem; color: var(--muted); }
 
 .holo-active-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 0.65rem; }
 .holo-filter-chip {
-  display: inline-flex; align-items: center; gap: 4px;
   padding: 5px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
-  background: linear-gradient(135deg, rgba(124,58,237,0.25), rgba(34,211,238,0.15));
-  border: 1px solid rgba(167, 139, 250, 0.45);
-  color: #e9d5ff;
+  background: #dbeafe; border: 1px solid #93c5fd; color: var(--gr-blue-dark);
 }
 
 .holo-search-wrap {
   margin-bottom: 0.75rem;
   padding: 2px;
   border-radius: 16px;
-  background: linear-gradient(90deg, rgba(34,211,238,0.4), rgba(167,139,250,0.4), rgba(244,114,182,0.4));
+  background: linear-gradient(90deg, #0d5eaf, #38bdf8, #0d5eaf);
 }
 
 .bottom-bar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 999;
   padding: 0.7rem 0.9rem calc(0.7rem + env(safe-area-inset-bottom));
-  background: rgba(7, 11, 20, 0.92);
-  backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(34, 211, 238, 0.15);
-  box-shadow: 0 -12px 40px rgba(0,0,0,0.45);
+  background: rgba(255,255,255,0.94);
+  backdrop-filter: blur(16px);
+  border-top: 2px solid rgba(13, 94, 175, 0.2);
+  box-shadow: 0 -8px 32px rgba(10, 61, 122, 0.15);
 }
 
 .format-box {
-  background: rgba(15, 23, 42, 0.5);
-  border: 1px solid var(--holo-border);
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
   border-radius: 14px;
   padding: 0.75rem 0.85rem;
   font-size: 0.82rem;
-  color: var(--holo-muted);
+  color: #475569;
   line-height: 1.55;
 }
 
 div[data-testid="stExpander"] {
-  background: var(--holo-surface) !important;
-  border: 1px solid var(--holo-border) !important;
+  background: rgba(255,255,255,0.9) !important;
+  border: 1px solid var(--border) !important;
   border-radius: 16px !important;
-  backdrop-filter: blur(12px);
+}
+
+.greek-stripes {
+  height: 4px;
+  border-radius: 999px;
+  margin-bottom: 0.65rem;
+  background: repeating-linear-gradient(90deg, #0d5eaf 0 24px, #ffffff 24px 48px);
+  opacity: 0.85;
 }
 </style>
 """
@@ -374,12 +401,13 @@ def process_uploads(files, append_mode: bool) -> None:
 
 
 def render_topbar() -> None:
+    st.markdown('<div class="greek-stripes"></div>', unsafe_allow_html=True)
     st.markdown(
         f"""
         <div class="holo-hero">
-          <span class="holo-badge">HOLOGRAPHIC · GATE VISA</span>
+          <span class="holo-badge">🇬🇷 Yunan Devlet Vizesi · Feribot</span>
           <p class="holo-title">Gate Visa PAX</p>
-          <p class="holo-sub">{TEMPLATE_NAME} · Her satır bir yolcu kartı · v{APP_VERSION}</p>
+          <p class="holo-sub">Ege denizi · Ada hatları · Kapı vizesi yolcu listesi · v{APP_VERSION}</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -600,7 +628,7 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
         st.warning("Filtreye uyan yolcu bulunamadı.")
         return
 
-    st.caption(f"✦ {len(view_df)} holografik yolcu kartı")
+    st.caption(f"⛴ {len(view_df)} yolcu kartı — {TEMPLATE_NAME}")
     for idx, row in view_df.iterrows():
         render_passenger_card(int(idx), row)
 
@@ -642,7 +670,7 @@ st.session_state.base_df = base_df
 if st.session_state.selected_idx is not None and not base_df.empty:
     render_detail_view(st.session_state.base_df)
 else:
-    tab_passengers, tab_import = st.tabs(["✦ Yolcu Kartları", "◎ Kaynak Import"])
+    tab_passengers, tab_import = st.tabs(["⛴ Yolcu Kartları", "📥 Kaynak Import"])
     with tab_passengers:
         render_passengers_tab(st.session_state.base_df)
     with tab_import:
