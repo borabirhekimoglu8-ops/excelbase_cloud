@@ -38,6 +38,36 @@ def parse_date_value(value: Any):
     return ts.date()
 
 
+def parse_amount(value: Any) -> float:
+    """Ücret metnini sayıya çevirir ('25', '25,5', '€30' → float)."""
+    text = cell_text(value)
+    if not text:
+        return 0.0
+    matches = re.findall(r"[-+]?\d*[.,]?\d+", text.replace(" ", ""))
+    if not matches:
+        return 0.0
+    try:
+        return float(matches[0].replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
+def summarize_group(df: pd.DataFrame) -> dict[str, Any]:
+    """Bir yolcu grubunun özetini döndürür (sayı, ücret toplamları, fotolu sayısı)."""
+    adult_total = sum(parse_amount(v) for v in df["Vize Ücreti Yetişkin"]) if "Vize Ücreti Yetişkin" in df else 0.0
+    child_total = sum(parse_amount(v) for v in df["Vize Ücreti Çocuk"]) if "Vize Ücreti Çocuk" in df else 0.0
+    with_photo = 0
+    if "Foto" in df:
+        with_photo = int(df["Foto"].astype(str).str.strip().ne("").sum())
+    return {
+        "count": int(len(df)),
+        "adult_total": adult_total,
+        "child_total": child_total,
+        "total": adult_total + child_total,
+        "with_photo": with_photo,
+    }
+
+
 def passenger_card_view(row: pd.Series) -> dict[str, Any]:
     title = cell_text(row.get(CARD_TITLE_FIELD)) or "Yolcu"
     subtitle_parts = [cell_text(row.get(field)) for field in CARD_SUBTITLE_FIELDS]
