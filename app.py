@@ -9,9 +9,8 @@ from excelbase_core import (
     ReadResult,
     dataframe_to_csv,
     dataframe_to_xlsx,
-    merge_results,
-    read_file_bytes,
 )
+from gate_visa_reader import read_gate_visa_file_bytes
 from operation_helpers import (
     apply_filters,
     editable_passenger_fields,
@@ -21,19 +20,20 @@ from operation_helpers import (
 )
 from passenger_schema import (
     ALL_COLUMNS,
-    IMPORT_MODE,
+    TEMPLATE_NAME,
     expected_headers_markdown,
+    gate_visa_results_to_passengers,
     make_demo_passengers,
     normalize_passenger_dataframe,
     passenger_template_xlsx,
     validate_passenger_rows,
 )
 
-APP_VERSION = "3.1.0"
+APP_VERSION = "3.2.0"
 
 st.set_page_config(
-    page_title="Yolcu Operasyon",
-    page_icon="🧳",
+    page_title="Gate Visa PAX",
+    page_icon="🛂",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -228,20 +228,14 @@ def process_uploads(files, append_mode: bool) -> None:
     for file in files or []:
         try:
             raw = file.getvalue()
-            file_results = read_file_bytes(file.name, raw)
+            file_results = read_gate_visa_file_bytes(file.name, raw)
             for r in file_results:
                 results.append(r)
-                log.append(f"✓ {r.file_name} / {r.sheet_name} → {r.rows} yolcu satırı okundu")
+                log.append(f"✓ {r.file_name} / {r.sheet_name} → {r.rows} yolcu")
         except Exception as exc:
             errors.append(f"✕ {file.name}: {exc}")
 
-    merged = normalize_passenger_dataframe(merge_results(results, IMPORT_MODE))
-    merged = merged[
-        ~merged[editable_passenger_fields()].astype(str).apply(
-            lambda row: all(v.strip() in ("", "nan") for v in row),
-            axis=1,
-        )
-    ].reset_index(drop=True)
+    merged = gate_visa_results_to_passengers(results)
 
     if append_mode and not st.session_state.base_df.empty and not merged.empty:
         combined = pd.concat([st.session_state.base_df, merged], ignore_index=True).fillna("")
@@ -264,8 +258,8 @@ def render_topbar() -> None:
         f"""
         <div class="topbar">
           <div>
-            <p class="topbar-title">Yolcu Operasyon</p>
-            <p class="topbar-sub">Sabit Excel formatı · Her satır = 1 yolcu kartı</p>
+            <p class="topbar-title">Gate Visa PAX</p>
+            <p class="topbar-sub">{TEMPLATE_NAME} şablonu · Her satır = 1 yolcu kartı</p>
           </div>
           <span class="version-pill">v{APP_VERSION}</span>
         </div>
@@ -276,7 +270,7 @@ def render_topbar() -> None:
 
 def render_passenger_card(idx: int, row: pd.Series) -> None:
     card = passenger_card_view(row)
-    status_label = card["status"] or "Durum yok"
+    status_label = card["status"] or "Yolcu"
     amount = f'{card["amount"]} {card["currency"]}'.strip() if card["amount"] else ""
     tags_html = "".join(f'<span class="op-tag">{t["value"]}</span>' for t in card["tags"]) or ""
     meta = " · ".join(x for x in [card["source"], card["sheet"]] if x)
@@ -323,10 +317,13 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
         st.caption("Sabit yolcu alanları")
         updates: dict[str, str] = {}
         for field in editable_passenger_fields():
+            if field == "Yolcu Adı Soyadı":
+                st.text_input(field, value=str(row.get(field, "") or ""), disabled=True)
+                continue
             updates[field] = st.text_input(field, value=str(row.get(field, "") or ""))
 
         st.divider()
-        st.caption("Kaynak")
+        st.caption("Kaynak import")
         st.text_input("Kaynak Dosya", value=str(row.get("Kaynak Dosya", "") or ""), disabled=True)
         st.text_input("Sayfa", value=str(row.get("Sayfa", "") or ""), disabled=True)
 
@@ -335,6 +332,7 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
         delete = delete_col.form_submit_button("Sil", use_container_width=True)
 
     if saved:
+        updates["Yolcu Adı Soyadı"] = f'{updates.get("Ad", "").strip()} {updates.get("Soyad", "").strip()}'.strip()
         for field, value in updates.items():
             st.session_state.base_df.at[idx, field] = value
         st.session_state.base_df = normalize_passenger_dataframe(st.session_state.base_df)
@@ -354,15 +352,10 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
 def render_import_tab() -> None:
     st.markdown('<div class="import-box">', unsafe_allow_html=True)
     st.subheader("Kaynak Import")
-    st.caption("Excel'deki her satır otomatik olarak yolcu kartına dönüşür.")
+    st.caption("Sadece **GATE VISA PAX LIST** şablonu kabul edilir.")
 
     st.markdown(
-        f"""
-        <div class="format-box">
-          <b>Sabit Excel başlıkları</b> (sıra önemli değil, başlık adları eşleşmeli):<br>
-          {expected_headers_markdown().replace(chr(10), "<br>")}
-        </div>
-        """,
+        f'<div class="format-box"><b>Excel yapısı</b><br>{expected_headers_markdown()}</div>',
         unsafe_allow_html=True,
     )
 
@@ -385,7 +378,7 @@ def render_import_tab() -> None:
         st.download_button(
             "Boş şablon indir",
             data=passenger_template_xlsx(),
-            file_name="yolcu-sablonu.xlsx",
+            file_name="gate-visa-pax-sablonu.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
@@ -423,7 +416,7 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
         st.info("Henüz yolcu yok. **Kaynak Import** sekmesinden sabit formattaki Excel'i yükle.")
         return
 
-    search = st.text_input("Ara", placeholder="Yolcu adı, hat, PNR, acente…", label_visibility="collapsed")
+    search = st.text_input("Ara", placeholder="Ad, soyad, pasaport, voucher…", label_visibility="collapsed")
 
     tag_fields = filter_fields(base_df)
     if tag_fields:

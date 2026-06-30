@@ -6,23 +6,12 @@ import pandas as pd
 
 from passenger_schema import (
     CARD_DATE_FIELD,
-    CARD_STATUS_FIELD,
     CARD_SUBTITLE_FIELDS,
     CARD_TAG_FIELDS,
     CARD_TITLE_FIELD,
     FILTER_FIELDS,
-    META_FIELDS,
     PASSENGER_FIELDS,
 )
-
-STATUS_TONES = {
-    "onay": "ok",
-    "tamam": "ok",
-    "bekl": "wait",
-    "iptal": "danger",
-    "red": "danger",
-    "hata": "danger",
-}
 
 
 def cell_text(value: Any) -> str:
@@ -30,14 +19,6 @@ def cell_text(value: Any) -> str:
         return ""
     text = str(value).strip()
     return "" if text.lower() == "nan" else text
-
-
-def status_tone(value: str) -> str:
-    lowered = value.lower()
-    for key, tone in STATUS_TONES.items():
-        if key in lowered:
-            return tone
-    return "neutral"
 
 
 def passenger_card_view(row: pd.Series) -> dict[str, Any]:
@@ -49,28 +30,29 @@ def passenger_card_view(row: pd.Series) -> dict[str, Any]:
     for field in CARD_TAG_FIELDS:
         text = cell_text(row.get(field))
         if text:
-            tags.append({"label": field, "value": text})
+            short = "Gidiş" if field == "Gidiş Tarihi" else "Varış" if field == "Varış Tarihi" else field
+            tags.append({"label": short, "value": text})
 
-    status = cell_text(row.get(CARD_STATUS_FIELD))
-    date_value = cell_text(row.get(CARD_DATE_FIELD))
-    amount = cell_text(row.get("Tutar"))
-    currency = cell_text(row.get("Para Birimi"))
-    source = cell_text(row.get("Kaynak Dosya"))
-    sheet = cell_text(row.get("Sayfa"))
-    pnr = cell_text(row.get("PNR / Bilet No"))
+    adult = cell_text(row.get("Vize Ücreti Yetişkin"))
+    child = cell_text(row.get("Vize Ücreti Çocuk"))
+    fees = []
+    if adult:
+        fees.append(f"Yetişkin: {adult}")
+    if child and child not in ("0", "0.0"):
+        fees.append(f"Çocuk: {child}")
 
     return {
         "title": title,
-        "subtitle": subtitle or pnr or "Detay için karta dokun",
-        "status": status,
-        "status_tone": status_tone(status),
-        "date": date_value or cell_text(row.get("Satış Tarihi")),
-        "amount": amount,
-        "currency": currency,
+        "subtitle": subtitle or cell_text(row.get("Pasaport No")) or "Gate Visa yolcu",
+        "status": cell_text(row.get("No")) and f"#{cell_text(row.get('No'))}" or "",
+        "status_tone": "neutral",
+        "date": cell_text(row.get(CARD_DATE_FIELD)),
+        "amount": " · ".join(fees),
+        "currency": "",
         "tags": tags,
-        "source": source,
-        "sheet": sheet,
-        "pnr": pnr,
+        "source": cell_text(row.get("Kaynak Dosya")),
+        "sheet": cell_text(row.get("Sayfa")),
+        "pnr": cell_text(row.get("Voucher")),
     }
 
 
