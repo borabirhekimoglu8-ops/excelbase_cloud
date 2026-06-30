@@ -24,7 +24,18 @@ PASSENGER_FIELDS: list[str] = [
 META_FIELDS: list[str] = ["Kaynak Dosya", "Sayfa"]
 ALL_COLUMNS: list[str] = PASSENGER_FIELDS + META_FIELDS
 
-FILTER_FIELDS: list[str] = ["Gidiş Tarihi", "Varış Tarihi"]
+# Başlığa göre filtreleme — tüm yolcu kolonları (birleşik alan hariç)
+FILTERABLE_HEADERS: list[str] = [
+    "No",
+    "Ad",
+    "Soyad",
+    "Pasaport No",
+    "Voucher",
+    "Gidiş Tarihi",
+    "Varış Tarihi",
+    "Vize Ücreti Yetişkin",
+    "Vize Ücreti Çocuk",
+]
 
 CARD_TITLE_FIELD = "Yolcu Adı Soyadı"
 CARD_SUBTITLE_FIELDS = ["Pasaport No", "Voucher", "Gidiş Tarihi", "Varış Tarihi"]

@@ -9,7 +9,7 @@ from passenger_schema import (
     CARD_SUBTITLE_FIELDS,
     CARD_TAG_FIELDS,
     CARD_TITLE_FIELD,
-    FILTER_FIELDS,
+    FILTERABLE_HEADERS,
     PASSENGER_FIELDS,
 )
 
@@ -37,9 +37,9 @@ def passenger_card_view(row: pd.Series) -> dict[str, Any]:
     child = cell_text(row.get("Vize Ücreti Çocuk"))
     fees = []
     if adult:
-        fees.append(f"Yetişkin: {adult}")
+        fees.append(f"Yetişkin {adult}")
     if child and child not in ("0", "0.0"):
-        fees.append(f"Çocuk: {child}")
+        fees.append(f"Çocuk {child}")
 
     return {
         "title": title,
@@ -60,7 +60,7 @@ def editable_passenger_fields() -> list[str]:
     return PASSENGER_FIELDS.copy()
 
 
-def unique_tag_values(df: pd.DataFrame, field: str, limit: int = 12) -> list[str]:
+def unique_values(df: pd.DataFrame, field: str, limit: int = 40) -> list[str]:
     if field not in df.columns or df.empty:
         return []
     values: list[str] = []
@@ -70,17 +70,25 @@ def unique_tag_values(df: pd.DataFrame, field: str, limit: int = 12) -> list[str
             values.append(text)
         if len(values) >= limit:
             break
-    return values
+    return sorted(values, key=str.casefold)
 
 
-def filter_fields(df: pd.DataFrame) -> list[str]:
-    return [field for field in FILTER_FIELDS if field in df.columns and unique_tag_values(df, field)]
+def filterable_headers(df: pd.DataFrame) -> list[str]:
+    headers = []
+    for field in FILTERABLE_HEADERS:
+        if field in df.columns and unique_values(df, field):
+            headers.append(field)
+    return headers
+
+
+def active_filter_count(filters: dict[str, str | None]) -> int:
+    return sum(1 for value in filters.values() if value)
 
 
 def apply_filters(
     df: pd.DataFrame,
     search: str,
-    tag_filters: dict[str, str | None],
+    column_filters: dict[str, str | None],
 ) -> pd.DataFrame:
     if df.empty:
         return df
@@ -93,7 +101,7 @@ def apply_filters(
         )
         view = view.loc[mask]
 
-    for field, value in tag_filters.items():
+    for field, value in column_filters.items():
         if value and field in view.columns:
             view = view[view[field].astype(str).str.strip() == value]
 
