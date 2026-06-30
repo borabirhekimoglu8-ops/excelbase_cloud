@@ -24,7 +24,6 @@ from operation_helpers import (
     filterable_headers,
     parse_date_value,
     passenger_card_view,
-    summarize_group,
     unique_values,
 )
 import db
@@ -48,8 +47,39 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.6.0"
+APP_VERSION = "4.6.1"
 PAGE_SIZE = 10
+
+
+def parse_amount(value) -> float:
+    """Ücret metnini sayıya çevirir ('25', '€30,5' → float). app.py içinde tanımlı
+    tutulur ki Streamlit Cloud'da bir modül önbelleği bayatlasa bile çökmesin."""
+    import re as _re
+
+    text = str(value or "").strip()
+    if not text or text.lower() == "nan":
+        return 0.0
+    matches = _re.findall(r"[-+]?\d*[.,]?\d+", text.replace(" ", ""))
+    if not matches:
+        return 0.0
+    try:
+        return float(matches[0].replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
+def summarize_group(df: pd.DataFrame) -> dict:
+    """Bir yolcu grubunun özeti (sayı, ücret toplamları, fotolu sayısı)."""
+    adult_total = sum(parse_amount(v) for v in df["Vize Ücreti Yetişkin"]) if "Vize Ücreti Yetişkin" in df else 0.0
+    child_total = sum(parse_amount(v) for v in df["Vize Ücreti Çocuk"]) if "Vize Ücreti Çocuk" in df else 0.0
+    with_photo = int(df["Foto"].astype(str).str.strip().ne("").sum()) if "Foto" in df else 0
+    return {
+        "count": int(len(df)),
+        "adult_total": adult_total,
+        "child_total": child_total,
+        "total": adult_total + child_total,
+        "with_photo": with_photo,
+    }
 
 st.set_page_config(
     page_title="Gate Visa PAX",
