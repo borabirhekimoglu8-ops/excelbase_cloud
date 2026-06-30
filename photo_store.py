@@ -96,7 +96,12 @@ def photo_data_uri(filename: str) -> str | None:
 def match_photos_to_dataframe(
     df: pd.DataFrame, uploaded: list[tuple[str, bytes]]
 ) -> tuple[pd.DataFrame, int, list[str]]:
-    """Yüklenen fotoğrafları pasaport/isim eşleştirmesiyle yolculara bağlar.
+    """Yüklenen fotoğrafları yolculara bağlar.
+
+    Eşleştirme konumdan bağımsızdır: dosya adının tamamı sadeleştirilip
+    (boşluk/noktalama/Türkçe karakterler atılarak) içinde pasaport numarası
+    veya ad+soyad geçen yolcu bulunur. Böylece TARİH_İSİM_SOYİSİM_PASAPORT
+    sırası bozulsa bile eşleşir.
 
     Dönüş: (güncellenmiş df, eşleşen sayısı, eşleşmeyen dosya adları)
     """
@@ -107,37 +112,56 @@ def match_photos_to_dataframe(
     if "Foto" not in out.columns:
         out["Foto"] = ""
 
-    passport_map: dict[str, int] = {}
-    name_map: dict[str, int] = {}
+    # Yolcu anahtarlarını önceden hesapla
+    rows = []
     for idx, row in out.iterrows():
-        pkey = _norm_key(row.get("Pasaport No"))
-        if pkey:
-            passport_map[pkey] = idx
-        nkey = _norm_key(str(row.get("Ad", "")) + str(row.get("Soyad", "")))
-        if nkey:
-            name_map.setdefault(nkey, idx)
+        rows.append(
+            {
+                "idx": idx,
+                "passport": _norm_key(row.get("Pasaport No")),
+                "full_name": _norm_key(str(row.get("Ad", "")) + str(row.get("Soyad", ""))),
+                "name": _norm_key(row.get("Ad", "")),
+                "surname": _norm_key(row.get("Soyad", "")),
+            }
+        )
 
     matched = 0
     unmatched: list[str] = []
     for filename, data in uploaded:
+        base, ext = os.path.splitext(filename)
+        full = _norm_key(base)
         info = parse_photo_filename(filename)
+        ext = info["ext"] or ext
         target: int | None = None
 
-        pkey = _norm_key(info["passport"])
-        if pkey and pkey in passport_map:
-            target = passport_map[pkey]
+        # 1) Pasaport numarası dosya adının herhangi bir yerinde geçiyorsa (en uzun eşleşme)
+        best_len = 0
+        for r in rows:
+            pp = r["passport"]
+            if pp and len(pp) >= 4 and pp in full and len(pp) > best_len:
+                target = r["idx"]
+                best_len = len(pp)
 
-        if target is None and (info["name"] or info["surname"]):
-            nkey = _norm_key(info["name"] + info["surname"])
-            if nkey in name_map:
-                target = name_map[nkey]
+        # 2) Ad+Soyad bitişik geçiyorsa
+        if target is None:
+            for r in rows:
+                if r["full_name"] and len(r["full_name"]) >= 4 and r["full_name"] in full:
+                    target = r["idx"]
+                    break
+
+        # 3) Ad ve Soyad ayrı ayrı geçiyorsa
+        if target is None:
+            for r in rows:
+                if r["name"] and r["surname"] and r["name"] in full and r["surname"] in full:
+                    target = r["idx"]
+                    break
 
         if target is None:
             unmatched.append(filename)
             continue
 
-        key = pkey or _norm_key(str(out.at[target, "Pasaport No"])) or f"row{target}"
-        stored = save_photo_bytes(key, info["ext"], data)
+        key = _norm_key(out.at[target, "Pasaport No"]) or f"row{target}"
+        stored = save_photo_bytes(key, ext, data)
         out.at[target, "Foto"] = stored
         matched += 1
 
