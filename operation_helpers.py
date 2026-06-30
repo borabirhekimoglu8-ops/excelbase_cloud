@@ -4,44 +4,16 @@ from typing import Any
 
 import pandas as pd
 
-# Standart alan önceliği — kart başlığı, alt satır, etiketler
-TITLE_FIELDS = [
-    "Yolcu Adı Soyadı",
-    "Müşteri",
-    "Pasaport No",
-    "PNR / Bilet No",
-]
-
-SUBTITLE_FIELDS = [
-    "Hat",
-    "Hat / Ada",
-    "Ürün / Hat",
-    "Sefer Tarihi",
-    "Gidiş Tarihi",
-    "Satış Tarihi",
-    "Başvuru Tarihi",
-    "Tarih",
-]
-
-TAG_FIELDS = [
-    "Durum",
-    "Satış Kanalı",
-    "Acente / Kanal",
-    "Acente",
-    "Kanal",
-    "Para Birimi",
-]
-
-DATE_FIELDS = [
-    "Satış Tarihi",
-    "Sefer Tarihi",
-    "Başvuru Tarihi",
-    "Gidiş Tarihi",
-    "Dönüş Tarihi",
-    "Tarih",
-]
-
-META_FIELDS = {"Kaynak Dosya", "Sayfa"}
+from passenger_schema import (
+    CARD_DATE_FIELD,
+    CARD_STATUS_FIELD,
+    CARD_SUBTITLE_FIELDS,
+    CARD_TAG_FIELDS,
+    CARD_TITLE_FIELD,
+    FILTER_FIELDS,
+    META_FIELDS,
+    PASSENGER_FIELDS,
+)
 
 STATUS_TONES = {
     "onay": "ok",
@@ -51,13 +23,6 @@ STATUS_TONES = {
     "red": "danger",
     "hata": "danger",
 }
-
-
-def pick_column(columns: list[str], candidates: list[str]) -> str | None:
-    for name in candidates:
-        if name in columns:
-            return name
-    return None
 
 
 def cell_text(value: Any) -> str:
@@ -75,70 +40,48 @@ def status_tone(value: str) -> str:
     return "neutral"
 
 
-def operation_card_view(row: pd.Series, columns: list[str]) -> dict[str, Any]:
-    title_col = pick_column(columns, TITLE_FIELDS)
-    subtitle_parts: list[str] = []
-    for field in SUBTITLE_FIELDS:
-        if field in columns:
-            text = cell_text(row.get(field))
-            if text and text not in subtitle_parts:
-                subtitle_parts.append(text)
+def passenger_card_view(row: pd.Series) -> dict[str, Any]:
+    title = cell_text(row.get(CARD_TITLE_FIELD)) or "Yolcu"
+    subtitle_parts = [cell_text(row.get(field)) for field in CARD_SUBTITLE_FIELDS]
+    subtitle = " · ".join(part for part in subtitle_parts if part)
 
-    tags: list[dict[str, str]] = []
-    for field in TAG_FIELDS:
-        if field not in columns:
-            continue
+    tags = []
+    for field in CARD_TAG_FIELDS:
         text = cell_text(row.get(field))
         if text:
             tags.append({"label": field, "value": text})
 
-    amount_col = pick_column(columns, ["Tutar"])
-    amount = cell_text(row.get(amount_col)) if amount_col else ""
-    currency_col = pick_column(columns, ["Para Birimi"])
-    currency = cell_text(row.get(currency_col)) if currency_col else ""
-
-    status_col = pick_column(columns, ["Durum"])
-    status = cell_text(row.get(status_col)) if status_col else ""
-    date_col = pick_column(columns, DATE_FIELDS)
-    date_value = cell_text(row.get(date_col)) if date_col else ""
-
-    source = cell_text(row.get("Kaynak Dosya")) if "Kaynak Dosya" in columns else ""
-    sheet = cell_text(row.get("Sayfa")) if "Sayfa" in columns else ""
-
-    title = cell_text(row.get(title_col)) if title_col else ""
-    if not title:
-        for col in columns:
-            if col in META_FIELDS:
-                continue
-            text = cell_text(row.get(col))
-            if text:
-                title = text
-                break
-    if not title:
-        title = "Operasyon"
+    status = cell_text(row.get(CARD_STATUS_FIELD))
+    date_value = cell_text(row.get(CARD_DATE_FIELD))
+    amount = cell_text(row.get("Tutar"))
+    currency = cell_text(row.get("Para Birimi"))
+    source = cell_text(row.get("Kaynak Dosya"))
+    sheet = cell_text(row.get("Sayfa"))
+    pnr = cell_text(row.get("PNR / Bilet No"))
 
     return {
         "title": title,
-        "subtitle": " · ".join(subtitle_parts[:3]),
+        "subtitle": subtitle or pnr or "Detay için karta dokun",
         "status": status,
         "status_tone": status_tone(status),
-        "date": date_value,
+        "date": date_value or cell_text(row.get("Satış Tarihi")),
         "amount": amount,
         "currency": currency,
-        "tags": tags[:4],
+        "tags": tags,
         "source": source,
         "sheet": sheet,
+        "pnr": pnr,
     }
 
 
-def editable_fields(columns: list[str]) -> list[str]:
-    return [col for col in columns if col not in META_FIELDS]
+def editable_passenger_fields() -> list[str]:
+    return PASSENGER_FIELDS.copy()
 
 
 def unique_tag_values(df: pd.DataFrame, field: str, limit: int = 12) -> list[str]:
     if field not in df.columns or df.empty:
         return []
-    values = []
+    values: list[str] = []
     for raw in df[field].tolist():
         text = cell_text(raw)
         if text and text not in values:
@@ -148,12 +91,8 @@ def unique_tag_values(df: pd.DataFrame, field: str, limit: int = 12) -> list[str
     return values
 
 
-def filter_tag_fields(df: pd.DataFrame) -> list[str]:
-    fields = []
-    for field in TAG_FIELDS + ["Hat", "Hat / Ada", "Acente"]:
-        if field in df.columns and unique_tag_values(df, field):
-            fields.append(field)
-    return fields[:4]
+def filter_fields(df: pd.DataFrame) -> list[str]:
+    return [field for field in FILTER_FIELDS if field in df.columns and unique_tag_values(df, field)]
 
 
 def apply_filters(

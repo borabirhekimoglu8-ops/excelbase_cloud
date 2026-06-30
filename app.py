@@ -6,7 +6,6 @@ import pandas as pd
 import streamlit as st
 
 from excelbase_core import (
-    PRESETS,
     ReadResult,
     dataframe_to_csv,
     dataframe_to_xlsx,
@@ -14,19 +13,27 @@ from excelbase_core import (
     read_file_bytes,
 )
 from operation_helpers import (
-    META_FIELDS,
     apply_filters,
-    editable_fields,
-    filter_tag_fields,
-    operation_card_view,
+    editable_passenger_fields,
+    filter_fields,
+    passenger_card_view,
     unique_tag_values,
 )
+from passenger_schema import (
+    ALL_COLUMNS,
+    IMPORT_MODE,
+    expected_headers_markdown,
+    make_demo_passengers,
+    normalize_passenger_dataframe,
+    passenger_template_xlsx,
+    validate_passenger_rows,
+)
 
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.1.0"
 
 st.set_page_config(
-    page_title="Operasyon Merkezi",
-    page_icon="⚓",
+    page_title="Yolcu Operasyon",
+    page_icon="🧳",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -105,6 +112,17 @@ html, body, [class*="css"] {
   white-space: nowrap;
 }
 
+.format-box {
+  background: #f8faff;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  padding: 0.75rem 0.85rem;
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.84rem;
+  color: #334155;
+  line-height: 1.55;
+}
+
 .op-card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -129,7 +147,6 @@ html, body, [class*="css"] {
   border-radius: 999px;
   font-size: 0.74rem;
   font-weight: 800;
-  letter-spacing: 0.01em;
 }
 
 .op-status.ok { background: var(--ok-soft); color: var(--ok); }
@@ -137,55 +154,17 @@ html, body, [class*="css"] {
 .op-status.danger { background: var(--danger-soft); color: var(--danger); }
 .op-status.neutral { background: #f1f5f9; color: #475569; }
 
-.op-date {
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.op-title {
-  font-size: 1.02rem;
-  font-weight: 800;
-  color: var(--ink);
-  margin-bottom: 0.2rem;
-}
-
-.op-sub {
-  color: var(--muted);
-  font-size: 0.86rem;
-  line-height: 1.4;
-  margin-bottom: 0.55rem;
-}
-
-.op-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
+.op-date { color: var(--muted); font-size: 0.78rem; font-weight: 600; }
+.op-title { font-size: 1.05rem; font-weight: 800; color: var(--ink); margin-bottom: 0.2rem; }
+.op-sub { color: var(--muted); font-size: 0.86rem; line-height: 1.4; margin-bottom: 0.55rem; }
+.op-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .op-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: #334155;
-  font-size: 0.72rem;
-  font-weight: 700;
+  display: inline-flex; padding: 4px 9px; border-radius: 999px;
+  background: #f8fafc; border: 1px solid #e2e8f0; color: #334155;
+  font-size: 0.72rem; font-weight: 700;
 }
-
-.op-meta {
-  margin-top: 0.55rem;
-  color: #94a3b8;
-  font-size: 0.72rem;
-}
-
-.op-amount {
-  font-size: 0.95rem;
-  font-weight: 800;
-  color: var(--brand);
-}
+.op-meta { margin-top: 0.55rem; color: #94a3b8; font-size: 0.72rem; }
+.op-amount { font-size: 0.95rem; font-weight: 800; color: var(--brand); margin-top: 0.35rem; }
 
 .import-box {
   background: linear-gradient(180deg, #ffffff 0%, #f8faff 100%);
@@ -194,62 +173,24 @@ html, body, [class*="css"] {
   padding: 0.35rem 0.35rem 0.75rem;
 }
 
-.stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
-  border-radius: 12px !important;
-  min-height: 44px;
-}
-
 .stButton > button, .stDownloadButton > button {
-  border-radius: 12px !important;
-  min-height: 44px;
-  font-weight: 700 !important;
+  border-radius: 12px !important; min-height: 44px; font-weight: 700 !important;
 }
 
 .stDownloadButton > button[kind="primary"] {
   background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
-  color: #fff !important;
-  border: none !important;
+  color: #fff !important; border: none !important;
 }
 
 .bottom-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 999;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 999;
   padding: 0.65rem 0.85rem calc(0.65rem + env(safe-area-inset-bottom));
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px);
   border-top: 1px solid var(--line);
   box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
 }
 
-.detail-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 0.75rem;
-}
-
-.detail-title {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 800;
-  color: var(--ink);
-}
-
-.field-label {
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 0.15rem;
-}
-
-@media (min-width: 900px) {
-  .block-container { max-width: 980px; }
-}
+.detail-title { margin: 0; font-size: 1.15rem; font-weight: 800; color: var(--ink); }
 </style>
 """
 
@@ -258,28 +199,28 @@ st.markdown(APP_CSS, unsafe_allow_html=True)
 
 def init_state() -> None:
     defaults = {
-        "base_df": pd.DataFrame(),
+        "base_df": pd.DataFrame(columns=ALL_COLUMNS),
         "last_signature": "",
         "read_log": [],
         "errors": [],
+        "warnings": [],
         "loaded_files": [],
         "selected_idx": None,
         "tag_filters": {},
-        "active_tab": "Operasyonlar",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
 
-def uploaded_signature(files, mode: str) -> str:
+def uploaded_signature(files) -> str:
     if not files:
-        return f"{mode}:empty"
+        return "empty"
     parts = [f"{f.name}:{getattr(f, 'size', 0)}" for f in files]
-    return mode + "|" + "|".join(parts)
+    return "|".join(parts)
 
 
-def process_uploads(files, mode: str, append_mode: bool) -> None:
+def process_uploads(files, append_mode: bool) -> None:
     results: list[ReadResult] = []
     log: list[str] = []
     errors: list[str] = []
@@ -290,72 +231,32 @@ def process_uploads(files, mode: str, append_mode: bool) -> None:
             file_results = read_file_bytes(file.name, raw)
             for r in file_results:
                 results.append(r)
-                log.append(f"✓ Kaynak: {r.file_name} / {r.sheet_name} → {r.rows} operasyon")
+                log.append(f"✓ {r.file_name} / {r.sheet_name} → {r.rows} yolcu satırı okundu")
         except Exception as exc:
             errors.append(f"✕ {file.name}: {exc}")
 
-    merged = merge_results(results, mode)
+    merged = normalize_passenger_dataframe(merge_results(results, IMPORT_MODE))
+    merged = merged[
+        ~merged[editable_passenger_fields()].astype(str).apply(
+            lambda row: all(v.strip() in ("", "nan") for v in row),
+            axis=1,
+        )
+    ].reset_index(drop=True)
+
     if append_mode and not st.session_state.base_df.empty and not merged.empty:
-        st.session_state.base_df = pd.concat([st.session_state.base_df, merged], ignore_index=True).fillna("")
+        combined = pd.concat([st.session_state.base_df, merged], ignore_index=True).fillna("")
+        st.session_state.base_df = normalize_passenger_dataframe(combined)
     elif not merged.empty:
         st.session_state.base_df = merged
     elif not append_mode:
-        st.session_state.base_df = pd.DataFrame()
+        st.session_state.base_df = pd.DataFrame(columns=ALL_COLUMNS)
 
     st.session_state.read_log = log
     st.session_state.errors = errors
+    st.session_state.warnings = validate_passenger_rows(st.session_state.base_df)
     st.session_state.loaded_files = [f.name for f in files or []]
     st.session_state.selected_idx = None
     st.session_state.tag_filters = {}
-
-
-def make_demo() -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "Satış Tarihi": "2026-06-30",
-                "Yolcu Adı Soyadı": "Ayşe Demir",
-                "Hat": "Seferihisar - Samos",
-                "Sefer Tarihi": "2026-07-04",
-                "PNR / Bilet No": "PNR1001",
-                "Satış Kanalı": "Çağrı Merkezi",
-                "Acente": "Merkez",
-                "Tutar": 55,
-                "Para Birimi": "EUR",
-                "Durum": "Onaylandı",
-                "Kaynak Dosya": "demo.xlsx",
-                "Sayfa": "Satışlar",
-            },
-            {
-                "Satış Tarihi": "2026-06-30",
-                "Yolcu Adı Soyadı": "Mehmet Kaya",
-                "Hat": "Seferihisar - Samos",
-                "Sefer Tarihi": "2026-07-05",
-                "PNR / Bilet No": "PNR1002",
-                "Satış Kanalı": "Ferryhopper",
-                "Acente": "Yabancı Acente",
-                "Tutar": 61,
-                "Para Birimi": "EUR",
-                "Durum": "Bekliyor",
-                "Kaynak Dosya": "demo.xlsx",
-                "Sayfa": "Satışlar",
-            },
-            {
-                "Satış Tarihi": "2026-06-29",
-                "Yolcu Adı Soyadı": "Zeynep Ak",
-                "Hat": "Kuşadası - Samos",
-                "Sefer Tarihi": "2026-07-06",
-                "PNR / Bilet No": "PNR1003",
-                "Satış Kanalı": "Web",
-                "Acente": "Merkez",
-                "Tutar": 48,
-                "Para Birimi": "EUR",
-                "Durum": "İptal",
-                "Kaynak Dosya": "demo.xlsx",
-                "Sayfa": "Satışlar",
-            },
-        ]
-    )
 
 
 def render_topbar() -> None:
@@ -363,8 +264,8 @@ def render_topbar() -> None:
         f"""
         <div class="topbar">
           <div>
-            <p class="topbar-title">Operasyon Merkezi</p>
-            <p class="topbar-sub">Excel satırı → operasyon kartı · Kaynak import → canlı tablo</p>
+            <p class="topbar-title">Yolcu Operasyon</p>
+            <p class="topbar-sub">Sabit Excel formatı · Her satır = 1 yolcu kartı</p>
           </div>
           <span class="version-pill">v{APP_VERSION}</span>
         </div>
@@ -373,29 +274,22 @@ def render_topbar() -> None:
     )
 
 
-def render_operation_card(idx: int, row: pd.Series, columns: list[str]) -> None:
-    card = operation_card_view(row, columns)
+def render_passenger_card(idx: int, row: pd.Series) -> None:
+    card = passenger_card_view(row)
     status_label = card["status"] or "Durum yok"
-    status_class = card["status_tone"]
-    date_label = card["date"] or "—"
-    subtitle = card["subtitle"] or "Detay için karta dokun"
     amount = f'{card["amount"]} {card["currency"]}'.strip() if card["amount"] else ""
-
-    tags_html = "".join(
-        f'<span class="op-tag">{t["value"]}</span>' for t in card["tags"]
-    ) or '<span class="op-tag">Etiket yok</span>'
-
+    tags_html = "".join(f'<span class="op-tag">{t["value"]}</span>' for t in card["tags"]) or ""
     meta = " · ".join(x for x in [card["source"], card["sheet"]] if x)
 
     st.markdown(
         f"""
         <div class="op-card">
           <div class="op-card-top">
-            <span class="op-status {status_class}">{status_label}</span>
-            <span class="op-date">{date_label}</span>
+            <span class="op-status {card["status_tone"]}">{status_label}</span>
+            <span class="op-date">{card["date"] or "—"}</span>
           </div>
           <div class="op-title">{card["title"]}</div>
-          <div class="op-sub">{subtitle}</div>
+          <div class="op-sub">{card["subtitle"]}</div>
           <div class="op-tags">{tags_html}</div>
           <div class="op-meta">{meta}</div>
           {"<div class='op-amount'>" + amount + "</div>" if amount else ""}
@@ -403,7 +297,7 @@ def render_operation_card(idx: int, row: pd.Series, columns: list[str]) -> None:
         """,
         unsafe_allow_html=True,
     )
-    if st.button("Detay & düzenle", key=f"open_card_{idx}", use_container_width=True):
+    if st.button("Yolcu detayı", key=f"open_card_{idx}", use_container_width=True):
         st.session_state.selected_idx = idx
         st.rerun()
 
@@ -416,38 +310,25 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
         return
 
     row = base_df.loc[idx]
-    columns = list(base_df.columns)
-    card = operation_card_view(row, columns)
+    card = passenger_card_view(row)
 
-    if st.button("← Operasyonlara dön", use_container_width=False):
+    if st.button("← Yolcu listesine dön"):
         st.session_state.selected_idx = None
         st.rerun()
 
-    st.markdown(
-        f"""
-        <div class="detail-head">
-          <div>
-            <p class="detail-title">{card["title"]}</p>
-            <p class="topbar-sub">{card["subtitle"] or "Standart alanları düzenle"}</p>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(f'<p class="detail-title">{card["title"]}</p>', unsafe_allow_html=True)
+    st.caption(card["subtitle"])
 
-    with st.form("operation_detail_form", border=True):
-        st.caption("Standart alanlar")
+    with st.form("passenger_detail_form", border=True):
+        st.caption("Sabit yolcu alanları")
         updates: dict[str, str] = {}
-        for field in editable_fields(columns):
-            updates[field] = st.text_input(field, value=str(row.get(field, "") or ""), key=f"field_{idx}_{field}")
+        for field in editable_passenger_fields():
+            updates[field] = st.text_input(field, value=str(row.get(field, "") or ""))
 
-        if "Kaynak Dosya" in columns or "Sayfa" in columns:
-            st.divider()
-            st.caption("Kaynak bilgisi")
-            if "Kaynak Dosya" in columns:
-                st.text_input("Kaynak Dosya", value=str(row.get("Kaynak Dosya", "") or ""), disabled=True)
-            if "Sayfa" in columns:
-                st.text_input("Sayfa", value=str(row.get("Sayfa", "") or ""), disabled=True)
+        st.divider()
+        st.caption("Kaynak")
+        st.text_input("Kaynak Dosya", value=str(row.get("Kaynak Dosya", "") or ""), disabled=True)
+        st.text_input("Sayfa", value=str(row.get("Sayfa", "") or ""), disabled=True)
 
         save_col, delete_col = st.columns(2)
         saved = save_col.form_submit_button("Kaydet", use_container_width=True, type="primary")
@@ -456,117 +337,126 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
     if saved:
         for field, value in updates.items():
             st.session_state.base_df.at[idx, field] = value
+        st.session_state.base_df = normalize_passenger_dataframe(st.session_state.base_df)
         st.session_state.selected_idx = None
-        st.toast("Operasyon güncellendi", icon="✅")
+        st.toast("Yolcu güncellendi", icon="✅")
         st.rerun()
 
     if delete:
-        st.session_state.base_df = st.session_state.base_df.drop(index=idx).reset_index(drop=True)
+        st.session_state.base_df = normalize_passenger_dataframe(
+            st.session_state.base_df.drop(index=idx).reset_index(drop=True)
+        )
         st.session_state.selected_idx = None
-        st.toast("Operasyon silindi", icon="🗑️")
+        st.toast("Yolcu silindi", icon="🗑️")
         st.rerun()
 
 
-def render_import_tab(mode_key: str) -> str:
+def render_import_tab() -> None:
     st.markdown('<div class="import-box">', unsafe_allow_html=True)
     st.subheader("Kaynak Import")
-    st.caption("Excel dosyası yükle → her satır operasyon kartına dönüşür.")
-    mode = st.selectbox("Standart alan şablonu", list(PRESETS.keys()), key=mode_key)
-    append_mode = st.toggle("Mevcut operasyonlara ekle", value=False, key=f"{mode_key}_append")
+    st.caption("Excel'deki her satır otomatik olarak yolcu kartına dönüşür.")
+
+    st.markdown(
+        f"""
+        <div class="format-box">
+          <b>Sabit Excel başlıkları</b> (sıra önemli değil, başlık adları eşleşmeli):<br>
+          {expected_headers_markdown().replace(chr(10), "<br>")}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    append_mode = st.toggle("Mevcut yolculara ekle", value=False)
     files = st.file_uploader(
-        "Excel / CSV kaynakları",
+        "Excel / CSV yükle",
         type=["xlsx", "xls", "xlsm", "ods", "csv"],
         accept_multiple_files=True,
-        key=f"{mode_key}_files",
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-    sig = uploaded_signature(files, mode)
+    sig = uploaded_signature(files)
     if files and sig != st.session_state.last_signature:
-        process_uploads(files, mode, append_mode)
+        process_uploads(files, append_mode)
         st.session_state.last_signature = sig
         st.rerun()
 
-    btn1, btn2 = st.columns(2)
-    with btn1:
-        if st.button("Demo operasyonlar", use_container_width=True):
-            st.session_state.base_df = make_demo()
-            st.session_state.read_log = ["✓ Demo kaynak yüklendi: 3 operasyon"]
+    t1, t2, t3 = st.columns(3)
+    with t1:
+        st.download_button(
+            "Boş şablon indir",
+            data=passenger_template_xlsx(),
+            file_name="yolcu-sablonu.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    with t2:
+        if st.button("Demo yolcular", use_container_width=True):
+            st.session_state.base_df = normalize_passenger_dataframe(make_demo_passengers())
+            st.session_state.read_log = ["✓ Demo yüklendi: 3 yolcu kartı"]
             st.session_state.errors = []
+            st.session_state.warnings = []
             st.session_state.loaded_files = ["demo.xlsx"]
             st.session_state.selected_idx = None
             st.rerun()
-    with btn2:
-        if st.button("Tümünü temizle", use_container_width=True):
-            st.session_state.base_df = pd.DataFrame()
+    with t3:
+        if st.button("Temizle", use_container_width=True):
+            st.session_state.base_df = pd.DataFrame(columns=ALL_COLUMNS)
             st.session_state.last_signature = ""
             st.session_state.read_log = []
             st.session_state.errors = []
+            st.session_state.warnings = []
             st.session_state.loaded_files = []
             st.session_state.selected_idx = None
             st.session_state.tag_filters = {}
             st.rerun()
 
-    if st.session_state.read_log:
-        for item in st.session_state.read_log[:5]:
-            st.success(item)
-    if st.session_state.errors:
-        for item in st.session_state.errors:
-            st.error(item)
-
-    return mode
+    for item in st.session_state.read_log[:5]:
+        st.success(item)
+    for item in st.session_state.warnings:
+        st.warning(item)
+    for item in st.session_state.errors:
+        st.error(item)
 
 
-def render_operations_tab(base_df: pd.DataFrame) -> None:
+def render_passengers_tab(base_df: pd.DataFrame) -> None:
     if base_df.empty:
-        st.info("Henüz operasyon yok. **Kaynak Import** sekmesinden Excel yükle veya Demo operasyonları aç.")
+        st.info("Henüz yolcu yok. **Kaynak Import** sekmesinden sabit formattaki Excel'i yükle.")
         return
 
-    columns = list(base_df.columns)
-    search = st.text_input("Ara", placeholder="İsim, hat, PNR, acente…", label_visibility="collapsed")
+    search = st.text_input("Ara", placeholder="Yolcu adı, hat, PNR, acente…", label_visibility="collapsed")
 
-    tag_fields = filter_tag_fields(base_df)
+    tag_fields = filter_fields(base_df)
     if tag_fields:
-        st.caption("Modern etiket filtreleri")
+        st.caption("Etiket filtreleri")
         for field in tag_fields:
             options = ["Tümü"] + unique_tag_values(base_df, field)
             current = st.session_state.tag_filters.get(field) or "Tümü"
             if len(options) <= 5:
-                try:
-                    index = options.index(current) if current in options else 0
-                except ValueError:
-                    index = 0
-                choice = st.segmented_control(
-                    field,
-                    options=options,
-                    default=options[index],
-                    key=f"tag_filter_{field}",
-                )
+                index = options.index(current) if current in options else 0
+                choice = st.segmented_control(field, options=options, default=options[index], key=f"tag_{field}")
             else:
                 choice = st.selectbox(
                     field,
                     options=options,
                     index=options.index(current) if current in options else 0,
-                    key=f"tag_filter_{field}",
+                    key=f"tag_{field}",
                 )
             st.session_state.tag_filters[field] = None if choice in (None, "Tümü") else choice
 
-    active_filters = {k: v for k, v in st.session_state.tag_filters.items() if v}
-    view_df = apply_filters(base_df, search, active_filters)
+    view_df = apply_filters(base_df, search, {k: v for k, v in st.session_state.tag_filters.items() if v})
 
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Operasyon", len(view_df))
-    m2.metric("Kaynak", len(st.session_state.loaded_files))
-    m3.metric("Filtre", len(active_filters))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Yolcu", len(view_df))
+    c2.metric("Kaynak dosya", len(st.session_state.loaded_files))
+    c3.metric("Filtre", len([v for v in st.session_state.tag_filters.values() if v]))
 
     if view_df.empty:
-        st.warning("Filtreye uyan operasyon bulunamadı.")
+        st.warning("Filtreye uyan yolcu bulunamadı.")
         return
 
-    st.caption(f"{len(view_df)} operasyon kartı")
-
+    st.caption(f"{len(view_df)} yolcu kartı")
     for idx, row in view_df.iterrows():
-        render_operation_card(int(idx), row, columns)
+        render_passenger_card(int(idx), row)
 
 
 def render_bottom_bar(base_df: pd.DataFrame) -> None:
@@ -579,7 +469,7 @@ def render_bottom_bar(base_df: pd.DataFrame) -> None:
         st.download_button(
             "Excel indir",
             data=dataframe_to_xlsx(base_df),
-            file_name=f"operasyonlar-{stamp}.xlsx",
+            file_name=f"yolcular-{stamp}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
             type="primary",
@@ -589,7 +479,7 @@ def render_bottom_bar(base_df: pd.DataFrame) -> None:
         st.download_button(
             "CSV indir",
             data=dataframe_to_csv(base_df),
-            file_name=f"operasyonlar-{stamp}.csv",
+            file_name=f"yolcular-{stamp}.csv",
             mime="text/csv",
             use_container_width=True,
             key="bottom_csv",
@@ -600,18 +490,16 @@ def render_bottom_bar(base_df: pd.DataFrame) -> None:
 init_state()
 render_topbar()
 
-base_df = st.session_state.base_df.copy()
-if not base_df.empty:
-    base_df = base_df.reset_index(drop=True)
-    st.session_state.base_df = base_df
+base_df = normalize_passenger_dataframe(st.session_state.base_df.copy())
+st.session_state.base_df = base_df
 
 if st.session_state.selected_idx is not None and not base_df.empty:
     render_detail_view(st.session_state.base_df)
 else:
-    tab_ops, tab_import = st.tabs(["Operasyonlar", "Kaynak Import"])
+    tab_passengers, tab_import = st.tabs(["Yolcu Kartları", "Kaynak Import"])
     with tab_import:
-        render_import_tab("import_main")
-    with tab_ops:
-        render_operations_tab(st.session_state.base_df)
+        render_import_tab()
+    with tab_passengers:
+        render_passengers_tab(st.session_state.base_df)
 
 render_bottom_bar(st.session_state.base_df)
