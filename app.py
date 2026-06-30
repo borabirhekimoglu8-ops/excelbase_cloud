@@ -26,7 +26,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "3.5.0"
+APP_VERSION = "3.5.1"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -440,7 +440,7 @@ def render_import_tab() -> None:
     st.markdown(
         f"""
         <div class="app-panel">
-          <p class="app-panel-title">Kaynak Import</p>
+          <p class="app-panel-title">Import</p>
           <p class="app-panel-sub">{TEMPLATE_NAME} şablonu</p>
           <div class="format-box">{expected_headers_markdown()}</div>
         </div>
@@ -498,7 +498,7 @@ def render_import_tab() -> None:
 
 def render_passengers_tab(base_df: pd.DataFrame) -> None:
     if base_df.empty:
-        st.info("Henüz yolcu yok. **Kaynak Import** sekmesinden Excel yükle.")
+        st.info("Henüz yolcu yok. **Import** sekmesinden Excel yükle.")
         return
 
     search = st.text_input("Ara", placeholder="Ad, pasaport, voucher, tarih…", label_visibility="collapsed")
