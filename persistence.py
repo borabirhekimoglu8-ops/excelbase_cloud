@@ -17,27 +17,36 @@ STORE_PATH = os.environ.get(
 )
 
 
-def _build_payload(df: pd.DataFrame, loaded_files: list[str] | None) -> dict:
+def _build_payload(df: pd.DataFrame, loaded_files: list[str] | None, extra: dict | None = None) -> dict:
     safe_df = df.fillna("").astype(str) if not df.empty else pd.DataFrame(columns=ALL_COLUMNS)
-    return {
+    payload = {
         "passengers": safe_df.to_dict(orient="records"),
         "loaded_files": list(loaded_files or []),
     }
+    if extra:
+        # Ek operasyon verileri (import geçmişi, tarih notları/durumları)
+        payload["import_history"] = list(extra.get("import_history", []) or [])
+        payload["date_meta"] = dict(extra.get("date_meta", {}) or {})
+    return payload
 
 
-def _payload_to_state(payload: dict) -> tuple[pd.DataFrame, list[str]]:
+def _payload_to_state(payload: dict) -> tuple[pd.DataFrame, list[str], dict]:
     empty = pd.DataFrame(columns=ALL_COLUMNS)
     records = payload.get("passengers", []) if payload else []
     loaded_files = payload.get("loaded_files", []) if payload else []
+    extra = {
+        "import_history": payload.get("import_history", []) if payload else [],
+        "date_meta": payload.get("date_meta", {}) if payload else {},
+    }
     df = pd.DataFrame(records)
     if df.empty:
-        return empty, list(loaded_files)
-    return normalize_passenger_dataframe(df), list(loaded_files)
+        return empty, list(loaded_files), extra
+    return normalize_passenger_dataframe(df), list(loaded_files), extra
 
 
-def save_store(df: pd.DataFrame, loaded_files: list[str] | None = None) -> None:
+def save_store(df: pd.DataFrame, loaded_files: list[str] | None = None, extra: dict | None = None) -> None:
     """Yolcu tablosunu kaydeder: önce veritabanı, yoksa yerel dosya."""
-    payload = _build_payload(df, loaded_files)
+    payload = _build_payload(df, loaded_files, extra)
 
     if db.enabled() and db.save_state(payload):
         return
@@ -53,9 +62,13 @@ def save_store(df: pd.DataFrame, loaded_files: list[str] | None = None) -> None:
         pass
 
 
-def load_store() -> tuple[pd.DataFrame, list[str]]:
-    """Yolcu tablosunu yükler: önce veritabanı, yoksa yerel dosya."""
+def load_store() -> tuple[pd.DataFrame, list[str], dict]:
+    """Yolcu tablosunu yükler: önce veritabanı, yoksa yerel dosya.
+
+    Dönüş: (df, loaded_files, extra). `extra` -> import_history + date_meta.
+    """
     empty = pd.DataFrame(columns=ALL_COLUMNS)
+    empty_extra = {"import_history": [], "date_meta": {}}
 
     if db.enabled():
         payload = db.load_state()
@@ -63,10 +76,10 @@ def load_store() -> tuple[pd.DataFrame, list[str]]:
             return _payload_to_state(payload)
 
     if not os.path.exists(STORE_PATH):
-        return empty, []
+        return empty, [], empty_extra
     try:
         with open(STORE_PATH, "r", encoding="utf-8") as handle:
             payload = json.load(handle)
         return _payload_to_state(payload)
     except Exception:
-        return empty, []
+        return empty, [], empty_extra
