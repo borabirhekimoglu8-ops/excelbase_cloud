@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import html
 import json
 import zipfile
 from datetime import datetime, timedelta
@@ -49,7 +50,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.7.0"
+APP_VERSION = "4.8.0"
 PAGE_SIZE = 10
 
 
@@ -139,19 +140,20 @@ p, span, label, h1, h2, h3, .pax-name, .pax-line, .app-title, .app-sub {
 [data-testid="stAppViewContainer"] > .main { background: transparent !important; }
 .block-container {
   padding-top: max(1rem, env(safe-area-inset-top));
-  padding-bottom: max(2.6rem, env(safe-area-inset-bottom));
+  padding-bottom: max(6.4rem, env(safe-area-inset-bottom));
   padding-left: max(1rem, env(safe-area-inset-left));
   padding-right: max(1rem, env(safe-area-inset-right));
   max-width: 720px;
 }
 
-/* Sekmeler — sade beyaz pill */
+/* Sekmeler — masaüstünde sade pill, iPhone'da alt navigasyon */
 .stTabs [data-baseweb="tab-list"] {
   gap: 6px;
   background: var(--panel);
   border-radius: 14px;
   padding: 5px;
   border: 1px solid var(--border);
+  box-shadow: var(--shadow);
 }
 .stTabs [data-baseweb="tab"] {
   border-radius: 10px !important;
@@ -166,6 +168,31 @@ p, span, label, h1, h2, h3, .pax-name, .pax-line, .app-title, .app-sub {
   color: var(--accent-dark) !important;
 }
 .stTabs [data-baseweb="tab-panel"] { padding-top: 1rem; }
+
+@media (max-width: 760px) {
+  .stTabs [data-baseweb="tab-list"] {
+    position: fixed;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 999;
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr);
+    border-radius: 22px;
+    padding: 7px;
+    box-shadow: 0 12px 34px rgba(16, 24, 40, 0.18);
+  }
+  .stTabs [data-baseweb="tab"] {
+    min-height: 50px;
+    padding: 8px 6px !important;
+    justify-content: center;
+    font-size: 0.8rem;
+  }
+  .stTabs [data-baseweb="tab"] p {
+    font-size: 0.8rem !important;
+    line-height: 1.1 !important;
+  }
+}
 
 div[data-testid="stMetric"] {
   background: var(--panel) !important;
@@ -282,21 +309,25 @@ div[data-testid="stForm"] {
 .status-dot.ok { background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.15); }
 .status-dot.warn { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.15); }
 
-/* YOLCU KARTI — temiz beyaz kart */
+/* PASSPORT WALLET — dijital pasaport cüzdanı */
 .pax-card {
   position: relative;
-  background: var(--panel);
-  border-radius: 14px;
-  padding: 1rem 1.1rem 1rem 1.25rem;
-  margin-bottom: 0.7rem;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.08), transparent 42%),
+    linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+  border-radius: 20px;
+  padding: 1rem;
+  margin-bottom: 0.82rem;
+  border: 1px solid #dfe6f2;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 10px 26px rgba(16, 24, 40, 0.08);
 }
 .pax-card::before {
   content: "";
-  position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px;
-  border-radius: 0 4px 4px 0;
-  background: var(--accent);
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: linear-gradient(180deg, var(--accent), #06b6d4);
 }
 .pax-card.warn::before { background: #f59e0b; }
 .pax-card.bad::before { background: #ef4444; }
@@ -307,13 +338,14 @@ div[data-testid="stForm"] {
   text-transform: uppercase; letter-spacing: 0.02em;
 }
 .pax-flag.bad { background: #fde8e8; color: #b91c1c; border-color: #f7c5c5; }
-.pax-card-row { display: flex; gap: 0.9rem; align-items: flex-start; }
+.pax-card-row { display: flex; gap: 0.95rem; align-items: stretch; }
 .pax-card-body { flex: 1; min-width: 0; }
 .pax-photo {
-  width: 64px; height: 82px; border-radius: 10px; object-fit: cover;
+  width: 76px; height: 98px; border-radius: 16px; object-fit: cover;
   flex-shrink: 0;
-  border: 1px solid var(--border);
-  background: var(--bg);
+  border: 1px solid #d9e2f1;
+  background: #eef3fb;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.65);
 }
 .pax-photo-empty {
   display: flex; align-items: center; justify-content: center;
@@ -328,15 +360,32 @@ div[data-testid="stForm"] {
 }
 .pax-card-top { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.45rem; }
 .pax-no {
-  font-size: 0.66rem; font-weight: 800; padding: 3px 10px; border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-dark); letter-spacing: 0.03em;
+  font-size: 0.62rem; font-weight: 900; padding: 3px 9px; border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857; letter-spacing: 0.06em;
   white-space: nowrap;
+  text-transform: uppercase;
 }
 .pax-date { font-size: 0.74rem; color: var(--muted); font-weight: 700; white-space: nowrap; }
 .pax-name {
-  font-size: 1.08rem; font-weight: 800; color: var(--ink); margin: 0 0 0.3rem;
-  line-height: 1.3;
+  font-size: 1.08rem; font-weight: 900; color: var(--ink); margin: 0 0 0.35rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.wallet-passport {
+  display: inline-flex; flex-direction: column; gap: 1px;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 13px;
+  padding: 7px 10px; margin: 0.05rem 0 0.45rem;
+  min-width: min(100%, 210px);
+}
+.wallet-passport-label {
+  font-size: 0.57rem; font-weight: 900; color: #94a3b8;
+  letter-spacing: 0.11em; text-transform: uppercase;
+}
+.wallet-passport-no {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 1.08rem; font-weight: 900; color: var(--accent-dark);
+  letter-spacing: 0.035em;
 }
 .pax-line {
   font-size: 0.82rem; color: var(--muted); line-height: 1.5; margin: 0 0 0.28rem;
@@ -346,9 +395,11 @@ div[data-testid="stForm"] {
 .pax-v { flex: 1; min-width: 0; color: var(--ink-soft); font-weight: 600; }
 .pax-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .pax-tag {
-  font-size: 0.66rem; font-weight: 700; padding: 3px 9px; border-radius: 999px;
-  background: var(--border-soft); color: var(--ink-soft); border: 1px solid var(--border);
+  font-size: 0.66rem; font-weight: 800; padding: 4px 9px; border-radius: 999px;
+  background: #eef4ff; color: #1e40af; border: 1px solid #dbeafe;
+  max-width: 100%;
 }
+.pax-tag b { color: #64748b; font-weight: 800; }
 .pax-fee {
   margin-top: 0.55rem; font-size: 0.86rem; font-weight: 800; color: var(--accent-dark);
 }
@@ -934,11 +985,12 @@ def card_issues(row: pd.Series) -> list[tuple[str, str]]:
 def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") -> None:
     card = passenger_card_view(row)
     view_mode = st.session_state.get("view_mode", "Detaylı")
-    name = cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu"
-    passport = cell_text(row.get("Pasaport No")) or "—"
-    voucher = cell_text(row.get("Voucher"))
-    dep = cell_text(row.get("Gidiş Tarihi"))
-    arr = cell_text(row.get("Varış Tarihi"))
+    name = html.escape(cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu")
+    passport_raw = cell_text(row.get("Pasaport No")) or "—"
+    passport = html.escape(passport_raw)
+    voucher = html.escape(cell_text(row.get("Voucher")))
+    dep = html.escape(cell_text(row.get("Gidiş Tarihi")))
+    arr = html.escape(cell_text(row.get("Varış Tarihi")))
 
     issues = card_issues(row)
     card_cls = "pax-card"
@@ -952,18 +1004,25 @@ def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") ->
             f'<span class="pax-flag {sev}">{label}</span>' for label, sev in issues
         ) + "</div>"
 
+    wallet_passport = (
+        f'<div class="wallet-passport">'
+        f'<span class="wallet-passport-label">Passport</span>'
+        f'<span class="wallet-passport-no">{passport}</span>'
+        f"</div>"
+    )
+
     if view_mode == "Kompakt":
-        lines_html = f'<div class="pax-line"><span class="pax-k">Pasaport</span><span class="pax-v">{passport}</span></div>'
-        fee_html = ""
+        chips = []
     else:
-        lines = [f'<div class="pax-line"><span class="pax-k">Pasaport</span><span class="pax-v">{passport}</span></div>']
+        chips = []
         if voucher:
-            lines.append(f'<div class="pax-line"><span class="pax-k">Voucher</span><span class="pax-v">{voucher}</span></div>')
+            chips.append(f"<span class='pax-tag'><b>Voucher</b> {voucher}</span>")
         if dep or arr:
             date_val = f'{dep or "—"} → {arr or "—"}'
-            lines.append(f'<div class="pax-line"><span class="pax-k">Gidiş → Varış</span><span class="pax-v">{date_val}</span></div>')
-        lines_html = "".join(lines)
-        fee_html = f'<div class="pax-fee">Ücret: {card["amount"]}</div>' if card["amount"] else ""
+            chips.append(f"<span class='pax-tag'><b>Tarih</b> {date_val}</span>")
+        if card["amount"]:
+            chips.append(f"<span class='pax-tag'><b>Ücret</b> {html.escape(card['amount'])}</span>")
+    chips_html = f'<div class="pax-tags">{"".join(chips)}</div>' if chips else ""
 
     show_photo = st.session_state.get("show_photos", True) and view_mode != "Fotoğrafsız"
     photo = photo_html(row) if show_photo else ""
@@ -975,12 +1034,12 @@ def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") ->
             {photo}
             <div class="pax-card-body">
               <div class="pax-card-top">
-                <span class="pax-no">{card["status"] or "Yolcu"}</span>
+                <span class="pax-no">{html.escape(card["status"] or "Yolcu")}</span>
                 <span class="pax-date">{dep or "—"}</span>
               </div>
               <div class="pax-name">{name}</div>
-              {lines_html}
-              {fee_html}
+              {wallet_passport}
+              {chips_html}
               {flags_html}
             </div>
           </div>
@@ -1746,7 +1805,7 @@ st.session_state.dup_passports = set(_pp_norm[_pp_norm.ne("") & _pp_norm.duplica
 if st.session_state.selected_idx is not None and not base_df.empty:
     render_detail_view(st.session_state.base_df)
 else:
-    tab_passengers, tab_archive, tab_import = st.tabs(["Yolcu Kartları", "Arşiv", "Import"])
+    tab_passengers, tab_archive, tab_import = st.tabs(["👥 Yolcular", "📁 Arşiv", "⬆️ Import"])
     with tab_passengers:
         render_passengers_tab(st.session_state.base_df)
     with tab_archive:
