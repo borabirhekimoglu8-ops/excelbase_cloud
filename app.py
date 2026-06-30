@@ -30,7 +30,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.1.0"
+APP_VERSION = "4.1.1"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -507,10 +507,17 @@ def process_photos(photo_files) -> None:
     updated, matched, unmatched = match_photos_to_dataframe(st.session_state.base_df, uploaded)
     st.session_state.base_df = normalize_passenger_dataframe(updated)
 
-    log: list[str] = [f"✓ {matched} fotoğraf yolcuyla eşleşti."]
+    total_with_photo = int(
+        st.session_state.base_df["Foto"].astype(str).str.strip().ne("").sum()
+    )
+
+    log: list[str] = [f"✓ {matched} fotoğraf eşleşti · toplam {total_with_photo} yolcuda foto var."]
     if unmatched:
         log.append("✕ Eşleşmeyen: " + ", ".join(unmatched[:8]) + (" …" if len(unmatched) > 8 else ""))
         log.append("Dosya adı **TARİH_İSİM_SOYİSİM_PASAPORT** olmalı (pasaport no kartla eşleşmeli).")
+    if matched == 0:
+        sample_pp = [p for p in st.session_state.base_df["Pasaport No"].astype(str).tolist() if p.strip()][:6]
+        log.append("Karttaki pasaport no örnekleri: " + (", ".join(sample_pp) if sample_pp else "(boş)"))
     st.session_state.photo_log = log
     persist()
 

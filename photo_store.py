@@ -3,10 +3,46 @@ from __future__ import annotations
 import base64
 import os
 import re
+from io import BytesIO
 
 import pandas as pd
 
 import db
+
+try:
+    from PIL import Image
+
+    try:
+        import pillow_heif  # iPhone HEIC/HEIF desteği
+
+        pillow_heif.register_heif_opener()
+    except Exception:
+        pass
+except Exception:  # Pillow yoksa görüntü işleme atlanır.
+    Image = None  # type: ignore
+
+
+def _process_image(data: bytes, max_dim: int = 720) -> tuple[bytes, str]:
+    """Görüntüyü tarayıcı dostu, küçük boyutlu JPEG'e çevirir.
+
+    iPhone HEIC fotoğrafları ve büyük dosyalar tarayıcıda kart içinde
+    gösterilemez; bu yüzden hepsini standart JPEG küçük resme dönüştürürüz.
+    Dönüş: (yeni bytes, yeni uzantı) — başarısızsa orijinal döner.
+    """
+    if Image is None:
+        return data, ""
+    try:
+        img = Image.open(BytesIO(data))
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        elif img.mode == "L":
+            img = img.convert("RGB")
+        img.thumbnail((max_dim, max_dim))
+        out = BytesIO()
+        img.save(out, format="JPEG", quality=82, optimize=True)
+        return out.getvalue(), ".jpg"
+    except Exception:
+        return data, ""
 
 # Biyometrik fotoğraflar diskte saklanır; veriyle birlikte kalıcıdır.
 PHOTO_DIR = os.environ.get(
@@ -161,7 +197,8 @@ def match_photos_to_dataframe(
             continue
 
         key = _norm_key(out.at[target, "Pasaport No"]) or f"row{target}"
-        stored = save_photo_bytes(key, ext, data)
+        processed, new_ext = _process_image(data)
+        stored = save_photo_bytes(key, new_ext or ext, processed)
         out.at[target, "Foto"] = stored
         matched += 1
 

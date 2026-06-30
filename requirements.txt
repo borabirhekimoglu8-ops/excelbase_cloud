@@ -5,3 +5,5 @@ xlrd>=2.0
 odfpy>=1.4
 SQLAlchemy>=2.0
 psycopg2-binary>=2.9
+Pillow>=10.0
+pillow-heif>=0.16
