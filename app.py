@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 
 import pandas as pd
@@ -19,10 +19,12 @@ from operation_helpers import (
     DATE_FILTER_FIELDS,
     active_filter_count,
     apply_filters,
+    cell_text,
     editable_passenger_fields,
     filterable_headers,
     parse_date_value,
     passenger_card_view,
+    summarize_group,
     unique_values,
 )
 import db
@@ -33,6 +35,7 @@ from photo_store import (
     looks_like_image,
     match_photos_to_dataframe,
     photo_data_uri,
+    save_photo_bytes,
 )
 from passenger_schema import (
     ALL_COLUMNS,
@@ -45,7 +48,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.5.1"
+APP_VERSION = "4.6.0"
 PAGE_SIZE = 10
 
 st.set_page_config(
@@ -229,6 +232,23 @@ div[data-testid="stForm"] {
   font-weight: 700;
   line-height: 1.4;
 }
+.status-line {
+  margin-top: 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  line-height: 1.5;
+}
+.status-dot {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  margin-right: 5px;
+}
+.status-dot.ok { background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.15); }
+.status-dot.warn { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.15); }
 
 /* YOLCU KARTI — temiz beyaz kart */
 .pax-card {
@@ -277,7 +297,12 @@ div[data-testid="stForm"] {
   font-size: 1.08rem; font-weight: 800; color: var(--ink); margin: 0 0 0.3rem;
   line-height: 1.3;
 }
-.pax-line { font-size: 0.82rem; color: var(--muted); line-height: 1.55; margin: 0 0 0.55rem; }
+.pax-line {
+  font-size: 0.82rem; color: var(--muted); line-height: 1.5; margin: 0 0 0.28rem;
+  display: flex; gap: 0.5rem; align-items: baseline;
+}
+.pax-k { flex: 0 0 96px; font-weight: 700; color: #9aa4b4; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.pax-v { flex: 1; min-width: 0; color: var(--ink-soft); font-weight: 600; }
 .pax-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .pax-tag {
   font-size: 0.66rem; font-weight: 700; padding: 3px 9px; border-radius: 999px;
@@ -386,6 +411,10 @@ def init_state() -> None:
         "photo_signature": "",
         "pax_page": 0,
         "arch_page": 0,
+        "pending_photos": [],
+        "page_size": PAGE_SIZE,
+        "show_photos": True,
+        "updated_at": "",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -395,6 +424,7 @@ def init_state() -> None:
 
 
 def persist() -> None:
+    st.session_state.updated_at = datetime.now().strftime("%d.%m.%Y %H:%M")
     save_store(st.session_state.base_df, st.session_state.get("loaded_files", []))
 
 
@@ -474,29 +504,111 @@ def process_photos(photo_files) -> None:
         st.session_state.base_df["Foto"].astype(str).str.strip().ne("").sum()
     )
 
+    # Eşleşmeyenleri manuel eşleştirme için sakla (küçültülmüş baytlarla)
+    unmatched_set = set(unmatched)
+    pending = list(st.session_state.get("pending_photos", []))
+    existing = {p["name"] for p in pending}
+    reason_counts: dict[str, int] = {}
+    for name, data in uploaded:
+        if name in unmatched_set and name not in existing:
+            reason = _unmatched_reason(name, st.session_state.base_df)
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+            pending.append({"name": name, "data": _resize_bytes(data), "reason": reason})
+            existing.add(name)
+    st.session_state.pending_photos = pending[:80]
+
     zip_note = f" ({zip_count} ZIP açıldı, {len(uploaded)} görüntü)" if zip_count else ""
     log: list[str] = [
         f"✓ {matched} fotoğraf eşleşti{zip_note} · toplam {total_with_photo} yolcuda foto var."
     ]
     if unmatched:
-        log.append("✕ Eşleşmeyen: " + ", ".join(unmatched[:8]) + (" …" if len(unmatched) > 8 else ""))
-        log.append("Dosya adı **TARİH_İSİM_SOYİSİM_PASAPORT** olmalı (pasaport no kartla eşleşmeli).")
+        detail = " · ".join(f"{k}: {v}" for k, v in reason_counts.items())
+        log.append(f"✕ {len(unmatched)} fotoğraf eşleşmedi" + (f" ({detail})" if detail else ""))
+        log.append("Eşleşmeyenleri aşağıdaki **Eşleşmeyen fotoğraflar** bölümünden elle atayabilirsin.")
     if skipped:
         log.append("⚠ Görüntü olmayan/atlanan dosya: " + ", ".join(skipped[:6]) + (" …" if len(skipped) > 6 else ""))
-    if matched == 0:
-        sample_pp = [p for p in st.session_state.base_df["Pasaport No"].astype(str).tolist() if p.strip()][:6]
-        log.append("Karttaki pasaport no örnekleri: " + (", ".join(sample_pp) if sample_pp else "(boş)"))
     st.session_state.photo_log = log
     thumb_uri.clear()
     persist()
 
 
+def assign_pending_photo(pending_index: int, target_idx: int) -> None:
+    """Eşleşmeyen bir fotoğrafı seçilen yolcuya elle atar."""
+    pending = list(st.session_state.get("pending_photos", []))
+    if pending_index < 0 or pending_index >= len(pending):
+        return
+    item = pending[pending_index]
+    key = cell_text(st.session_state.base_df.at[target_idx, "Pasaport No"]) or f"row{target_idx}"
+    stored = save_photo_bytes(_norm_match(key) or "foto", ".jpg", item["data"])
+    st.session_state.base_df.at[target_idx, "Foto"] = stored
+    st.session_state.base_df = normalize_passenger_dataframe(st.session_state.base_df)
+    pending.pop(pending_index)
+    st.session_state.pending_photos = pending
+    thumb_uri.clear()
+    persist()
+
+
+def render_unmatched_photos() -> None:
+    pending = st.session_state.get("pending_photos", [])
+    if not pending:
+        return
+    base_df = st.session_state.base_df
+    if base_df.empty:
+        return
+
+    st.markdown(
+        f"""
+        <div class="app-panel">
+          <p class="app-panel-title">Eşleşmeyen fotoğraflar ({len(pending)})</p>
+          <p class="app-panel-sub">Aşağıdaki fotoğrafları doğru yolcuya elle atayabilirsin</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    options: list[tuple[str, int]] = []
+    for idx, row in base_df.iterrows():
+        label = f'{cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu"} — {cell_text(row.get("Pasaport No")) or "?"}'
+        options.append((label, int(idx)))
+    labels = [o[0] for o in options]
+
+    if st.button("Tüm eşleşmeyenleri temizle", key="clear_pending"):
+        st.session_state.pending_photos = []
+        st.rerun()
+
+    for i, item in enumerate(list(pending)):
+        pc, sc = st.columns([1, 3])
+        with pc:
+            st.image(item["data"], width=84)
+        with sc:
+            st.caption(f'{item["name"]}  ·  {item.get("reason", "")}')
+            choice = st.selectbox(
+                "Yolcu seç",
+                options=labels,
+                key=f"pending_pick_{i}",
+                label_visibility="collapsed",
+            )
+            if st.button("Bu yolcuya ata", key=f"pending_assign_{i}", use_container_width=True):
+                target = options[labels.index(choice)][1]
+                assign_pending_photo(i, target)
+                st.toast("Fotoğraf atandı", icon="✅")
+                st.rerun()
+
+
 def render_topbar() -> None:
+    count = len(st.session_state.get("base_df", pd.DataFrame()))
+    if db.enabled():
+        backend = '<span class="status-dot ok"></span>Veritabanı bağlı (kalıcı)'
+    else:
+        backend = '<span class="status-dot warn"></span>Geçici depolama'
+    updated = st.session_state.get("updated_at", "")
+    updated_html = f" · Son güncelleme {updated}" if updated else ""
     st.markdown(
         f"""
         <div class="app-hero">
           <p class="app-title">Gate Visa PAX</p>
           <p class="app-sub">{TEMPLATE_NAME} · Yolcu kartları · v{APP_VERSION}</p>
+          <div class="status-line">{backend} · {count} yolcu{updated_html}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -604,6 +716,48 @@ def thumb_uri(ref: str, max_dim: int, quality: int) -> str | None:
         return uri
 
 
+def _resize_bytes(data: bytes, max_dim: int = 480, quality: int = 75) -> bytes:
+    """Görüntüyü küçültür; başarısızsa orijinali döndürür (bellek için)."""
+    if _PILImage is None:
+        return data
+    try:
+        img = _PILImage.open(BytesIO(data))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img.thumbnail((max_dim, max_dim))
+        out = BytesIO()
+        img.save(out, format="JPEG", quality=quality, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return data
+
+
+def _norm_match(value: str) -> str:
+    import re as _re
+
+    return _re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def _passport_from_filename(filename: str) -> str:
+    base = filename.rsplit(".", 1)[0]
+    parts = [p for p in base.split("_") if p.strip()]
+    return parts[-1] if parts else ""
+
+
+def _unmatched_reason(filename: str, base_df: pd.DataFrame) -> str:
+    full = _norm_match(filename.rsplit(".", 1)[0])
+    hits = 0
+    for pp in base_df.get("Pasaport No", pd.Series(dtype=str)).astype(str).tolist():
+        npp = _norm_match(pp)
+        if npp and len(npp) >= 4 and npp in full:
+            hits += 1
+    if hits == 0:
+        return "Pasaport bulunamadı"
+    if hits > 1:
+        return "Birden fazla aynı pasaport"
+    return "Eşleşmedi"
+
+
 def photo_html(row: pd.Series, css_class: str = "pax-photo", size: str = "list") -> str:
     ref = str(row.get("Foto", "") or "")
     if ref:
@@ -615,31 +769,42 @@ def photo_html(row: pd.Series, css_class: str = "pax-photo", size: str = "list")
 
 def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") -> None:
     card = passenger_card_view(row)
-    tags_html = "".join(f'<span class="pax-tag">{t["label"]}: {t["value"]}</span>' for t in card["tags"])
-    meta = " · ".join(x for x in [card["source"], card["sheet"]] if x)
+    name = cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu"
+    passport = cell_text(row.get("Pasaport No")) or "—"
+    voucher = cell_text(row.get("Voucher"))
+    dep = cell_text(row.get("Gidiş Tarihi"))
+    arr = cell_text(row.get("Varış Tarihi"))
+
+    lines = [f'<div class="pax-line"><span class="pax-k">Pasaport</span><span class="pax-v">{passport}</span></div>']
+    if voucher:
+        lines.append(f'<div class="pax-line"><span class="pax-k">Voucher</span><span class="pax-v">{voucher}</span></div>')
+    if dep or arr:
+        date_val = " → ".join(x for x in [dep or "—", arr or "—"] if True)
+        lines.append(f'<div class="pax-line"><span class="pax-k">Gidiş → Varış</span><span class="pax-v">{date_val}</span></div>')
+    lines_html = "".join(lines)
+    fee_html = f'<div class="pax-fee">Ücret: {card["amount"]}</div>' if card["amount"] else ""
+    photo = photo_html(row) if st.session_state.get("show_photos", True) else ""
 
     st.markdown(
         f"""
         <div class="pax-card">
           <div class="pax-card-row">
-            {photo_html(row)}
+            {photo}
             <div class="pax-card-body">
               <div class="pax-card-top">
                 <span class="pax-no">{card["status"] or "Yolcu"}</span>
-                <span class="pax-date">{card["date"] or "—"}</span>
+                <span class="pax-date">{dep or "—"}</span>
               </div>
-              <div class="pax-name">{card["title"]}</div>
-              <div class="pax-line">{card["subtitle"]}</div>
-              <div class="pax-tags">{tags_html}</div>
-              {"<div class='pax-fee'>" + card["amount"] + "</div>" if card["amount"] else ""}
-              <div class="pax-meta">{meta}</div>
+              <div class="pax-name">{name}</div>
+              {lines_html}
+              {fee_html}
             </div>
           </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    if st.button("Detay", key=f"open_card_{key_prefix}_{idx}", use_container_width=True):
+    if st.button("Detayı aç →", key=f"open_card_{key_prefix}_{idx}", use_container_width=True):
         st.session_state.selected_idx = idx
         st.rerun()
 
@@ -774,6 +939,7 @@ def render_import_tab() -> None:
             st.session_state.date_filters = {}
             st.session_state.pax_page = 0
             st.session_state.arch_page = 0
+            st.session_state.pending_photos = []
             thumb_uri.clear()
             persist()
             st.rerun()
@@ -828,6 +994,8 @@ def render_import_tab() -> None:
         else:
             st.caption(item)
 
+    render_unmatched_photos()
+
     # Yüklenen veriyi hemen burada göster — kullanıcı sekme değiştirmeden görsün
     preview_df = st.session_state.base_df
     if not preview_df.empty:
@@ -859,13 +1027,14 @@ def render_pagination(state_key: str, page: int, pages: int, nav_prefix: str) ->
 
 def render_card_page(view_df: pd.DataFrame, state_key: str, key_prefix: str) -> None:
     """Kartları sayfalayarak gösterir; iPhone'da tek seferde çok kart yüklenmesini engeller."""
+    page_size = int(st.session_state.get("page_size", PAGE_SIZE))
     total = len(view_df)
-    pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    pages = max(1, (total + page_size - 1) // page_size)
     page = min(max(0, int(st.session_state.get(state_key, 0))), pages - 1)
     st.session_state[state_key] = page
 
-    start = page * PAGE_SIZE
-    chunk = view_df.iloc[start : start + PAGE_SIZE]
+    start = page * page_size
+    chunk = view_df.iloc[start : start + page_size]
 
     render_pagination(state_key, page, pages, f"{key_prefix}_top")
     for idx, row in chunk.iterrows():
@@ -879,6 +1048,21 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
         return
 
     search = st.text_input("Ara", placeholder="Ad, pasaport, voucher, tarih…", label_visibility="collapsed")
+
+    opt_c1, opt_c2 = st.columns([1, 1])
+    with opt_c1:
+        sizes = [6, 10, 20, 50]
+        cur_size = int(st.session_state.get("page_size", PAGE_SIZE))
+        st.session_state.page_size = st.selectbox(
+            "Sayfa başına kart",
+            options=sizes,
+            index=sizes.index(cur_size) if cur_size in sizes else 1,
+            key="page_size_select",
+        )
+    with opt_c2:
+        st.session_state.show_photos = st.toggle(
+            "Fotoğrafları göster", value=st.session_state.get("show_photos", True)
+        )
 
     filter_count = total_active_filters()
     with st.expander("Başlıklara göre filtrele", expanded=filter_count > 0):
@@ -907,15 +1091,74 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
     render_card_page(view_df, "pax_page", "list")
 
 
+def _fmt_amount(value: float) -> str:
+    if value == 0:
+        return "0"
+    if abs(value - round(value)) < 0.005:
+        return f"{int(round(value))}"
+    return f"{value:.2f}"
+
+
+def _quick_range_bounds(choice: str):
+    today = datetime.now().date()
+    if choice == "Bugün":
+        return today, today
+    if choice == "Bu hafta":
+        start = today - timedelta(days=today.weekday())
+        return start, start + timedelta(days=6)
+    if choice == "Bu ay":
+        start = today.replace(day=1)
+        nxt = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
+        return start, nxt - timedelta(days=1)
+    return None
+
+
 def render_archive_tab(base_df: pd.DataFrame) -> None:
     if base_df.empty:
         st.info("Henüz yolcu yok. **Import** sekmesinden Excel yükle.")
         return
 
     date_field = "Gidiş Tarihi"
-    dates = base_df[date_field].astype(str).str.strip()
+
+    choice = st.radio(
+        "Hızlı tarih",
+        options=["Tümü", "Bugün", "Bu hafta", "Bu ay", "Aralık"],
+        horizontal=True,
+        key="arch_range_choice",
+    )
+    bounds = _quick_range_bounds(choice)
+    if choice == "Aralık":
+        picked = st.date_input("Tarih aralığı", value=(), key="arch_custom_range", format="YYYY-MM-DD")
+        if isinstance(picked, (list, tuple)) and len(picked) == 2:
+            bounds = (picked[0], picked[1])
+        elif isinstance(picked, (list, tuple)) and len(picked) == 1:
+            bounds = (picked[0], picked[0])
+        else:
+            bounds = None
+
+    if bounds is not None:
+        start, end = bounds
+
+        def _in_bounds(value) -> bool:
+            d = parse_date_value(value)
+            return d is not None and start <= d <= end
+
+        scoped = base_df[base_df[date_field].map(_in_bounds)]
+    else:
+        scoped = base_df
+
+    summ = summarize_group(scoped)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Yolcu", summ["count"])
+    c2.metric("Toplam ücret", _fmt_amount(summ["total"]))
+    c3.metric("Fotolu", summ["with_photo"])
+
+    if scoped.empty:
+        st.warning("Seçilen tarih aralığında yolcu yok.")
+        return
+
     groups: dict[str, list[int]] = {}
-    for idx, value in dates.items():
+    for idx, value in scoped[date_field].astype(str).str.strip().items():
         key = value if value else "Tarihsiz"
         groups.setdefault(key, []).append(int(idx))
 
@@ -924,21 +1167,43 @@ def render_archive_tab(base_df: pd.DataFrame) -> None:
 
     ordered = sorted(groups.keys(), key=sort_key)
 
-    c1, c2 = st.columns(2)
-    c1.metric("Tarih", len([d for d in ordered if d != "Tarihsiz"]))
-    c2.metric("Toplam yolcu", len(base_df))
-
     st.markdown('<p class="section-label">Tarihe göre arşiv</p>', unsafe_allow_html=True)
     labels = [f"{d}  ·  {len(groups[d])} yolcu" for d in ordered]
     selected = st.selectbox("Tarih seç", options=labels, key="archive_date_pick")
     date_key = ordered[labels.index(selected)] if selected in labels else ordered[0]
 
-    # Tarih değişince sayfayı başa al
-    if st.session_state.get("arch_sig") != date_key:
-        st.session_state.arch_sig = date_key
+    if st.session_state.get("arch_sig") != f"{choice}|{date_key}":
+        st.session_state.arch_sig = f"{choice}|{date_key}"
         st.session_state.arch_page = 0
 
-    sub_df = base_df.loc[groups[date_key]]
+    sub_df = scoped.loc[groups[date_key]]
+    sub_summ = summarize_group(sub_df)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Bu tarih", sub_summ["count"])
+    m2.metric("Yetişkin ücret", _fmt_amount(sub_summ["adult_total"]))
+    m3.metric("Çocuk ücret", _fmt_amount(sub_summ["child_total"]))
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    e1, e2 = st.columns(2)
+    safe_date = date_key.replace("/", "-").replace(".", "-").replace(" ", "")
+    e1.download_button(
+        "Bu tarihi indir (Excel)",
+        data=dataframe_to_xlsx(sub_df),
+        file_name=f"yolcular-{safe_date}-{stamp}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        type="primary",
+        key="arch_date_xlsx",
+    )
+    e2.download_button(
+        "Seçili aralığı indir",
+        data=dataframe_to_xlsx(scoped),
+        file_name=f"yolcular-aralik-{stamp}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="arch_range_xlsx",
+    )
+
     render_card_page(sub_df, "arch_page", "arch")
 
 

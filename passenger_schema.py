@@ -182,8 +182,28 @@ def validate_passenger_rows(df: pd.DataFrame) -> list[str]:
     if missing_names.any():
         warnings.append(f"⚠ {int(missing_names.sum())} satırda yolcu adı/soyadı boş.")
 
-    missing_passport = df["Pasaport No"].astype(str).str.strip().eq("")
+    passport = df["Pasaport No"].astype(str).str.strip()
+    missing_passport = passport.eq("")
     if missing_passport.any():
         warnings.append(f"⚠ {int(missing_passport.sum())} satırda pasaport no boş.")
+
+    filled = passport[passport.ne("")]
+    dup_mask = filled.duplicated(keep=False)
+    if dup_mask.any():
+        dups = sorted(set(filled[dup_mask]))
+        shown = ", ".join(dups[:8]) + (" …" if len(dups) > 8 else "")
+        warnings.append(f"⚠ Tekrarlanan pasaport no ({len(dups)} adet): {shown}")
+
+    # Tüm satırlarda boş kalan beklenen sütunlar = Excel'de o sütun eksik olabilir
+    optional_checks = ["Voucher", "Gidiş Tarihi", "Varış Tarihi", "Vize Ücreti Yetişkin"]
+    empty_cols = [
+        col for col in optional_checks
+        if col in df.columns and df[col].astype(str).str.strip().eq("").all()
+    ]
+    if empty_cols:
+        warnings.append(
+            "⚠ Şu bilgiler tüm satırlarda boş (Excel'de sütun eksik olabilir): "
+            + ", ".join(empty_cols)
+        )
 
     return warnings
