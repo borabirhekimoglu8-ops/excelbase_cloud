@@ -1,52 +1,54 @@
-# ExcelBase Cloud Final
+# Gate Visa PAX
 
-Bu paket, telefonda dosya gibi açılan `index.html` değildir. Gerçek web uygulamasıdır. Excel dosyalarını backend okur; telefon sadece arayüzdür. Bu yüzden iPhone/Safari/ChatGPT önizleme kaynaklı dosya yükleme sorunu yaşamaz.
+Kapı vizesi yolcu listesi yönetimi. Excel (GATE VISA PAX LIST) yükle → her satır bir yolcu kartı olur. Biyometrik fotoğrafları toplu ekle, tarihe göre arşivle, telefonda uygulama gibi kullan.
 
 ## Özellikler
 
-- `.xlsx`, `.xls`, `.xlsm`, `.ods`, `.csv` okur.
-- Birden fazla dosyayı ve Excel içindeki birden fazla sayfayı tek tabloya alır.
-- Varsayılan modda Excel başlıklarını aynen korur.
-- Kapı Vizesi, Feribot Satış ve CRM formatlarına otomatik kolon eşleştirir.
-- Telefonda tablo düzenleme sağlar.
-- Arama, satır ekleme, boş satır silme, tekrarlı satır silme sağlar.
-- Excel ve CSV dışa aktarır.
+- **Excel/CSV import** — GATE VISA PAX LIST şablonu (iki satırlı başlık) ve esnek format tespiti.
+- **Yolcu kartları** — her satır = 1 kart; arama ve tüm başlıklara göre filtre.
+- **Biyometrik foto toplu import** — dosya adı `TARİH_İSİM_SOYİSİM_PASAPORT` formatında ise kartla otomatik eşleşir.
+- **Arşiv** — gidiş tarihine göre gruplanmış bölümler.
+- **Kalıcı saklama** — veritabanı bağlıysa veriler ve fotoğraflar kalıcıdır; değilse yerel dosya yedeği.
+- **iPhone/Android PWA** — Safari'de "Ana Ekrana Ekle" ile tam ekran uygulama gibi açılır.
 
 ## Lokal kurulum
-
-Bilgisayarda:
 
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Sonra açılan adresi telefondan da kullanmak için aynı Wi-Fi ağındaysan terminalde görünen `Network URL` adresini aç.
+## Kalıcı veritabanı (önerilir)
 
-## Streamlit Cloud kurulumu
+Veriler ve fotoğraflar bir SQL veritabanında saklanır. En kolay yol **Supabase** (ücretsiz Postgres):
 
-1. Bu klasörü GitHub reposuna yükle.
-2. Streamlit Cloud'da `New app` seç.
-3. Repository ve `app.py` dosyasını seç.
-4. Deploy et.
-5. Oluşan linki telefonda aç.
+1. [supabase.com](https://supabase.com) üzerinde proje oluştur.
+2. **Project Settings → Database → Connection string** (URI) kopyala. Örn:
+   `postgresql://postgres:[PAROLA]@db.xxxx.supabase.co:5432/postgres`
+3. Streamlit Cloud'da **App → Settings → Secrets** bölümüne ekle:
+
+   ```toml
+   DATABASE_URL = "postgresql://postgres:PAROLA@db.xxxx.supabase.co:5432/postgres"
+   ```
+
+   Lokal çalışırken `.streamlit/secrets.toml` dosyasına aynı satırı koyabilir ya da
+   `export DATABASE_URL=...` ortam değişkenini kullanabilirsin.
+
+Tablolar (`app_state`, `photos`) ilk açılışta otomatik oluşturulur. Herhangi bir
+SQLAlchemy uyumlu URL çalışır (Postgres, MySQL, SQLite). Veritabanı yoksa uygulama
+otomatik olarak yerel dosya yedeğine geçer.
+
+## iPhone'da uygulama gibi kullanma (PWA)
+
+1. Uygulama linkini **Safari**'de aç.
+2. **Paylaş** → **Ana Ekrana Ekle**.
+3. Ana ekranda Gate Visa ikonu çıkar; tarayıcı çubuğu olmadan tam ekran açılır.
+
+> Not: Bu bir PWA'dır (web tabanlı, ana ekrana eklenebilir uygulama). App Store'da
+> dağıtılan native bir iOS uygulaması için Capacitor/React Native + Xcode + Apple
+> Developer hesabı gereken ayrı bir paketleme adımı gerekir.
 
 ## Render kurulumu
 
-1. Bu klasörü GitHub reposuna yükle.
-2. Render'da `New Web Service` seç.
-3. Repo'yu bağla.
-4. Build command: `pip install -r requirements.txt`
-5. Start command: `streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT`
-
-## Kullanım
-
-1. Sol menüden tablo modunu seç.
-2. Excel / CSV dosyalarını yükle.
-3. Tablo otomatik oluşur.
-4. Hücreleri düzenle.
-5. Excel indir veya CSV indir.
-
-## Not
-
-Önceki lokal HTML sürümleri iPhone'da güvenilir değildi. Bu sürümün farkı, Excel okuma/yazma işini tarayıcı yerine Python backend tarafında yapmasıdır.
+Build: `pip install -r requirements.txt`
+Start: `streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT`

@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from excelbase_core import ReadResult, dataframe_to_csv, dataframe_to_xlsx
 from gate_visa_reader import read_gate_visa_file_bytes
@@ -15,6 +16,7 @@ from operation_helpers import (
     passenger_card_view,
     unique_values,
 )
+import db
 from persistence import load_store, save_store
 from photo_store import match_photos_to_dataframe, photo_data_uri
 from passenger_schema import (
@@ -28,7 +30,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "3.7.0"
+APP_VERSION = "4.0.0"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -267,17 +269,38 @@ div[data-testid="stForm"] {
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
-# iPhone "Ana Ekrana Ekle" / tam ekran uygulama davranışı için meta etiketleri
-st.markdown(
+# iPhone "Ana Ekrana Ekle" / tam ekran uygulama (PWA): manifest ve ikon etiketlerini
+# ana dokümanın <head> bölümüne enjekte et (Streamlit aksi halde <body>'ye koyar).
+components.html(
     """
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Gate Visa PAX">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#0d5eaf">
+    <script>
+    (function () {
+      try {
+        const head = window.parent.document.head;
+        if (head.querySelector('#gatevisa-pwa')) return;
+        const marker = document.createElement('meta');
+        marker.id = 'gatevisa-pwa';
+        head.appendChild(marker);
+        const add = (tag, attrs) => {
+          const el = window.parent.document.createElement(tag);
+          Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+          head.appendChild(el);
+        };
+        add('link', { rel: 'manifest', href: '/app/static/manifest.json' });
+        add('link', { rel: 'apple-touch-icon', href: '/app/static/icon-180.png' });
+        add('link', { rel: 'apple-touch-icon', sizes: '180x180', href: '/app/static/icon-180.png' });
+        add('link', { rel: 'icon', type: 'image/png', href: '/app/static/icon-192.png' });
+        add('meta', { name: 'apple-mobile-web-app-capable', content: 'yes' });
+        add('meta', { name: 'mobile-web-app-capable', content: 'yes' });
+        add('meta', { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' });
+        add('meta', { name: 'apple-mobile-web-app-title', content: 'Gate Visa' });
+        add('meta', { name: 'application-name', content: 'Gate Visa' });
+        add('meta', { name: 'theme-color', content: '#0d5eaf' });
+      } catch (e) {}
+    })();
+    </script>
     """,
-    unsafe_allow_html=True,
+    height=0,
 )
 
 
@@ -534,6 +557,14 @@ def render_import_tab() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+    if db.enabled():
+        st.success("🟢 Veritabanı bağlı — veriler ve fotoğraflar kalıcı olarak saklanıyor.")
+    else:
+        st.info(
+            "🟡 Veritabanı bağlı değil — veriler yerel olarak tutuluyor (uygulama yeniden "
+            "başlayınca silinebilir). Kalıcı saklama için `DATABASE_URL` secret'ı ekleyin."
+        )
 
     append_mode = st.toggle("Mevcut yolculara ekle", value=False)
     files = st.file_uploader("Excel / CSV yükle", type=["xlsx", "xls", "xlsm", "ods", "csv"], accept_multiple_files=True)

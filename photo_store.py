@@ -6,6 +6,8 @@ import re
 
 import pandas as pd
 
+import db
+
 # Biyometrik fotoğraflar diskte saklanır; veriyle birlikte kalıcıdır.
 PHOTO_DIR = os.environ.get(
     "PAX_PHOTO_DIR",
@@ -37,17 +39,28 @@ def parse_photo_filename(filename: str) -> dict[str, str]:
     return info
 
 
+def _mime_for_ext(ext: str) -> str:
+    ext = ext.lower().lstrip(".")
+    if ext in ("jpg", "jpeg"):
+        return "image/jpeg"
+    return f"image/{ext or 'jpeg'}"
+
+
 def save_photo_bytes(key: str, ext: str, data: bytes) -> str:
-    """Fotoğrafı diske kaydeder ve kayıtlı dosya adını döndürür."""
-    os.makedirs(PHOTO_DIR, exist_ok=True)
+    """Fotoğrafı kaydeder (önce veritabanı, yoksa disk) ve referansı döndürür."""
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", key) or "foto"
     ext = ext.lower()
     if ext not in ALLOWED_EXT:
         ext = ".jpg"
-    filename = f"{safe}{ext}"
-    with open(os.path.join(PHOTO_DIR, filename), "wb") as handle:
+    ref = f"{safe}{ext}"
+
+    if db.enabled() and db.save_photo(ref, _mime_for_ext(ext), data):
+        return ref
+
+    os.makedirs(PHOTO_DIR, exist_ok=True)
+    with open(os.path.join(PHOTO_DIR, ref), "wb") as handle:
         handle.write(data)
-    return filename
+    return ref
 
 
 def photo_abs_path(filename: str) -> str | None:
@@ -59,17 +72,25 @@ def photo_abs_path(filename: str) -> str | None:
 
 def photo_data_uri(filename: str) -> str | None:
     """Kart HTML'ine gömmek için base64 data-uri üretir."""
+    if not filename:
+        return None
+
+    if db.enabled():
+        result = db.load_photo(filename)
+        if result is not None:
+            mime, encoded = result
+            return f"data:{mime};base64,{encoded}"
+
     path = photo_abs_path(filename)
     if not path:
         return None
-    ext = os.path.splitext(path)[1].lower().lstrip(".")
-    mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext or 'jpeg'}"
+    ext = os.path.splitext(path)[1]
     try:
         with open(path, "rb") as handle:
             encoded = base64.b64encode(handle.read()).decode("ascii")
     except Exception:
         return None
-    return f"data:{mime};base64,{encoded}"
+    return f"data:{_mime_for_ext(ext)};base64,{encoded}"
 
 
 def match_photos_to_dataframe(
