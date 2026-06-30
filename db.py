@@ -51,9 +51,22 @@ def get_engine() -> "Engine | None":
         _init_failed = True
         return None
     try:
-        connect_args = {}
-        if url.startswith("postgresql"):
-            connect_args = {"connect_timeout": 10}
+        connect_args: dict = {}
+        # Bare "postgresql://" -> saf-Python pg8000 sürücüsü (Streamlit Cloud'da
+        # derleme gerektirmez). Kullanıcı sürücü belirtmişse (örn. +psycopg2) dokunma.
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+pg8000://", 1)
+        if "+pg8000" in url:
+            # Supabase vb. barındırılan DB'ler için TLS gerekir.
+            try:
+                import ssl
+
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                connect_args = {"ssl_context": ctx}
+            except Exception:
+                connect_args = {}
         elif url.startswith("sqlite:///"):
             # SQLite dosya yolu için üst klasörü oluştur.
             sqlite_path = url.replace("sqlite:///", "", 1)
