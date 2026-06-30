@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import base64
 from datetime import datetime
+from io import BytesIO
 
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+
+try:
+    from PIL import Image as _PILImage
+except Exception:  # Pillow yoksa küçük resim üretimi atlanır.
+    _PILImage = None  # type: ignore
 
 from excelbase_core import ReadResult, dataframe_to_csv, dataframe_to_xlsx
 from gate_visa_reader import read_gate_visa_file_bytes
@@ -25,9 +31,8 @@ from photo_store import (
     extract_images_from_zip,
     is_zip,
     looks_like_image,
-    make_thumb,
     match_photos_to_dataframe,
-    photo_raw_bytes,
+    photo_data_uri,
 )
 from passenger_schema import (
     ALL_COLUMNS,
@@ -40,7 +45,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.5.0"
+APP_VERSION = "4.5.1"
 PAGE_SIZE = 10
 
 st.set_page_config(
@@ -580,15 +585,23 @@ def thumb_uri(ref: str, max_dim: int, quality: int) -> str | None:
     kilitliyordu. Burada küçük bir küçük resim üretip önbelleğe alıyoruz;
     böylece HTML yükü çok küçük kalıyor ve resize işlemi foto başına bir kez yapılıyor.
     """
-    raw = photo_raw_bytes(ref)
-    if raw is None:
-        return None
-    _, data = raw
-    thumb = make_thumb(data, max_dim, quality)
-    if thumb is None:
-        return None
-    encoded = base64.b64encode(thumb).decode("ascii")
-    return f"data:image/jpeg;base64,{encoded}"
+    uri = photo_data_uri(ref)
+    if not uri or "," not in uri:
+        return uri
+    if _PILImage is None:
+        return uri
+    try:
+        data = base64.b64decode(uri.split(",", 1)[1])
+        img = _PILImage.open(BytesIO(data))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img.thumbnail((max_dim, max_dim))
+        out = BytesIO()
+        img.save(out, format="JPEG", quality=quality, optimize=True)
+        encoded = base64.b64encode(out.getvalue()).decode("ascii")
+        return f"data:image/jpeg;base64,{encoded}"
+    except Exception:
+        return uri
 
 
 def photo_html(row: pd.Series, css_class: str = "pax-photo", size: str = "list") -> str:
