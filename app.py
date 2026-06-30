@@ -30,7 +30,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.0.0"
+APP_VERSION = "4.0.1"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -449,7 +449,7 @@ def photo_html(row: pd.Series, css_class: str = "pax-photo") -> str:
     return f'<div class="{css_class} pax-photo-empty">👤</div>'
 
 
-def render_passenger_card(idx: int, row: pd.Series) -> None:
+def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") -> None:
     card = passenger_card_view(row)
     tags_html = "".join(f'<span class="pax-tag">{t["label"]}: {t["value"]}</span>' for t in card["tags"])
     meta = " · ".join(x for x in [card["source"], card["sheet"]] if x)
@@ -475,7 +475,7 @@ def render_passenger_card(idx: int, row: pd.Series) -> None:
         """,
         unsafe_allow_html=True,
     )
-    if st.button("Detay", key=f"open_card_{idx}", use_container_width=True):
+    if st.button("Detay", key=f"open_card_{key_prefix}_{idx}", use_container_width=True):
         st.session_state.selected_idx = idx
         st.rerun()
 
@@ -719,7 +719,7 @@ def render_archive_tab(base_df: pd.DataFrame) -> None:
         idxs = groups[date_key]
         with st.expander(f"📅 {date_key}  ·  {len(idxs)} yolcu", expanded=False):
             for idx in idxs:
-                render_passenger_card(idx, base_df.loc[idx])
+                render_passenger_card(idx, base_df.loc[idx], key_prefix=f"arch_{date_key}")
 
 
 def render_bottom_bar(base_df: pd.DataFrame) -> None:
