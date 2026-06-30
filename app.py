@@ -26,7 +26,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "3.5.2"
+APP_VERSION = "3.5.3"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -297,6 +297,12 @@ def process_uploads(files, append_mode: bool) -> None:
     elif not append_mode:
         st.session_state.base_df = pd.DataFrame(columns=ALL_COLUMNS)
 
+    if files and merged.empty and not errors:
+        errors.append(
+            "Dosya okundu ancak yolcu satırı bulunamadı. NAME / SURNAME / PASSPORT NUMBER "
+            "sütunlarının dolu olduğundan emin olun."
+        )
+
     st.session_state.read_log = log
     st.session_state.errors = errors
     st.session_state.warnings = validate_passenger_rows(st.session_state.base_df)
@@ -499,6 +505,17 @@ def render_import_tab() -> None:
             "**İpucu:** Yüklenen dosya Gate Visa PAX LIST şablonuna uymuyorsa da yolcu "
             "verisi tespit edilmeye çalışılır. Dosyanın NAME / SURNAME / PASSPORT NUMBER "
             "sütunları içerdiğinden emin olun. **Şablon indir** ile doğru formatı indirebilirsiniz."
+        )
+
+    # Yüklenen veriyi hemen burada göster — kullanıcı sekme değiştirmeden görsün
+    preview_df = st.session_state.base_df
+    if not preview_df.empty:
+        st.success(f"✅ {len(preview_df)} yolcu yüklendi. **Yolcu Kartları** sekmesinden görebilirsin.")
+        st.markdown('<p class="section-label">Yüklenen yolcular (önizleme)</p>', unsafe_allow_html=True)
+        st.dataframe(
+            preview_df[["No", "Ad", "Soyad", "Pasaport No", "Voucher", "Gidiş Tarihi", "Varış Tarihi"]],
+            use_container_width=True,
+            hide_index=True,
         )
 
 
