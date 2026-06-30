@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import json
+import zipfile
 from datetime import datetime, timedelta
 from io import BytesIO
 
@@ -47,7 +49,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.6.1"
+APP_VERSION = "4.7.0"
 PAGE_SIZE = 10
 
 
@@ -296,6 +298,15 @@ div[data-testid="stForm"] {
   border-radius: 0 4px 4px 0;
   background: var(--accent);
 }
+.pax-card.warn::before { background: #f59e0b; }
+.pax-card.bad::before { background: #ef4444; }
+.pax-flags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 0.45rem; }
+.pax-flag {
+  font-size: 0.62rem; font-weight: 800; padding: 2px 8px; border-radius: 999px;
+  background: #fff4e5; color: #b45309; border: 1px solid #fde4bf;
+  text-transform: uppercase; letter-spacing: 0.02em;
+}
+.pax-flag.bad { background: #fde8e8; color: #b91c1c; border-color: #f7c5c5; }
 .pax-card-row { display: flex; gap: 0.9rem; align-items: flex-start; }
 .pax-card-body { flex: 1; min-width: 0; }
 .pax-photo {
@@ -424,9 +435,12 @@ components.html(
 
 def init_state() -> None:
     if "base_df" not in st.session_state:
-        stored_df, stored_files = load_store()
-        st.session_state.base_df = stored_df
-        st.session_state.loaded_files = stored_files
+        loaded = load_store()
+        st.session_state.base_df = loaded[0]
+        st.session_state.loaded_files = loaded[1] if len(loaded) > 1 else []
+        extra = loaded[2] if len(loaded) > 2 else {}
+        st.session_state.import_history = list(extra.get("import_history", []) or [])
+        st.session_state.date_meta = dict(extra.get("date_meta", {}) or {})
     defaults = {
         "base_df": pd.DataFrame(columns=ALL_COLUMNS),
         "last_signature": "",
@@ -445,6 +459,12 @@ def init_state() -> None:
         "page_size": PAGE_SIZE,
         "show_photos": True,
         "updated_at": "",
+        "import_history": [],
+        "date_meta": {},
+        "staging_df": None,
+        "view_mode": "Detaylı",
+        "missing_filter": "Tümü",
+        "sort_by": "Varsayılan",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -455,7 +475,15 @@ def init_state() -> None:
 
 def persist() -> None:
     st.session_state.updated_at = datetime.now().strftime("%d.%m.%Y %H:%M")
-    save_store(st.session_state.base_df, st.session_state.get("loaded_files", []))
+    extra = {
+        "import_history": st.session_state.get("import_history", []),
+        "date_meta": st.session_state.get("date_meta", {}),
+    }
+    try:
+        save_store(st.session_state.base_df, st.session_state.get("loaded_files", []), extra=extra)
+    except TypeError:
+        # Eski/stale persistence modülü ile uyumluluk
+        save_store(st.session_state.base_df, st.session_state.get("loaded_files", []))
 
 
 def uploaded_signature(files) -> str:
@@ -465,7 +493,8 @@ def uploaded_signature(files) -> str:
     return "|".join(parts)
 
 
-def process_uploads(files, append_mode: bool) -> None:
+def stage_uploads(files) -> None:
+    """Excel'i okuyup hazırlık (staging) tablosuna alır — henüz listeye işlemez."""
     results: list[ReadResult] = []
     log: list[str] = []
     errors: list[str] = []
@@ -482,26 +511,100 @@ def process_uploads(files, append_mode: bool) -> None:
 
     merged = gate_visa_results_to_passengers(results)
 
-    if append_mode and not st.session_state.base_df.empty and not merged.empty:
-        combined = pd.concat([st.session_state.base_df, merged], ignore_index=True).fillna("")
-        st.session_state.base_df = normalize_passenger_dataframe(combined)
-    elif not merged.empty:
-        st.session_state.base_df = merged
-    elif not append_mode:
-        st.session_state.base_df = pd.DataFrame(columns=ALL_COLUMNS)
-
     if files and merged.empty and not errors:
         errors.append(
             "Dosya okundu ancak yolcu satırı bulunamadı. NAME / SURNAME / PASSPORT NUMBER "
             "sütunlarının dolu olduğundan emin olun."
         )
 
+    st.session_state.staging_df = merged
+    st.session_state.staging_files = [f.name for f in files or []]
     st.session_state.read_log = log
     st.session_state.errors = errors
-    st.session_state.warnings = validate_passenger_rows(st.session_state.base_df)
-    st.session_state.loaded_files = [f.name for f in files or []]
+    st.session_state.warnings = validate_passenger_rows(merged)
+
+
+def _passport_index(df: pd.DataFrame) -> dict[str, int]:
+    out: dict[str, int] = {}
+    if df.empty or "Pasaport No" not in df.columns:
+        return out
+    for idx, pp in df["Pasaport No"].astype(str).items():
+        key = _norm_match(pp)
+        if key:
+            out[key] = int(idx)
+    return out
+
+
+def staging_duplicate_count() -> int:
+    staging = st.session_state.get("staging_df")
+    if staging is None or staging.empty:
+        return 0
+    existing = _passport_index(st.session_state.base_df)
+    if not existing:
+        return 0
+    count = 0
+    for pp in staging["Pasaport No"].astype(str):
+        if _norm_match(pp) and _norm_match(pp) in existing:
+            count += 1
+    return count
+
+
+def commit_staging(mode: str, dup_strategy: str) -> None:
+    """Staging tablosunu listeye işler. mode: ekle/değiştir. dup_strategy: atla/üzerine/ekle."""
+    merged = st.session_state.get("staging_df")
+    if merged is None:
+        return
+    merged = merged.copy()
+    existing = st.session_state.base_df
+    dup_count = staging_duplicate_count()
+
+    if mode == "replace" or existing.empty:
+        result = merged
+    elif dup_strategy == "skip":
+        ex = _passport_index(existing)
+        keep = [not (_norm_match(pp) and _norm_match(pp) in ex) for pp in merged["Pasaport No"].astype(str)]
+        result = pd.concat([existing, merged[keep]], ignore_index=True).fillna("")
+    elif dup_strategy == "overwrite":
+        result = existing.copy().reset_index(drop=True)
+        ex = _passport_index(result)
+        new_rows = []
+        for _, row in merged.iterrows():
+            key = _norm_match(str(row.get("Pasaport No", "")))
+            if key and key in ex:
+                tgt = ex[key]
+                for col in ALL_COLUMNS:
+                    val = str(row.get(col, "") or "")
+                    # Mevcut fotoğrafı, yeni veride foto yoksa koru
+                    if col == "Foto" and not val:
+                        continue
+                    result.at[tgt, col] = val
+            else:
+                new_rows.append(row)
+        if new_rows:
+            result = pd.concat([result, pd.DataFrame(new_rows)], ignore_index=True).fillna("")
+    else:  # add all
+        result = pd.concat([existing, merged], ignore_index=True).fillna("")
+
+    st.session_state.base_df = normalize_passenger_dataframe(result)
+    st.session_state.loaded_files = st.session_state.get("staging_files", [])
     st.session_state.selected_idx = None
     st.session_state.column_filters = {}
+    st.session_state.pax_page = 0
+
+    history = list(st.session_state.get("import_history", []))
+    history.insert(0, {
+        "time": datetime.now().strftime("%d.%m.%Y %H:%M"),
+        "files": ", ".join(st.session_state.get("staging_files", [])) or "—",
+        "rows": int(len(merged)),
+        "duplicates": int(dup_count),
+        "errors": int(len(st.session_state.get("errors", []))),
+        "mode": "Değiştir" if (mode == "replace" or existing.empty) else f"Ekle ({dup_strategy})",
+    })
+    st.session_state.import_history = history[:30]
+
+    st.session_state.staging_df = None
+    st.session_state.staging_files = []
+    st.session_state.warnings = validate_passenger_rows(st.session_state.base_df)
     persist()
 
 
@@ -602,7 +705,23 @@ def render_unmatched_photos() -> None:
         options.append((label, int(idx)))
     labels = [o[0] for o in options]
 
-    if st.button("Tüm eşleşmeyenleri temizle", key="clear_pending"):
+    pc1, pc2 = st.columns(2)
+    zip_buf = BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for item in pending:
+            name = item["name"]
+            if not name.lower().endswith((".jpg", ".jpeg", ".png")):
+                name = name.rsplit(".", 1)[0] + ".jpg"
+            zf.writestr(name, item["data"])
+    pc1.download_button(
+        "Eşleşmeyenleri ZIP indir",
+        data=zip_buf.getvalue(),
+        file_name=f"eslesmeyen-fotograflar-{datetime.now().strftime('%Y%m%d-%H%M')}.zip",
+        mime="application/zip",
+        use_container_width=True,
+        key="export_unmatched_zip",
+    )
+    if pc2.button("Tüm eşleşmeyenleri temizle", key="clear_pending", use_container_width=True):
         st.session_state.pending_photos = []
         st.rerun()
 
@@ -797,27 +916,61 @@ def photo_html(row: pd.Series, css_class: str = "pax-photo", size: str = "list")
     return f'<div class="{css_class} pax-photo-empty">👤</div>'
 
 
+def card_issues(row: pd.Series) -> list[tuple[str, str]]:
+    """Kart durumu: (etiket, önem) listesi. önem: 'bad' veya 'warn'."""
+    issues: list[tuple[str, str]] = []
+    if not cell_text(row.get("Pasaport No")):
+        issues.append(("Pasaport yok", "bad"))
+    if not str(row.get("Foto", "") or "").strip():
+        issues.append(("Foto yok", "warn"))
+    if not cell_text(row.get("Vize Ücreti Yetişkin")) and not cell_text(row.get("Vize Ücreti Çocuk")):
+        issues.append(("Ücret yok", "warn"))
+    pp = _norm_match(row.get("Pasaport No"))
+    if pp and pp in st.session_state.get("dup_passports", set()):
+        issues.append(("Tekrarlı", "warn"))
+    return issues
+
+
 def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") -> None:
     card = passenger_card_view(row)
+    view_mode = st.session_state.get("view_mode", "Detaylı")
     name = cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu"
     passport = cell_text(row.get("Pasaport No")) or "—"
     voucher = cell_text(row.get("Voucher"))
     dep = cell_text(row.get("Gidiş Tarihi"))
     arr = cell_text(row.get("Varış Tarihi"))
 
-    lines = [f'<div class="pax-line"><span class="pax-k">Pasaport</span><span class="pax-v">{passport}</span></div>']
-    if voucher:
-        lines.append(f'<div class="pax-line"><span class="pax-k">Voucher</span><span class="pax-v">{voucher}</span></div>')
-    if dep or arr:
-        date_val = " → ".join(x for x in [dep or "—", arr or "—"] if True)
-        lines.append(f'<div class="pax-line"><span class="pax-k">Gidiş → Varış</span><span class="pax-v">{date_val}</span></div>')
-    lines_html = "".join(lines)
-    fee_html = f'<div class="pax-fee">Ücret: {card["amount"]}</div>' if card["amount"] else ""
-    photo = photo_html(row) if st.session_state.get("show_photos", True) else ""
+    issues = card_issues(row)
+    card_cls = "pax-card"
+    if any(sev == "bad" for _, sev in issues):
+        card_cls += " bad"
+    elif issues:
+        card_cls += " warn"
+    flags_html = ""
+    if issues:
+        flags_html = '<div class="pax-flags">' + "".join(
+            f'<span class="pax-flag {sev}">{label}</span>' for label, sev in issues
+        ) + "</div>"
+
+    if view_mode == "Kompakt":
+        lines_html = f'<div class="pax-line"><span class="pax-k">Pasaport</span><span class="pax-v">{passport}</span></div>'
+        fee_html = ""
+    else:
+        lines = [f'<div class="pax-line"><span class="pax-k">Pasaport</span><span class="pax-v">{passport}</span></div>']
+        if voucher:
+            lines.append(f'<div class="pax-line"><span class="pax-k">Voucher</span><span class="pax-v">{voucher}</span></div>')
+        if dep or arr:
+            date_val = f'{dep or "—"} → {arr or "—"}'
+            lines.append(f'<div class="pax-line"><span class="pax-k">Gidiş → Varış</span><span class="pax-v">{date_val}</span></div>')
+        lines_html = "".join(lines)
+        fee_html = f'<div class="pax-fee">Ücret: {card["amount"]}</div>' if card["amount"] else ""
+
+    show_photo = st.session_state.get("show_photos", True) and view_mode != "Fotoğrafsız"
+    photo = photo_html(row) if show_photo else ""
 
     st.markdown(
         f"""
-        <div class="pax-card">
+        <div class="{card_cls}">
           <div class="pax-card-row">
             {photo}
             <div class="pax-card-body">
@@ -828,6 +981,7 @@ def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") ->
               <div class="pax-name">{name}</div>
               {lines_html}
               {fee_html}
+              {flags_html}
             </div>
           </div>
         </div>
@@ -868,6 +1022,31 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
         unsafe_allow_html=True,
     )
 
+    with st.expander("Fotoğraf", expanded=False):
+        has_photo = bool(str(row.get("Foto", "") or "").strip())
+        new_photo = st.file_uploader("Fotoğraf değiştir / ekle", key=f"detail_photo_{idx}")
+        if new_photo is not None and st.session_state.get(f"detail_photo_sig_{idx}") != new_photo.name + str(getattr(new_photo, "size", 0)):
+            st.session_state[f"detail_photo_sig_{idx}"] = new_photo.name + str(getattr(new_photo, "size", 0))
+            data = new_photo.getvalue()
+            if looks_like_image(new_photo.name, data):
+                key = cell_text(row.get("Pasaport No")) or f"row{idx}"
+                stored = save_photo_bytes(_norm_match(key) or "foto", ".jpg", _resize_bytes(data))
+                st.session_state.base_df.at[idx, "Foto"] = stored
+                st.session_state.base_df = normalize_passenger_dataframe(st.session_state.base_df)
+                thumb_uri.clear()
+                persist()
+                st.toast("Fotoğraf güncellendi", icon="✅")
+                st.rerun()
+            else:
+                st.error("Seçilen dosya bir görüntü değil.")
+        if has_photo and st.button("Fotoğrafı sil", key=f"detail_photo_del_{idx}"):
+            st.session_state.base_df.at[idx, "Foto"] = ""
+            st.session_state.base_df = normalize_passenger_dataframe(st.session_state.base_df)
+            thumb_uri.clear()
+            persist()
+            st.toast("Fotoğraf silindi", icon="🗑️")
+            st.rerun()
+
     with st.form("passenger_detail_form", border=True):
         updates: dict[str, str] = {}
         for field in editable_passenger_fields():
@@ -905,6 +1084,134 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
         st.rerun()
 
 
+def build_backup_json() -> bytes:
+    df = st.session_state.base_df.fillna("").astype(str) if not st.session_state.base_df.empty else pd.DataFrame(columns=ALL_COLUMNS)
+    payload = {
+        "version": APP_VERSION,
+        "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "passengers": df.to_dict(orient="records"),
+        "loaded_files": st.session_state.get("loaded_files", []),
+        "import_history": st.session_state.get("import_history", []),
+        "date_meta": st.session_state.get("date_meta", {}),
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+
+
+def restore_backup_json(data: bytes) -> tuple[bool, str]:
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except Exception:
+        return False, "Geçersiz JSON dosyası."
+    records = payload.get("passengers")
+    if records is None:
+        return False, "Yedekte 'passengers' alanı yok."
+    df = pd.DataFrame(records)
+    st.session_state.base_df = normalize_passenger_dataframe(df) if not df.empty else pd.DataFrame(columns=ALL_COLUMNS)
+    st.session_state.loaded_files = list(payload.get("loaded_files", []) or [])
+    st.session_state.import_history = list(payload.get("import_history", []) or [])
+    st.session_state.date_meta = dict(payload.get("date_meta", {}) or {})
+    st.session_state.selected_idx = None
+    st.session_state.pax_page = 0
+    thumb_uri.clear()
+    persist()
+    return True, f"{len(st.session_state.base_df)} yolcu geri yüklendi."
+
+
+def render_backup_section() -> None:
+    with st.expander("Yedekleme / geri yükleme", expanded=False):
+        st.caption("Tüm yolcu verisini JSON olarak indir veya bir yedekten geri yükle. (Fotoğraflar dahil değildir.)")
+        st.download_button(
+            "Yedek indir (JSON)",
+            data=build_backup_json(),
+            file_name=f"gatevisa-yedek-{datetime.now().strftime('%Y%m%d-%H%M')}.json",
+            mime="application/json",
+            use_container_width=True,
+            key="backup_download",
+        )
+        restore = st.file_uploader("Yedekten geri yükle (JSON)", type=["json"], key="backup_restore")
+        if restore is not None and st.session_state.get("restore_sig") != restore.name + str(getattr(restore, "size", 0)):
+            ok, msg = restore_backup_json(restore.getvalue())
+            st.session_state.restore_sig = restore.name + str(getattr(restore, "size", 0))
+            if ok:
+                st.success(msg)
+            else:
+                st.error(msg)
+
+
+def render_import_staging() -> None:
+    staging = st.session_state.get("staging_df")
+    if staging is None:
+        return
+
+    if staging.empty:
+        st.warning("Yüklenen dosyada içeri alınacak yolcu bulunamadı.")
+        if st.button("Kapat", key="staging_close_empty"):
+            st.session_state.staging_df = None
+            st.rerun()
+        return
+
+    dup_count = staging_duplicate_count()
+    missing_pp = int(staging["Pasaport No"].astype(str).str.strip().eq("").sum())
+    missing_name = int(staging["Yolcu Adı Soyadı"].astype(str).str.strip().eq("").sum())
+
+    st.markdown(
+        f"""
+        <div class="app-panel">
+          <p class="app-panel-title">Önizleme — {len(staging)} yolcu</p>
+          <p class="app-panel-sub">Onaylamadan önce kontrol et. Tekrarlanan pasaport: {dup_count} ·
+          Pasaport boş: {missing_pp} · Ad-soyad boş: {missing_name}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.dataframe(
+        staging[["No", "Ad", "Soyad", "Pasaport No", "Voucher", "Gidiş Tarihi", "Varış Tarihi"]],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    mode_label = st.radio(
+        "İçeri alma şekli",
+        options=["Mevcut listeye ekle", "Listeyi tamamen değiştir"],
+        horizontal=True,
+        key="staging_mode",
+    )
+    mode = "append" if mode_label == "Mevcut listeye ekle" else "replace"
+
+    dup_strategy = "add"
+    if mode == "append" and dup_count > 0:
+        strat_label = st.radio(
+            f"Tekrarlanan {dup_count} pasaport için",
+            options=["Tekrarları atla", "Üzerine yaz", "Hepsini ekle"],
+            key="staging_dup",
+        )
+        dup_strategy = {"Tekrarları atla": "skip", "Üzerine yaz": "overwrite", "Hepsini ekle": "add"}[strat_label]
+
+    ca, cb = st.columns(2)
+    if ca.button("Onayla ve içeri al", type="primary", use_container_width=True, key="staging_confirm"):
+        commit_staging(mode, dup_strategy)
+        st.session_state.last_signature = ""
+        st.toast("İçeri alındı", icon="✅")
+        st.rerun()
+    if cb.button("İptal", use_container_width=True, key="staging_cancel"):
+        st.session_state.staging_df = None
+        st.session_state.last_signature = ""
+        st.rerun()
+
+
+def render_import_history() -> None:
+    history = st.session_state.get("import_history", [])
+    if not history:
+        return
+    with st.expander(f"Import geçmişi ({len(history)})", expanded=False):
+        for h in history[:15]:
+            st.caption(
+                f'🕒 {h.get("time","")} · {h.get("files","")} · {h.get("rows",0)} yolcu · '
+                f'{h.get("mode","")} · tekrar {h.get("duplicates",0)} · hata {h.get("errors",0)}'
+            )
+
+
 def render_import_tab() -> None:
     st.markdown(
         f"""
@@ -925,14 +1232,15 @@ def render_import_tab() -> None:
             "başlayınca silinebilir). Kalıcı saklama için `DATABASE_URL` secret'ı ekleyin."
         )
 
-    append_mode = st.toggle("Mevcut yolculara ekle", value=False)
     files = st.file_uploader("Excel / CSV yükle", type=["xlsx", "xls", "xlsm", "ods", "csv"], accept_multiple_files=True)
 
     sig = uploaded_signature(files)
     if files and sig != st.session_state.last_signature:
-        process_uploads(files, append_mode)
+        stage_uploads(files)
         st.session_state.last_signature = sig
         st.rerun()
+
+    render_import_staging()
 
     t1, t2, t3 = st.columns(3)
     with t1:
@@ -958,6 +1266,12 @@ def render_import_tab() -> None:
             st.rerun()
     with t3:
         if st.button("Temizle", use_container_width=True):
+            st.session_state.confirm_clear = True
+
+    if st.session_state.get("confirm_clear"):
+        st.warning("Tüm yolcular ve fotoğraf eşleştirmeleri silinecek. Emin misin?")
+        cc1, cc2 = st.columns(2)
+        if cc1.button("Evet, hepsini sil", type="primary", use_container_width=True, key="confirm_clear_yes"):
             st.session_state.base_df = pd.DataFrame(columns=ALL_COLUMNS)
             st.session_state.last_signature = ""
             st.session_state.read_log = []
@@ -970,9 +1284,17 @@ def render_import_tab() -> None:
             st.session_state.pax_page = 0
             st.session_state.arch_page = 0
             st.session_state.pending_photos = []
+            st.session_state.staging_df = None
+            st.session_state.confirm_clear = False
             thumb_uri.clear()
             persist()
             st.rerun()
+        if cc2.button("Vazgeç", use_container_width=True, key="confirm_clear_no"):
+            st.session_state.confirm_clear = False
+            st.rerun()
+
+    render_backup_section()
+    render_import_history()
 
     for item in st.session_state.read_log[:10]:
         st.success(item)
@@ -1072,6 +1394,42 @@ def render_card_page(view_df: pd.DataFrame, state_key: str, key_prefix: str) -> 
     render_pagination(state_key, page, pages, f"{key_prefix}_bot")
 
 
+def apply_missing_filter(df: pd.DataFrame, choice: str) -> pd.DataFrame:
+    if df.empty or choice == "Tümü":
+        return df
+    if choice == "Fotosuz":
+        return df[df["Foto"].astype(str).str.strip().eq("")]
+    if choice == "Pasaportsuz":
+        return df[df["Pasaport No"].astype(str).str.strip().eq("")]
+    if choice == "Ücretsiz":
+        adult = df["Vize Ücreti Yetişkin"].astype(str).str.strip()
+        child = df["Vize Ücreti Çocuk"].astype(str).str.strip()
+        return df[adult.eq("") & child.eq("")]
+    if choice == "Tekrarlı":
+        dups = st.session_state.get("dup_passports", set())
+        return df[df["Pasaport No"].map(lambda v: _norm_match(v) in dups and bool(_norm_match(v)))]
+    return df
+
+
+def apply_sort(df: pd.DataFrame, choice: str) -> pd.DataFrame:
+    if df.empty or choice == "Varsayılan":
+        return df
+    work = df.copy()
+    if choice == "İsim":
+        work["_k"] = work["Yolcu Adı Soyadı"].astype(str).str.casefold()
+        return work.sort_values("_k").drop(columns="_k")
+    if choice == "Pasaport":
+        work["_k"] = work["Pasaport No"].astype(str).str.casefold()
+        return work.sort_values("_k").drop(columns="_k")
+    if choice == "Gidiş Tarihi":
+        work["_k"] = work["Gidiş Tarihi"].map(lambda v: parse_date_value(v) or pd.Timestamp.max.date())
+        return work.sort_values("_k").drop(columns="_k")
+    if choice == "Ücret":
+        work["_k"] = work.apply(lambda r: parse_amount(r.get("Vize Ücreti Yetişkin")) + parse_amount(r.get("Vize Ücreti Çocuk")), axis=1)
+        return work.sort_values("_k", ascending=False).drop(columns="_k")
+    return df
+
+
 def render_passengers_tab(base_df: pd.DataFrame) -> None:
     if base_df.empty:
         st.info("Henüz yolcu yok. **Import** sekmesinden Excel yükle.")
@@ -1090,8 +1448,33 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
             key="page_size_select",
         )
     with opt_c2:
-        st.session_state.show_photos = st.toggle(
-            "Fotoğrafları göster", value=st.session_state.get("show_photos", True)
+        modes = ["Detaylı", "Kompakt", "Fotoğrafsız"]
+        cur_mode = st.session_state.get("view_mode", "Detaylı")
+        st.session_state.view_mode = st.selectbox(
+            "Görünüm",
+            options=modes,
+            index=modes.index(cur_mode) if cur_mode in modes else 0,
+            key="view_mode_select",
+        )
+
+    opt_c3, opt_c4 = st.columns([1, 1])
+    with opt_c3:
+        miss_opts = ["Tümü", "Fotosuz", "Pasaportsuz", "Ücretsiz", "Tekrarlı"]
+        cur_miss = st.session_state.get("missing_filter", "Tümü")
+        st.session_state.missing_filter = st.selectbox(
+            "Hızlı filtre",
+            options=miss_opts,
+            index=miss_opts.index(cur_miss) if cur_miss in miss_opts else 0,
+            key="missing_filter_select",
+        )
+    with opt_c4:
+        sort_opts = ["Varsayılan", "İsim", "Pasaport", "Gidiş Tarihi", "Ücret"]
+        cur_sort = st.session_state.get("sort_by", "Varsayılan")
+        st.session_state.sort_by = st.selectbox(
+            "Sırala",
+            options=sort_opts,
+            index=sort_opts.index(cur_sort) if cur_sort in sort_opts else 0,
+            key="sort_by_select",
         )
 
     filter_count = total_active_filters()
@@ -1101,9 +1484,11 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
     active = {k: v for k, v in st.session_state.column_filters.items() if v}
     active_dates = {k: v for k, v in st.session_state.date_filters.items() if v}
     view_df = apply_filters(base_df, search, active, active_dates)
+    view_df = apply_missing_filter(view_df, st.session_state.missing_filter)
+    view_df = apply_sort(view_df, st.session_state.sort_by)
 
     # Arama/filtre değişince sayfayı başa al
-    sig = f"{search}|{sorted(active.items())}|{sorted(active_dates.keys())}"
+    sig = f"{search}|{sorted(active.items())}|{sorted(active_dates.keys())}|{st.session_state.missing_filter}|{st.session_state.sort_by}"
     if st.session_state.get("pax_filter_sig") != sig:
         st.session_state.pax_filter_sig = sig
         st.session_state.pax_page = 0
@@ -1234,7 +1619,92 @@ def render_archive_tab(base_df: pd.DataFrame) -> None:
         key="arch_range_xlsx",
     )
 
+    photo_zip = build_date_photo_zip(sub_df)
+    if photo_zip is not None:
+        st.download_button(
+            "Bu tarihin fotoğraflarını ZIP indir",
+            data=photo_zip,
+            file_name=f"fotograflar-{safe_date}-{stamp}.zip",
+            mime="application/zip",
+            use_container_width=True,
+            key="arch_photo_zip",
+        )
+
+    render_operation_panel(date_key, sub_df)
     render_card_page(sub_df, "arch_page", "arch")
+
+
+def build_date_photo_zip(df: pd.DataFrame) -> bytes | None:
+    """Verilen yolcuların fotoğraflarını ZIP olarak paketler."""
+    rows = [r for _, r in df.iterrows() if str(r.get("Foto", "") or "").strip()]
+    if not rows:
+        return None
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        used: set[str] = set()
+        for row in rows:
+            uri = photo_data_uri(str(row.get("Foto", "") or ""))
+            if not uri or "," not in uri:
+                continue
+            try:
+                data = base64.b64decode(uri.split(",", 1)[1])
+            except Exception:
+                continue
+            base = (cell_text(row.get("Pasaport No")) or cell_text(row.get("Yolcu Adı Soyadı")) or "foto")
+            base = "".join(c if c.isalnum() or c in "-_" else "_" for c in base)
+            name = f"{base}.jpg"
+            n = 1
+            while name in used:
+                name = f"{base}_{n}.jpg"
+                n += 1
+            used.add(name)
+            zf.writestr(name, data)
+    return buf.getvalue()
+
+
+def render_operation_panel(date_key: str, sub_df: pd.DataFrame) -> None:
+    meta = dict(st.session_state.get("date_meta", {}).get(date_key, {}))
+
+    # Otomatik kontrol listesi
+    summ = summarize_group(sub_df)
+    total = summ["count"]
+    photo_ok = summ["with_photo"] == total and total > 0
+    pp_ok = sub_df["Pasaport No"].astype(str).str.strip().ne("").all()
+    fee_ok = sub_df.apply(lambda r: bool(cell_text(r.get("Vize Ücreti Yetişkin")) or cell_text(r.get("Vize Ücreti Çocuk"))), axis=1).all()
+    voucher_ok = sub_df["Voucher"].astype(str).str.strip().ne("").all()
+
+    def mark(ok: bool) -> str:
+        return "✅" if ok else "⚠️"
+
+    with st.expander(f"Operasyon — {date_key}", expanded=False):
+        st.markdown(
+            f"""
+            <div class="format-box">
+            {mark(photo_ok)} Fotoğraflar ({summ['with_photo']}/{total})<br>
+            {mark(pp_ok)} Pasaport bilgileri<br>
+            {mark(fee_ok)} Ücret bilgileri<br>
+            {mark(voucher_ok)} Voucher bilgileri
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        status_opts = ["Hazırlanıyor", "Foto kontrol", "Evrak kontrol", "Tamamlandı"]
+        cur_status = meta.get("status", "Hazırlanıyor")
+        status = st.selectbox(
+            "Durum",
+            options=status_opts,
+            index=status_opts.index(cur_status) if cur_status in status_opts else 0,
+            key=f"op_status_{date_key}",
+        )
+        staff = st.text_input("Görevli", value=meta.get("staff", ""), key=f"op_staff_{date_key}")
+        note = st.text_area("Not", value=meta.get("note", ""), key=f"op_note_{date_key}")
+        if st.button("Operasyon bilgisini kaydet", key=f"op_save_{date_key}", use_container_width=True):
+            dm = dict(st.session_state.get("date_meta", {}))
+            dm[date_key] = {"status": status, "staff": staff, "note": note}
+            st.session_state.date_meta = dm
+            persist()
+            st.toast("Operasyon bilgisi kaydedildi", icon="✅")
+            st.rerun()
 
 
 def render_bottom_bar(base_df: pd.DataFrame) -> None:
@@ -1269,6 +1739,9 @@ render_topbar()
 
 base_df = normalize_passenger_dataframe(st.session_state.base_df.copy())
 st.session_state.base_df = base_df
+
+_pp_norm = base_df["Pasaport No"].astype(str).map(_norm_match) if not base_df.empty else pd.Series(dtype=str)
+st.session_state.dup_passports = set(_pp_norm[_pp_norm.ne("") & _pp_norm.duplicated(keep=False)]) if len(_pp_norm) else set()
 
 if st.session_state.selected_idx is not None and not base_df.empty:
     render_detail_view(st.session_state.base_df)
