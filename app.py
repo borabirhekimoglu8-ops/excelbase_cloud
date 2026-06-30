@@ -15,6 +15,7 @@ from operation_helpers import (
     passenger_card_view,
     unique_values,
 )
+from persistence import load_store, save_store
 from passenger_schema import (
     ALL_COLUMNS,
     TEMPLATE_NAME,
@@ -26,7 +27,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "3.5.4"
+APP_VERSION = "3.6.0"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -248,6 +249,10 @@ st.markdown(APP_CSS, unsafe_allow_html=True)
 
 
 def init_state() -> None:
+    if "base_df" not in st.session_state:
+        stored_df, stored_files = load_store()
+        st.session_state.base_df = stored_df
+        st.session_state.loaded_files = stored_files
     defaults = {
         "base_df": pd.DataFrame(columns=ALL_COLUMNS),
         "last_signature": "",
@@ -263,6 +268,10 @@ def init_state() -> None:
             st.session_state[key] = value
     if "tag_filters" in st.session_state and not st.session_state.get("column_filters"):
         st.session_state.column_filters = st.session_state.pop("tag_filters", {})
+
+
+def persist() -> None:
+    save_store(st.session_state.base_df, st.session_state.get("loaded_files", []))
 
 
 def uploaded_signature(files) -> str:
@@ -309,6 +318,7 @@ def process_uploads(files, append_mode: bool) -> None:
     st.session_state.loaded_files = [f.name for f in files or []]
     st.session_state.selected_idx = None
     st.session_state.column_filters = {}
+    persist()
 
 
 def render_topbar() -> None:
@@ -430,6 +440,7 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
             st.session_state.base_df.at[idx, field] = value
         st.session_state.base_df = normalize_passenger_dataframe(st.session_state.base_df)
         st.session_state.selected_idx = None
+        persist()
         st.toast("Yolcu güncellendi", icon="✅")
         st.rerun()
 
@@ -438,6 +449,7 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
             st.session_state.base_df.drop(index=idx).reset_index(drop=True)
         )
         st.session_state.selected_idx = None
+        persist()
         st.toast("Yolcu silindi", icon="🗑️")
         st.rerun()
 
@@ -481,6 +493,7 @@ def render_import_tab() -> None:
             st.session_state.warnings = []
             st.session_state.loaded_files = ["demo.xlsx"]
             st.session_state.selected_idx = None
+            persist()
             st.rerun()
     with t3:
         if st.button("Temizle", use_container_width=True):
@@ -492,6 +505,7 @@ def render_import_tab() -> None:
             st.session_state.loaded_files = []
             st.session_state.selected_idx = None
             st.session_state.column_filters = {}
+            persist()
             st.rerun()
 
     for item in st.session_state.read_log[:10]:
