@@ -7,11 +7,11 @@ enableStaticServing = true
 gatherUsageStats = false
 
 [theme]
-base = "dark"
-primaryColor = "#F5C451"
-backgroundColor = "#070B16"
-secondaryBackgroundColor = "#111A2E"
-textColor = "#EAF0FB"
+base = "light"
+primaryColor = "#2563EB"
+backgroundColor = "#F5F7FB"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1B2433"
 font = "sans serif"
 
 [client]

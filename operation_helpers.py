@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pandas as pd
@@ -14,11 +15,27 @@ from passenger_schema import (
 )
 
 
+DATE_FILTER_FIELDS = ["Gidiş Tarihi", "Varış Tarihi"]
+
+
 def cell_text(value: Any) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return ""
     text = str(value).strip()
     return "" if text.lower() == "nan" else text
+
+
+def parse_date_value(value: Any):
+    """Metin tarihi gerçek date nesnesine çevirir (gg.aa.yyyy ve yyyy-aa-gg destekli)."""
+    text = cell_text(value)
+    if not text:
+        return None
+    # ISO benzeri (yyyy-aa-gg / yyyy/aa/gg) ise gün-önce olmamalı; aksi halde gg.aa.yyyy varsay.
+    is_iso = bool(re.match(r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}", text))
+    ts = pd.to_datetime(text, errors="coerce", dayfirst=not is_iso)
+    if pd.isna(ts):
+        return None
+    return ts.date()
 
 
 def passenger_card_view(row: pd.Series) -> dict[str, Any]:
@@ -89,6 +106,7 @@ def apply_filters(
     df: pd.DataFrame,
     search: str,
     column_filters: dict[str, str | None],
+    date_filters: dict[str, tuple] | None = None,
 ) -> pd.DataFrame:
     if df.empty:
         return df
@@ -104,5 +122,22 @@ def apply_filters(
     for field, value in column_filters.items():
         if value and field in view.columns:
             view = view[view[field].astype(str).str.strip() == value]
+
+    for field, bounds in (date_filters or {}).items():
+        if not bounds or field not in view.columns:
+            continue
+        start, end = bounds
+
+        def in_range(value, start=start, end=end) -> bool:
+            d = parse_date_value(value)
+            if d is None:
+                return False
+            if start is not None and d < start:
+                return False
+            if end is not None and d > end:
+                return False
+            return True
+
+        view = view[view[field].map(in_range)]
 
     return view

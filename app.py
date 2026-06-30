@@ -9,10 +9,12 @@ import streamlit.components.v1 as components
 from excelbase_core import ReadResult, dataframe_to_csv, dataframe_to_xlsx
 from gate_visa_reader import read_gate_visa_file_bytes
 from operation_helpers import (
+    DATE_FILTER_FIELDS,
     active_filter_count,
     apply_filters,
     editable_passenger_fields,
     filterable_headers,
+    parse_date_value,
     passenger_card_view,
     unique_values,
 )
@@ -36,7 +38,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.2.3"
+APP_VERSION = "4.4.0"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -47,18 +49,20 @@ st.set_page_config(
 
 APP_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Playfair+Display:wght@700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --gold: #f5c451;
-  --gold-soft: #ffe2a3;
-  --cyan: #38bdf8;
-  --ink: #eaf0fb;
-  --muted: #9fb0cf;
-  --glass: rgba(255, 255, 255, 0.045);
-  --glass-strong: rgba(255, 255, 255, 0.07);
-  --border: rgba(255, 255, 255, 0.10);
-  --shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+  --accent: #2563eb;
+  --accent-dark: #1d4ed8;
+  --accent-soft: #eaf1ff;
+  --ink: #1b2433;
+  --ink-soft: #3a465a;
+  --muted: #6b7688;
+  --bg: #f5f7fb;
+  --panel: #ffffff;
+  --border: #e4e8f0;
+  --border-soft: #eef1f6;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 6px 16px rgba(16, 24, 40, 0.05);
 }
 
 /* Manage app / deploy / üst bar — status widget hariç */
@@ -82,309 +86,239 @@ html, body, [class*="css"], .stApp, .stMarkdown, p, span, label, div {
   font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
 
-.stApp {
-  background:
-    radial-gradient(1200px 700px at 80% -10%, rgba(56, 189, 248, 0.18), transparent 55%),
-    radial-gradient(1000px 600px at 0% 10%, rgba(245, 196, 81, 0.12), transparent 50%),
-    linear-gradient(180deg, #070b16 0%, #0a1326 45%, #060a14 100%);
-  background-attachment: fixed;
+/* Uzun metinlerin üst üste binmesini engelle */
+p, span, label, h1, h2, h3, .pax-name, .pax-line, .app-title, .app-sub {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-/* Sinematik hareketli ışık katmanı — tıklamayı engellemez */
-.stApp::before {
-  content: "";
-  position: fixed;
-  inset: -20%;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(600px 400px at 20% 30%, rgba(56, 189, 248, 0.10), transparent 60%),
-    radial-gradient(500px 500px at 85% 70%, rgba(245, 196, 81, 0.08), transparent 60%);
-  animation: aurora 16s ease-in-out infinite alternate;
-}
-@keyframes aurora {
-  0%   { transform: translate3d(0, 0, 0) scale(1); opacity: 0.85; }
-  100% { transform: translate3d(0, -3%, 0) scale(1.08); opacity: 1; }
-}
-
+.stApp { background: var(--bg); }
 [data-testid="stAppViewContainer"] > .main { background: transparent !important; }
 .block-container {
-  position: relative;
-  z-index: 1;
-  padding-top: max(0.85rem, env(safe-area-inset-top));
+  padding-top: max(1rem, env(safe-area-inset-top));
   padding-bottom: max(2.6rem, env(safe-area-inset-bottom));
   padding-left: max(1rem, env(safe-area-inset-left));
   padding-right: max(1rem, env(safe-area-inset-right));
   max-width: 720px;
 }
 
-/* Sekmeler — cam pill + altın parıltı */
+/* Sekmeler — sade beyaz pill */
 .stTabs [data-baseweb="tab-list"] {
   gap: 6px;
-  background: var(--glass);
-  border-radius: 16px;
+  background: var(--panel);
+  border-radius: 14px;
   padding: 5px;
   border: 1px solid var(--border);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
 }
 .stTabs [data-baseweb="tab"] {
-  border-radius: 12px !important;
+  border-radius: 10px !important;
   background: transparent !important;
   color: var(--muted) !important;
   font-weight: 700 !important;
   padding: 9px 18px !important;
   border: none !important;
-  transition: all 0.25s ease;
 }
 .stTabs [aria-selected="true"] {
-  background: linear-gradient(135deg, rgba(245,196,81,0.20), rgba(56,189,248,0.14)) !important;
-  color: var(--gold-soft) !important;
-  box-shadow: 0 0 18px rgba(245, 196, 81, 0.28), inset 0 0 0 1px rgba(245,196,81,0.35) !important;
+  background: var(--accent-soft) !important;
+  color: var(--accent-dark) !important;
 }
-.stTabs [data-baseweb="tab-panel"] { padding-top: 0.95rem; }
+.stTabs [data-baseweb="tab-panel"] { padding-top: 1rem; }
 
 div[data-testid="stMetric"] {
-  background: var(--glass-strong) !important;
+  background: var(--panel) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 16px !important;
+  border-radius: 14px !important;
   padding: 12px 14px !important;
   box-shadow: var(--shadow);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 div[data-testid="stMetricLabel"] {
   color: var(--muted) !important;
   font-size: 0.66rem !important;
   font-weight: 800 !important;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 div[data-testid="stMetricValue"] {
-  color: var(--gold) !important; font-weight: 800 !important;
-  text-shadow: 0 0 16px rgba(245, 196, 81, 0.35);
+  color: var(--ink) !important; font-weight: 800 !important;
 }
 
 .stTextInput input, .stSelectbox div[data-baseweb="select"] > div,
-.stToggle, [data-baseweb="select"] {
-  background: rgba(255,255,255,0.06) !important;
+.stDateInput input, [data-baseweb="select"] {
+  background: var(--panel) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 12px !important;
-  min-height: 46px;
+  border-radius: 10px !important;
+  min-height: 44px;
   color: var(--ink) !important;
 }
 .stTextInput input { color: var(--ink) !important; }
-.stTextInput input:focus {
-  border-color: var(--gold) !important;
-  box-shadow: 0 0 0 3px rgba(245, 196, 81, 0.18), 0 0 22px rgba(245,196,81,0.22) !important;
+.stTextInput input:focus, .stDateInput input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12) !important;
 }
 
 .stButton > button, .stDownloadButton > button {
-  border-radius: 12px !important;
-  min-height: 46px;
-  font-weight: 800 !important;
-  letter-spacing: 0.02em;
-  color: var(--ink) !important;
-  background: var(--glass-strong) !important;
+  border-radius: 10px !important;
+  min-height: 44px;
+  font-weight: 700 !important;
+  color: var(--ink-soft) !important;
+  background: var(--panel) !important;
   border: 1px solid var(--border) !important;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 .stButton > button:hover, .stDownloadButton > button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 26px rgba(0,0,0,0.45);
-  border-color: rgba(245,196,81,0.45) !important;
+  background: var(--accent-soft) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent-dark) !important;
 }
 .stDownloadButton > button[kind="primary"], .stButton > button[kind="primary"] {
-  background: linear-gradient(135deg, #f5c451 0%, #f0a93a 100%) !important;
-  color: #1a1304 !important;
-  border: none !important;
-  box-shadow: 0 6px 24px rgba(245, 196, 81, 0.38), 0 0 0 1px rgba(255,255,255,0.10) inset !important;
+  background: var(--accent) !important;
+  color: #ffffff !important;
+  border: 1px solid var(--accent) !important;
 }
 .stDownloadButton > button[kind="primary"]:hover, .stButton > button[kind="primary"]:hover {
-  box-shadow: 0 10px 34px rgba(245, 196, 81, 0.55) !important;
+  background: var(--accent-dark) !important;
+  color: #ffffff !important;
 }
 
 [data-testid="stFileUploader"] section {
-  background: var(--glass) !important;
-  border: 2px dashed rgba(245, 196, 81, 0.4) !important;
-  border-radius: 16px !important;
-  backdrop-filter: blur(10px);
+  background: var(--panel) !important;
+  border: 1.5px dashed var(--border) !important;
+  border-radius: 14px !important;
 }
 
 div[data-testid="stExpander"],
 div[data-testid="stForm"] {
-  background: var(--glass-strong) !important;
+  background: var(--panel) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 16px !important;
+  border-radius: 14px !important;
   box-shadow: var(--shadow);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
-/* HERO — sinematik afiş */
+/* HERO — sade başlık kartı */
 .app-hero {
-  position: relative;
-  overflow: hidden;
-  background:
-    linear-gradient(135deg, rgba(245,196,81,0.10), rgba(56,189,248,0.06)),
-    rgba(255,255,255,0.04);
-  border-radius: 22px;
-  padding: 1.5rem 1.4rem;
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 1.25rem 1.3rem;
   margin-bottom: 1rem;
-  border: 1px solid rgba(245, 196, 81, 0.22);
-  box-shadow: var(--shadow), 0 0 60px rgba(56, 189, 248, 0.10) inset;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  box-shadow: var(--shadow);
 }
-.app-hero::after {
-  content: "";
-  position: absolute; top: 0; left: -60%;
-  width: 50%; height: 100%;
-  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.16), transparent);
-  transform: skewX(-18deg);
-  animation: sheen 6s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes sheen { 0%,60% { left: -60%; } 100% { left: 130%; } }
 .app-title {
   margin: 0;
-  font-family: 'Playfair Display', serif !important;
-  font-size: 2.05rem;
-  font-weight: 900;
-  letter-spacing: 0.01em;
-  background: linear-gradient(92deg, #ffe9b0 0%, #f5c451 35%, #38bdf8 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 40px rgba(245, 196, 81, 0.25);
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--ink);
+  letter-spacing: -0.01em;
 }
 .app-sub {
-  margin: 0.45rem 0 0;
+  margin: 0.4rem 0 0;
   color: var(--muted);
-  font-size: 0.84rem;
-  letter-spacing: 0.03em;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   font-weight: 700;
+  line-height: 1.4;
 }
 
-/* YOLCU KARTI — cam + altın kenar parıltısı */
+/* YOLCU KARTI — temiz beyaz kart */
 .pax-card {
   position: relative;
-  background: linear-gradient(160deg, rgba(255,255,255,0.075), rgba(255,255,255,0.03));
-  border-radius: 18px;
-  padding: 1rem 1.05rem;
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 1rem 1.1rem 1rem 1.25rem;
   margin-bottom: 0.7rem;
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .pax-card::before {
   content: "";
-  position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px;
-  border-radius: 3px;
-  background: linear-gradient(180deg, #f5c451, #38bdf8);
-  box-shadow: 0 0 14px rgba(245,196,81,0.6);
+  position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--accent);
 }
-.pax-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(245, 196, 81, 0.4);
-  box-shadow: 0 26px 60px rgba(0,0,0,0.6), 0 0 30px rgba(245,196,81,0.12);
-}
-.pax-card-row { display: flex; gap: 0.85rem; align-items: flex-start; }
+.pax-card-row { display: flex; gap: 0.9rem; align-items: flex-start; }
 .pax-card-body { flex: 1; min-width: 0; }
 .pax-photo {
-  width: 66px; height: 84px; border-radius: 12px; object-fit: cover;
+  width: 64px; height: 82px; border-radius: 10px; object-fit: cover;
   flex-shrink: 0;
-  border: 2px solid transparent;
-  background:
-    linear-gradient(#0b1326, #0b1326) padding-box,
-    linear-gradient(135deg, #f5c451, #38bdf8) border-box;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.5), 0 0 16px rgba(56,189,248,0.25);
+  border: 1px solid var(--border);
+  background: var(--bg);
 }
 .pax-photo-empty {
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.9rem; color: rgba(245, 196, 81, 0.55);
+  font-size: 1.8rem; color: #c2cad6;
 }
 .pax-photo-lg {
-  width: 96px; height: 122px; border-radius: 14px; object-fit: cover;
+  width: 94px; height: 120px; border-radius: 12px; object-fit: cover;
   flex-shrink: 0;
-  border: 2px solid transparent;
-  background:
-    linear-gradient(#0b1326, #0b1326) padding-box,
-    linear-gradient(135deg, #f5c451, #38bdf8) border-box;
-  box-shadow: 0 8px 26px rgba(0,0,0,0.55), 0 0 22px rgba(56,189,248,0.3);
-  display: flex; align-items: center; justify-content: center; font-size: 2.6rem; color: rgba(245,196,81,0.55);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center; font-size: 2.4rem; color: #c2cad6;
 }
-.pax-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; }
+.pax-card-top { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.45rem; }
 .pax-no {
-  font-size: 0.68rem; font-weight: 800; padding: 3px 10px; border-radius: 999px;
-  background: linear-gradient(135deg, rgba(245,196,81,0.22), rgba(245,196,81,0.10));
-  color: var(--gold-soft); border: 1px solid rgba(245,196,81,0.3);
-  letter-spacing: 0.04em;
+  font-size: 0.66rem; font-weight: 800; padding: 3px 10px; border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-dark); letter-spacing: 0.03em;
+  white-space: nowrap;
 }
-.pax-date { font-size: 0.74rem; color: var(--muted); font-weight: 700; }
+.pax-date { font-size: 0.74rem; color: var(--muted); font-weight: 700; white-space: nowrap; }
 .pax-name {
-  font-family: 'Playfair Display', serif !important;
-  font-size: 1.2rem; font-weight: 800; color: #fff; margin-bottom: 0.2rem;
-  letter-spacing: 0.01em;
+  font-size: 1.08rem; font-weight: 800; color: var(--ink); margin: 0 0 0.3rem;
+  line-height: 1.3;
 }
-.pax-line { font-size: 0.82rem; color: var(--muted); line-height: 1.45; margin-bottom: 0.5rem; }
+.pax-line { font-size: 0.82rem; color: var(--muted); line-height: 1.55; margin: 0 0 0.55rem; }
 .pax-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .pax-tag {
   font-size: 0.66rem; font-weight: 700; padding: 3px 9px; border-radius: 999px;
-  background: rgba(56, 189, 248, 0.12); color: #bae6fd; border: 1px solid rgba(56,189,248,0.25);
+  background: var(--border-soft); color: var(--ink-soft); border: 1px solid var(--border);
 }
 .pax-fee {
-  margin-top: 0.4rem; font-size: 0.86rem; font-weight: 800; color: var(--gold);
-  text-shadow: 0 0 14px rgba(245,196,81,0.3);
+  margin-top: 0.55rem; font-size: 0.86rem; font-weight: 800; color: var(--accent-dark);
 }
-.pax-meta { margin-top: 0.4rem; font-size: 0.64rem; color: #6b7da0; letter-spacing: 0.03em; }
+.pax-meta { margin-top: 0.5rem; font-size: 0.64rem; color: #9aa4b4; letter-spacing: 0.02em; }
 
 .app-panel {
-  background: var(--glass-strong);
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 1rem 1.1rem;
   margin-bottom: 0.8rem;
   box-shadow: var(--shadow);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 .app-panel-title {
-  margin: 0; font-weight: 800; color: var(--gold-soft); font-size: 1rem;
-  letter-spacing: 0.02em;
+  margin: 0; font-weight: 800; color: var(--ink); font-size: 1rem; line-height: 1.35;
 }
-.app-panel-sub { margin: 0.25rem 0 0; font-size: 0.8rem; color: var(--muted); }
+.app-panel-sub { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
 
 .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0.5rem 0; }
 .filter-chip {
   padding: 4px 11px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
-  background: rgba(245, 196, 81, 0.14); color: var(--gold-soft); border: 1px solid rgba(245,196,81,0.3);
+  background: var(--accent-soft); color: var(--accent-dark); border: 1px solid #d4e2ff;
 }
 
 .format-box {
-  background: rgba(0,0,0,0.25);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 0.7rem 0.8rem;
+  padding: 0.75rem 0.85rem;
   font-size: 0.8rem;
-  color: var(--muted);
-  line-height: 1.6;
+  color: var(--ink-soft);
+  line-height: 1.65;
   margin-top: 0.55rem;
 }
-.format-box code { color: var(--cyan); background: rgba(56,189,248,0.12); padding: 1px 5px; border-radius: 5px; }
-.format-box b { color: var(--gold-soft); }
+.format-box code { color: var(--accent-dark); background: var(--accent-soft); padding: 1px 5px; border-radius: 5px; }
+.format-box b { color: var(--ink); }
 
 .section-label {
   font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--gold);
-  margin: 0.7rem 0 0.45rem;
-  text-shadow: 0 0 14px rgba(245,196,81,0.25);
+  color: var(--muted);
+  margin: 0.8rem 0 0.5rem;
 }
 
 div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-weight: 700; }
@@ -416,7 +350,7 @@ components.html(
         add('link', { rel: 'icon', type: 'image/png', href: '/app/static/icon-192.png' });
         add('meta', { name: 'apple-mobile-web-app-title', content: 'Gate Visa' });
         add('meta', { name: 'application-name', content: 'Gate Visa' });
-        add('meta', { name: 'theme-color', content: '#0d5eaf' });
+        add('meta', { name: 'theme-color', content: '#ffffff' });
       } catch (e) {}
     })();
     </script>
@@ -439,6 +373,7 @@ def init_state() -> None:
         "loaded_files": [],
         "selected_idx": None,
         "column_filters": {},
+        "date_filters": {},
         "photo_log": [],
         "photo_signature": "",
     }
@@ -565,6 +500,12 @@ def render_active_filter_chips(filters: dict[str, str | None]) -> None:
     st.markdown(f'<div class="filter-chips">{chips}</div>', unsafe_allow_html=True)
 
 
+def total_active_filters() -> int:
+    cols = sum(1 for v in st.session_state.column_filters.values() if v)
+    dates = sum(1 for v in st.session_state.get("date_filters", {}).values() if v)
+    return cols + dates
+
+
 def render_header_filters(base_df: pd.DataFrame) -> None:
     headers = filterable_headers(base_df)
     if not headers:
@@ -573,8 +514,41 @@ def render_header_filters(base_df: pd.DataFrame) -> None:
 
     render_active_filter_chips(st.session_state.column_filters)
 
+    date_fields = [h for h in headers if h in DATE_FILTER_FIELDS]
+    other_fields = [h for h in headers if h not in DATE_FILTER_FIELDS]
+
+    # Takvim ile tarih aralığı filtreleri
+    for field in date_fields:
+        parsed = [parse_date_value(v) for v in base_df[field].tolist()]
+        parsed = [d for d in parsed if d is not None]
+        date_kwargs = {}
+        if parsed:
+            date_kwargs["min_value"] = min(parsed)
+            date_kwargs["max_value"] = max(parsed)
+        current = st.session_state.date_filters.get(field)
+        default_value = current if current else ()
+        picked = st.date_input(
+            f"{field} (takvimden seç)",
+            value=default_value,
+            key=f"date_{field}",
+            format="YYYY-MM-DD",
+            **date_kwargs,
+        )
+        if isinstance(picked, (list, tuple)):
+            if len(picked) == 2:
+                st.session_state.date_filters[field] = (picked[0], picked[1])
+            elif len(picked) == 1:
+                st.session_state.date_filters[field] = (picked[0], picked[0])
+            else:
+                st.session_state.date_filters[field] = None
+        elif picked:
+            st.session_state.date_filters[field] = (picked, picked)
+        else:
+            st.session_state.date_filters[field] = None
+
+    # Diğer alanlar — açılır menü
     cols = st.columns(2)
-    for idx, field in enumerate(headers):
+    for idx, field in enumerate(other_fields):
         options = ["Tümü"] + unique_values(base_df, field)
         current = st.session_state.column_filters.get(field) or "Tümü"
         with cols[idx % 2]:
@@ -588,6 +562,7 @@ def render_header_filters(base_df: pd.DataFrame) -> None:
 
     if st.button("Filtreleri temizle", use_container_width=True):
         st.session_state.column_filters = {}
+        st.session_state.date_filters = {}
         st.rerun()
 
 
@@ -826,16 +801,18 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
 
     search = st.text_input("Ara", placeholder="Ad, pasaport, voucher, tarih…", label_visibility="collapsed")
 
-    with st.expander("Başlıklara göre filtrele", expanded=active_filter_count(st.session_state.column_filters) > 0):
+    filter_count = total_active_filters()
+    with st.expander("Başlıklara göre filtrele", expanded=filter_count > 0):
         render_header_filters(base_df)
 
     active = {k: v for k, v in st.session_state.column_filters.items() if v}
-    view_df = apply_filters(base_df, search, active)
+    active_dates = {k: v for k, v in st.session_state.date_filters.items() if v}
+    view_df = apply_filters(base_df, search, active, active_dates)
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Yolcu", len(view_df))
     c2.metric("Kaynak", len(st.session_state.loaded_files))
-    c3.metric("Filtre", active_filter_count(st.session_state.column_filters))
+    c3.metric("Filtre", total_active_filters())
 
     if view_df.empty:
         st.warning("Filtreye uyan yolcu bulunamadı.")
