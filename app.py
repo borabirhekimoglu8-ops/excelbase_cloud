@@ -36,7 +36,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.2.1"
+APP_VERSION = "4.2.2"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -782,17 +782,20 @@ def render_import_tab() -> None:
           <p class="app-panel-sub">Tek tek veya ZIP ile toplu yükle — dosya adı kartla otomatik eşleşir</p>
           <div class="format-box">Dosya adı: <b>TARİH_İSİM_SOYİSİM_PASAPORT</b><br>
           Örn: <code>2026-07-01_JOHN_DOE_AB123456.jpg</code><br>
-          Eşleşme pasaport numarasına göre yapılır.<br>
-          <b>Tek tek</b> foto veya hepsini <b>ZIP</b> olarak yükleyebilirsin.</div>
+          Eşleşme pasaport numarasına göre yapılır.<br><br>
+          <b>iPhone'da yükleme:</b><br>
+          • <b>Fotoğraf Kitaplığı</b>'ndan fotoğrafları çoklu seç, ya da<br>
+          • Tüm fotoğrafları <b>tek bir .zip</b> yap ve onu seç<br>
+          <b>Klasör seçme</b> — iOS bunu desteklemez ("özellik desteklenmiyor" hatası).</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
     photo_files = st.file_uploader(
-        "Fotoğraf veya ZIP yükle (iPhone: Fotoğraf Kitaplığı / Dosyalar)",
+        "Fotoğraf veya ZIP yükle",
         accept_multiple_files=True,
         key="photo_uploader",
-        help="Tek tek görüntü (JPEG/PNG/HEIC) ya da tüm fotoğrafları içeren bir .zip yükleyebilirsin. iPhone fotoğrafları otomatik dönüştürülür.",
+        help="iPhone: yükleyiciye dokun → Fotoğraf Kitaplığı'ndan çoklu seç. VEYA tüm fotoğrafları bir .zip yapıp Dosyalar'dan o zip'i seç. Klasör seçilemez (iOS kısıtı).",
     )
     photo_sig = uploaded_signature(photo_files)
     if photo_files and photo_sig != st.session_state.photo_signature:
