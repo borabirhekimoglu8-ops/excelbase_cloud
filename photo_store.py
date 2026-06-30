@@ -58,6 +58,39 @@ def _norm_key(value: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
 
 
+def looks_like_image(filename: str, data: bytes) -> bool:
+    """Dosyanın bir görüntü olup olmadığını uzantı veya içerikten anlar.
+
+    iOS bazen uzantısız/farklı uzantıyla yüklediği için içerik kontrolü de yapılır.
+    """
+    ext = os.path.splitext(filename)[1].lower()
+    if ext in ALLOWED_EXT:
+        return True
+    # İçerik imzaları (JPEG/PNG/GIF/BMP/WEBP/HEIC)
+    if len(data) >= 12:
+        head = data[:12]
+        if head[:3] == b"\xff\xd8\xff":  # JPEG
+            return True
+        if head[:8] == b"\x89PNG\r\n\x1a\n":  # PNG
+            return True
+        if head[:6] in (b"GIF87a", b"GIF89a"):  # GIF
+            return True
+        if head[:2] == b"BM":  # BMP
+            return True
+        if head[:4] == b"RIFF" and data[8:12] == b"WEBP":  # WEBP
+            return True
+        if head[4:12] in (b"ftypheic", b"ftypheix", b"ftyphevc", b"ftypmif1", b"ftypmsf1"):  # HEIC/HEIF
+            return True
+    # Son çare: Pillow ile açmayı dene
+    if Image is not None:
+        try:
+            Image.open(BytesIO(data)).verify()
+            return True
+        except Exception:
+            return False
+    return False
+
+
 def parse_photo_filename(filename: str) -> dict[str, str]:
     """Dosya adını TARİH_İSİM_SOYİSİM_PASAPORT formatına göre ayrıştırır."""
     base, ext = os.path.splitext(filename)

@@ -18,7 +18,7 @@ from operation_helpers import (
 )
 import db
 from persistence import load_store, save_store
-from photo_store import match_photos_to_dataframe, photo_data_uri
+from photo_store import looks_like_image, match_photos_to_dataframe, photo_data_uri
 from passenger_schema import (
     ALL_COLUMNS,
     TEMPLATE_NAME,
@@ -30,7 +30,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.1.1"
+APP_VERSION = "4.1.2"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
@@ -503,7 +503,15 @@ def process_photos(photo_files) -> None:
         st.session_state.photo_log = ["⚠ Önce yolcu Excel'i yükleyin, sonra fotoğrafları ekleyin."]
         return
 
-    uploaded = [(f.name, f.getvalue()) for f in photo_files or []]
+    uploaded: list[tuple[str, bytes]] = []
+    skipped: list[str] = []
+    for f in photo_files or []:
+        data = f.getvalue()
+        if looks_like_image(f.name, data):
+            uploaded.append((f.name, data))
+        else:
+            skipped.append(f.name)
+
     updated, matched, unmatched = match_photos_to_dataframe(st.session_state.base_df, uploaded)
     st.session_state.base_df = normalize_passenger_dataframe(updated)
 
@@ -515,6 +523,8 @@ def process_photos(photo_files) -> None:
     if unmatched:
         log.append("✕ Eşleşmeyen: " + ", ".join(unmatched[:8]) + (" …" if len(unmatched) > 8 else ""))
         log.append("Dosya adı **TARİH_İSİM_SOYİSİM_PASAPORT** olmalı (pasaport no kartla eşleşmeli).")
+    if skipped:
+        log.append("⚠ Görüntü olmayan/atlanan dosya: " + ", ".join(skipped[:6]) + (" …" if len(skipped) > 6 else ""))
     if matched == 0:
         sample_pp = [p for p in st.session_state.base_df["Pasaport No"].astype(str).tolist() if p.strip()][:6]
         log.append("Karttaki pasaport no örnekleri: " + (", ".join(sample_pp) if sample_pp else "(boş)"))
@@ -761,10 +771,10 @@ def render_import_tab() -> None:
         unsafe_allow_html=True,
     )
     photo_files = st.file_uploader(
-        "Fotoğrafları yükle",
-        type=["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif"],
+        "Fotoğrafları yükle (iPhone: Fotoğraf Kitaplığı'ndan seç)",
         accept_multiple_files=True,
         key="photo_uploader",
+        help="Tüm görüntü formatları desteklenir (JPEG, PNG, HEIC). iPhone fotoğrafları otomatik dönüştürülür.",
     )
     photo_sig = uploaded_signature(photo_files)
     if photo_files and photo_sig != st.session_state.photo_signature:
