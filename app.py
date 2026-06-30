@@ -26,7 +26,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "3.5.3"
+APP_VERSION = "3.5.4"
 
 st.set_page_config(
     page_title="Gate Visa PAX",
