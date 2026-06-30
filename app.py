@@ -13,12 +13,20 @@ from excelbase_core import (
     merge_results,
     read_file_bytes,
 )
+from operation_helpers import (
+    META_FIELDS,
+    apply_filters,
+    editable_fields,
+    filter_tag_fields,
+    operation_card_view,
+    unique_tag_values,
+)
 
-APP_VERSION = "2.1.0"
+APP_VERSION = "3.0.0"
 
 st.set_page_config(
-    page_title="ExcelBase",
-    page_icon="📊",
+    page_title="Operasyon Merkezi",
+    page_icon="⚓",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -26,369 +34,221 @@ st.set_page_config(
 APP_CSS = """
 <style>
 :root {
-  --bg: #f4f6fb;
+  --bg: #eef2ff;
   --surface: #ffffff;
-  --surface-soft: #f8fafc;
   --line: #e2e8f0;
   --muted: #64748b;
   --ink: #0f172a;
   --brand: #4f46e5;
   --brand-soft: #eef2ff;
-  --brand-dark: #3730a3;
   --ok: #059669;
   --ok-soft: #ecfdf5;
-  --warn: #d97706;
-  --warn-soft: #fffbeb;
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.07);
-  --shadow-lg: 0 18px 40px rgba(15, 23, 42, 0.08);
-  --radius: 18px;
-  --radius-sm: 12px;
+  --wait-soft: #fffbeb;
+  --wait: #b45309;
+  --danger-soft: #fef2f2;
+  --danger: #dc2626;
 }
 
 html, body, [class*="css"] {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
 
 .stApp {
   background:
-    radial-gradient(900px 420px at 0% -10%, rgba(79, 70, 229, 0.10), transparent 55%),
-    radial-gradient(700px 360px at 100% 0%, rgba(14, 165, 233, 0.08), transparent 50%),
+    radial-gradient(900px 380px at 0% -5%, rgba(79, 70, 229, 0.12), transparent 55%),
+    radial-gradient(700px 320px at 100% 0%, rgba(14, 165, 233, 0.08), transparent 50%),
     var(--bg);
 }
 
 .block-container {
-  padding-top: 1rem;
-  padding-bottom: 5.5rem;
-  max-width: 1280px;
-}
-
-[data-testid="stSidebar"] {
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  border-right: 1px solid var(--line);
-  box-shadow: 8px 0 24px rgba(15, 23, 42, 0.04);
-}
-
-[data-testid="stSidebar"] .block-container {
-  padding-top: 1.25rem;
+  padding-top: 0.75rem;
+  padding-bottom: 6rem;
+  max-width: 760px;
 }
 
 [data-testid="stHeader"] {
-  background: rgba(244, 246, 251, 0.82);
+  background: rgba(238, 242, 255, 0.88);
   backdrop-filter: blur(10px);
 }
 
-.hero {
-  background: linear-gradient(135deg, #ffffff 0%, #f8faff 52%, #eef2ff 100%);
-  border: 1px solid rgba(79, 70, 229, 0.12);
-  border-radius: 24px;
-  padding: 1.25rem 1.35rem 1.15rem;
-  box-shadow: var(--shadow-md);
-  margin-bottom: 1rem;
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 0.85rem;
 }
 
-.hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--brand-soft);
-  color: var(--brand-dark);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  margin-bottom: 0.55rem;
-}
-
-.app-title {
-  font-size: clamp(1.65rem, 4vw, 2.15rem);
-  font-weight: 800;
-  letter-spacing: -0.045em;
+.topbar-title {
   margin: 0;
+  font-size: clamp(1.35rem, 4vw, 1.75rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
   color: var(--ink);
-  line-height: 1.1;
 }
 
-.app-subtitle {
-  color: var(--muted);
-  margin: 0.45rem 0 0;
-  font-size: clamp(0.92rem, 2.5vw, 1rem);
-  line-height: 1.5;
-}
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 1rem 1.1rem;
-  box-shadow: var(--shadow-sm);
-  margin-bottom: 0.75rem;
-}
-
-.card-title {
-  font-size: 0.98rem;
-  font-weight: 700;
-  color: var(--ink);
-  margin: 0 0 0.2rem;
-}
-
-.card-desc {
+.topbar-sub {
+  margin: 0.2rem 0 0;
   color: var(--muted);
   font-size: 0.88rem;
-  margin: 0;
-  line-height: 1.45;
 }
 
-.section-head {
+.version-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: #3730a3;
+  font-size: 0.75rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.op-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 0.95rem 1rem;
+  margin-bottom: 0.65rem;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+}
+
+.op-card-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  margin: 0.35rem 0 0.85rem;
-}
-
-.section-title {
-  font-size: 1.05rem;
-  font-weight: 800;
-  color: var(--ink);
-  margin: 0;
-  letter-spacing: -0.02em;
-}
-
-.section-hint {
-  color: var(--muted);
-  font-size: 0.82rem;
-  margin: 0;
-}
-
-.metric-grid [data-testid="stMetric"] {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 0.85rem 0.95rem;
-  box-shadow: var(--shadow-sm);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.metric-grid [data-testid="stMetric"]:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.metric-grid [data-testid="stMetricLabel"] {
-  color: var(--muted) !important;
-  font-size: 0.78rem !important;
-  font-weight: 600 !important;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.metric-grid [data-testid="stMetricValue"] {
-  color: var(--ink) !important;
-  font-weight: 800 !important;
-  font-size: 1.45rem !important;
-}
-
-.table-shell {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  padding: 0.35rem;
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-}
-
-.table-shell-caption {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  padding: 0.55rem 0.75rem 0.35rem;
-  color: var(--muted);
-  font-size: 0.82rem;
+  margin-bottom: 0.45rem;
 }
 
-.table-scroll-hint {
-  display: none;
-  margin: 0 0 0.65rem;
-  padding: 0.55rem 0.75rem;
-  border-radius: 12px;
-  background: var(--brand-soft);
-  color: var(--brand-dark);
-  font-size: 0.82rem;
+.op-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.op-status.ok { background: var(--ok-soft); color: var(--ok); }
+.op-status.wait { background: var(--wait-soft); color: var(--wait); }
+.op-status.danger { background: var(--danger-soft); color: var(--danger); }
+.op-status.neutral { background: #f1f5f9; color: #475569; }
+
+.op-date {
+  color: var(--muted);
+  font-size: 0.78rem;
   font-weight: 600;
 }
 
-div[data-testid="stDataFrame"],
-div[data-testid="stDataEditor"] {
-  border-radius: 16px !important;
-  overflow: hidden;
+.op-title {
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin-bottom: 0.2rem;
 }
 
-div[data-testid="stDataFrame"] > div,
-div[data-testid="stDataEditor"] > div {
-  border-radius: 16px !important;
+.op-sub {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.4;
+  margin-bottom: 0.55rem;
 }
 
-.stTextInput input {
+.op-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.op-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.op-meta {
+  margin-top: 0.55rem;
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+.op-amount {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--brand);
+}
+
+.import-box {
+  background: linear-gradient(180deg, #ffffff 0%, #f8faff 100%);
+  border: 1px dashed rgba(79, 70, 229, 0.28);
+  border-radius: 18px;
+  padding: 0.35rem 0.35rem 0.75rem;
+}
+
+.stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
   border-radius: 12px !important;
-  border: 1px solid var(--line) !important;
   min-height: 44px;
-  background: var(--surface-soft) !important;
 }
 
-.stTextInput input:focus {
-  border-color: rgba(79, 70, 229, 0.45) !important;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12) !important;
-}
-
-.stButton > button,
-.stDownloadButton > button {
+.stButton > button, .stDownloadButton > button {
   border-radius: 12px !important;
+  min-height: 44px;
   font-weight: 700 !important;
-  min-height: 44px;
-  border: 1px solid var(--line) !important;
-  background: var(--surface) !important;
-  color: var(--ink) !important;
-  transition: all 0.15s ease !important;
 }
 
-.stDownloadButton > button {
+.stDownloadButton > button[kind="primary"] {
   background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
   color: #fff !important;
   border: none !important;
-  box-shadow: 0 8px 18px rgba(79, 70, 229, 0.25) !important;
 }
 
-.stDownloadButton > button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 22px rgba(79, 70, 229, 0.28) !important;
-}
-
-.stButton > button:hover {
-  border-color: rgba(79, 70, 229, 0.25) !important;
-  background: #fafbff !important;
-}
-
-[data-testid="stFileUploader"] section {
-  border-radius: 16px !important;
-  border: 1.5px dashed rgba(79, 70, 229, 0.28) !important;
-  background: #fafbff !important;
-  padding: 0.35rem !important;
-}
-
-[data-testid="stFileUploader"] section:hover {
-  border-color: rgba(79, 70, 229, 0.55) !important;
-  background: #f5f7ff !important;
-}
-
-.log-item-ok,
-.log-item-info {
-  border-radius: 12px;
-  padding: 0.55rem 0.75rem;
-  margin-bottom: 0.45rem;
-  font-size: 0.88rem;
-  font-weight: 600;
-}
-
-.log-item-ok {
-  background: var(--ok-soft);
-  color: #047857;
-  border: 1px solid rgba(5, 150, 105, 0.15);
-}
-
-.log-item-info {
-  background: var(--brand-soft);
-  color: var(--brand-dark);
-  border: 1px solid rgba(79, 70, 229, 0.12);
-}
-
-.empty-state {
-  text-align: center;
-  padding: 2.2rem 1rem 2rem;
-  border-radius: 20px;
-  border: 1px dashed rgba(100, 116, 139, 0.35);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-}
-
-.empty-icon {
-  font-size: 2.2rem;
-  margin-bottom: 0.35rem;
-}
-
-.empty-title {
-  font-size: 1rem;
-  font-weight: 800;
-  color: var(--ink);
-  margin: 0;
-}
-
-.empty-desc {
-  color: var(--muted);
-  font-size: 0.9rem;
-  margin: 0.35rem 0 0;
-}
-
-.mobile-actions {
-  display: none;
+.bottom-bar {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 999;
   padding: 0.65rem 0.85rem calc(0.65rem + env(safe-area-inset-bottom));
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--line);
   box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
 }
 
-.sidebar-label {
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 0.75rem;
+}
+
+.detail-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.field-label {
   font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 0 0 0.35rem;
+  margin-bottom: 0.15rem;
 }
 
-@media (max-width: 768px) {
-  .block-container {
-    padding-top: 0.65rem;
-    padding-left: 0.85rem;
-    padding-right: 0.85rem;
-  }
-
-  .hero {
-    border-radius: 18px;
-    padding: 1rem;
-  }
-
-  .table-scroll-hint {
-    display: block;
-  }
-
-  .mobile-actions {
-    display: block;
-  }
-
-  .desktop-actions {
-    display: none;
-  }
-
-  div[data-testid="column"] {
-    min-width: 0 !important;
-  }
-
-  .metric-grid [data-testid="stMetricValue"] {
-    font-size: 1.2rem !important;
-  }
-}
-
-@media (min-width: 769px) {
-  .mobile-actions {
-    display: none !important;
-  }
+@media (min-width: 900px) {
+  .block-container { max-width: 980px; }
 }
 </style>
 """
@@ -403,6 +263,9 @@ def init_state() -> None:
         "read_log": [],
         "errors": [],
         "loaded_files": [],
+        "selected_idx": None,
+        "tag_filters": {},
+        "active_tab": "Operasyonlar",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -412,9 +275,7 @@ def init_state() -> None:
 def uploaded_signature(files, mode: str) -> str:
     if not files:
         return f"{mode}:empty"
-    parts = []
-    for f in files:
-        parts.append(f"{f.name}:{getattr(f, 'size', 0)}")
+    parts = [f"{f.name}:{getattr(f, 'size', 0)}" for f in files]
     return mode + "|" + "|".join(parts)
 
 
@@ -429,7 +290,7 @@ def process_uploads(files, mode: str, append_mode: bool) -> None:
             file_results = read_file_bytes(file.name, raw)
             for r in file_results:
                 results.append(r)
-                log.append(f"✓ {r.file_name} / {r.sheet_name}: {r.rows} satır, {r.columns} kolon")
+                log.append(f"✓ Kaynak: {r.file_name} / {r.sheet_name} → {r.rows} operasyon")
         except Exception as exc:
             errors.append(f"✕ {file.name}: {exc}")
 
@@ -444,6 +305,8 @@ def process_uploads(files, mode: str, append_mode: bool) -> None:
     st.session_state.read_log = log
     st.session_state.errors = errors
     st.session_state.loaded_files = [f.name for f in files or []]
+    st.session_state.selected_idx = None
+    st.session_state.tag_filters = {}
 
 
 def make_demo() -> pd.DataFrame:
@@ -477,43 +340,146 @@ def make_demo() -> pd.DataFrame:
                 "Kaynak Dosya": "demo.xlsx",
                 "Sayfa": "Satışlar",
             },
+            {
+                "Satış Tarihi": "2026-06-29",
+                "Yolcu Adı Soyadı": "Zeynep Ak",
+                "Hat": "Kuşadası - Samos",
+                "Sefer Tarihi": "2026-07-06",
+                "PNR / Bilet No": "PNR1003",
+                "Satış Kanalı": "Web",
+                "Acente": "Merkez",
+                "Tutar": 48,
+                "Para Birimi": "EUR",
+                "Durum": "İptal",
+                "Kaynak Dosya": "demo.xlsx",
+                "Sayfa": "Satışlar",
+            },
         ]
     )
 
 
-def render_hero() -> None:
-    with st.container(border=True):
-        badge_cols = st.columns([1, 3])
-        with badge_cols[0]:
-            st.markdown(f"**v{APP_VERSION}**")
-        with badge_cols[1]:
-            st.caption("Mobil uyumlu · Excel & CSV")
-        st.title("ExcelBase")
-        st.markdown(
-            "Excel yükle, tek tabloda birleştir, telefondan düzenle ve indir. "
-            "Sol üstteki **☰** menüsünden dosya seç."
-        )
+def render_topbar() -> None:
+    st.markdown(
+        f"""
+        <div class="topbar">
+          <div>
+            <p class="topbar-title">Operasyon Merkezi</p>
+            <p class="topbar-sub">Excel satırı → operasyon kartı · Kaynak import → canlı tablo</p>
+          </div>
+          <span class="version-pill">v{APP_VERSION}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
-def render_log_item(text: str, kind: str = "ok") -> None:
-    css_class = "log-item-info" if kind == "info" else "log-item-ok"
-    st.markdown(f'<div class="{css_class}">{text}</div>', unsafe_allow_html=True)
+def render_operation_card(idx: int, row: pd.Series, columns: list[str]) -> None:
+    card = operation_card_view(row, columns)
+    status_label = card["status"] or "Durum yok"
+    status_class = card["status_tone"]
+    date_label = card["date"] or "—"
+    subtitle = card["subtitle"] or "Detay için karta dokun"
+    amount = f'{card["amount"]} {card["currency"]}'.strip() if card["amount"] else ""
+
+    tags_html = "".join(
+        f'<span class="op-tag">{t["value"]}</span>' for t in card["tags"]
+    ) or '<span class="op-tag">Etiket yok</span>'
+
+    meta = " · ".join(x for x in [card["source"], card["sheet"]] if x)
+
+    st.markdown(
+        f"""
+        <div class="op-card">
+          <div class="op-card-top">
+            <span class="op-status {status_class}">{status_label}</span>
+            <span class="op-date">{date_label}</span>
+          </div>
+          <div class="op-title">{card["title"]}</div>
+          <div class="op-sub">{subtitle}</div>
+          <div class="op-tags">{tags_html}</div>
+          <div class="op-meta">{meta}</div>
+          {"<div class='op-amount'>" + amount + "</div>" if amount else ""}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("Detay & düzenle", key=f"open_card_{idx}", use_container_width=True):
+        st.session_state.selected_idx = idx
+        st.rerun()
 
 
-init_state()
-render_hero()
+def render_detail_view(base_df: pd.DataFrame) -> None:
+    idx = st.session_state.selected_idx
+    if idx is None or idx not in base_df.index:
+        st.session_state.selected_idx = None
+        st.rerun()
+        return
 
-with st.sidebar:
-    st.markdown(f"### ExcelBase `{APP_VERSION}`")
-    st.markdown('<p class="sidebar-label">Yükleme</p>', unsafe_allow_html=True)
-    mode = st.selectbox("Tablo modu", list(PRESETS.keys()), index=0, label_visibility="collapsed")
-    append_mode = st.toggle("Yeni yüklemeleri mevcut tabloya ekle", value=False)
+    row = base_df.loc[idx]
+    columns = list(base_df.columns)
+    card = operation_card_view(row, columns)
+
+    if st.button("← Operasyonlara dön", use_container_width=False):
+        st.session_state.selected_idx = None
+        st.rerun()
+
+    st.markdown(
+        f"""
+        <div class="detail-head">
+          <div>
+            <p class="detail-title">{card["title"]}</p>
+            <p class="topbar-sub">{card["subtitle"] or "Standart alanları düzenle"}</p>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.form("operation_detail_form", border=True):
+        st.caption("Standart alanlar")
+        updates: dict[str, str] = {}
+        for field in editable_fields(columns):
+            updates[field] = st.text_input(field, value=str(row.get(field, "") or ""), key=f"field_{idx}_{field}")
+
+        if "Kaynak Dosya" in columns or "Sayfa" in columns:
+            st.divider()
+            st.caption("Kaynak bilgisi")
+            if "Kaynak Dosya" in columns:
+                st.text_input("Kaynak Dosya", value=str(row.get("Kaynak Dosya", "") or ""), disabled=True)
+            if "Sayfa" in columns:
+                st.text_input("Sayfa", value=str(row.get("Sayfa", "") or ""), disabled=True)
+
+        save_col, delete_col = st.columns(2)
+        saved = save_col.form_submit_button("Kaydet", use_container_width=True, type="primary")
+        delete = delete_col.form_submit_button("Sil", use_container_width=True)
+
+    if saved:
+        for field, value in updates.items():
+            st.session_state.base_df.at[idx, field] = value
+        st.session_state.selected_idx = None
+        st.toast("Operasyon güncellendi", icon="✅")
+        st.rerun()
+
+    if delete:
+        st.session_state.base_df = st.session_state.base_df.drop(index=idx).reset_index(drop=True)
+        st.session_state.selected_idx = None
+        st.toast("Operasyon silindi", icon="🗑️")
+        st.rerun()
+
+
+def render_import_tab(mode_key: str) -> str:
+    st.markdown('<div class="import-box">', unsafe_allow_html=True)
+    st.subheader("Kaynak Import")
+    st.caption("Excel dosyası yükle → her satır operasyon kartına dönüşür.")
+    mode = st.selectbox("Standart alan şablonu", list(PRESETS.keys()), key=mode_key)
+    append_mode = st.toggle("Mevcut operasyonlara ekle", value=False, key=f"{mode_key}_append")
     files = st.file_uploader(
-        "Excel / CSV seç",
+        "Excel / CSV kaynakları",
         type=["xlsx", "xls", "xlsm", "ods", "csv"],
         accept_multiple_files=True,
-        help="Birden fazla dosya seçebilirsin. Her sayfa okunur ve tek tabloya eklenir.",
+        key=f"{mode_key}_files",
     )
+    st.markdown("</div>", unsafe_allow_html=True)
 
     sig = uploaded_signature(files, mode)
     if files and sig != st.session_state.last_signature:
@@ -521,156 +487,131 @@ with st.sidebar:
         st.session_state.last_signature = sig
         st.rerun()
 
-    st.divider()
-    btn_a, btn_b = st.columns(2)
-    with btn_a:
-        if st.button("Demo", use_container_width=True, help="Örnek tabloyu aç"):
+    btn1, btn2 = st.columns(2)
+    with btn1:
+        if st.button("Demo operasyonlar", use_container_width=True):
             st.session_state.base_df = make_demo()
-            st.session_state.read_log = ["✓ Demo tablo açıldı: 2 satır, 12 kolon"]
+            st.session_state.read_log = ["✓ Demo kaynak yüklendi: 3 operasyon"]
             st.session_state.errors = []
+            st.session_state.loaded_files = ["demo.xlsx"]
+            st.session_state.selected_idx = None
             st.rerun()
-    with btn_b:
-        if st.button("Sıfırla", use_container_width=True, help="Tabloyu temizle"):
+    with btn2:
+        if st.button("Tümünü temizle", use_container_width=True):
             st.session_state.base_df = pd.DataFrame()
             st.session_state.last_signature = ""
             st.session_state.read_log = []
             st.session_state.errors = []
             st.session_state.loaded_files = []
+            st.session_state.selected_idx = None
+            st.session_state.tag_filters = {}
             st.rerun()
 
-    st.divider()
-    st.caption("Varsayılan mod Excel başlıklarını aynen alır. Diğer modlar kolonları otomatik eşleştirir.")
+    if st.session_state.read_log:
+        for item in st.session_state.read_log[:5]:
+            st.success(item)
+    if st.session_state.errors:
+        for item in st.session_state.errors:
+            st.error(item)
 
-log_col, action_col = st.columns([1.15, 0.85])
-with log_col:
-    with st.container(border=True):
-        st.subheader("Durum")
-        st.caption("Yükleme sonucu ve hata kaydı.")
-        if st.session_state.read_log:
-            for item in st.session_state.read_log[:6]:
-                render_log_item(item)
-            if len(st.session_state.read_log) > 6:
-                render_log_item(f"+ {len(st.session_state.read_log) - 6} sayfa daha okundu.", kind="info")
-        elif st.session_state.base_df.empty:
-            st.info("Henüz dosya yok. ☰ menüsünden Excel/CSV yükle veya Demo’ya bas.")
-        if st.session_state.errors:
-            for item in st.session_state.errors:
-                st.error(item)
+    return mode
 
-with action_col:
-    st.markdown('<div class="desktop-actions">', unsafe_allow_html=True)
-    with st.container(border=True):
-        st.subheader("Çıktı")
-        st.caption("Düzenledikten sonra indir.")
-        if not st.session_state.base_df.empty:
-            stamp = datetime.now().strftime("%Y%m%d-%H%M")
-            st.download_button(
-                "⬇ Excel indir",
-                data=dataframe_to_xlsx(st.session_state.base_df),
-                file_name=f"excelbase-{stamp}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
-            st.download_button(
-                "⬇ CSV indir",
-                data=dataframe_to_csv(st.session_state.base_df),
-                file_name=f"excelbase-{stamp}.csv",
-                mime="text/csv",
-                use_container_width=True,
-                type="secondary",
-            )
-        else:
-            st.button("⬇ Excel indir", disabled=True, use_container_width=True)
-            st.button("⬇ CSV indir", disabled=True, use_container_width=True)
+
+def render_operations_tab(base_df: pd.DataFrame) -> None:
+    if base_df.empty:
+        st.info("Henüz operasyon yok. **Kaynak Import** sekmesinden Excel yükle veya Demo operasyonları aç.")
+        return
+
+    columns = list(base_df.columns)
+    search = st.text_input("Ara", placeholder="İsim, hat, PNR, acente…", label_visibility="collapsed")
+
+    tag_fields = filter_tag_fields(base_df)
+    if tag_fields:
+        st.caption("Modern etiket filtreleri")
+        for field in tag_fields:
+            options = ["Tümü"] + unique_tag_values(base_df, field)
+            current = st.session_state.tag_filters.get(field) or "Tümü"
+            if len(options) <= 5:
+                try:
+                    index = options.index(current) if current in options else 0
+                except ValueError:
+                    index = 0
+                choice = st.segmented_control(
+                    field,
+                    options=options,
+                    default=options[index],
+                    key=f"tag_filter_{field}",
+                )
+            else:
+                choice = st.selectbox(
+                    field,
+                    options=options,
+                    index=options.index(current) if current in options else 0,
+                    key=f"tag_filter_{field}",
+                )
+            st.session_state.tag_filters[field] = None if choice in (None, "Tümü") else choice
+
+    active_filters = {k: v for k, v in st.session_state.tag_filters.items() if v}
+    view_df = apply_filters(base_df, search, active_filters)
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Operasyon", len(view_df))
+    m2.metric("Kaynak", len(st.session_state.loaded_files))
+    m3.metric("Filtre", len(active_filters))
+
+    if view_df.empty:
+        st.warning("Filtreye uyan operasyon bulunamadı.")
+        return
+
+    st.caption(f"{len(view_df)} operasyon kartı")
+
+    for idx, row in view_df.iterrows():
+        render_operation_card(int(idx), row, columns)
+
+
+def render_bottom_bar(base_df: pd.DataFrame) -> None:
+    if base_df.empty:
+        return
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    st.markdown('<div class="bottom-bar">', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button(
+            "Excel indir",
+            data=dataframe_to_xlsx(base_df),
+            file_name=f"operasyonlar-{stamp}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            type="primary",
+            key="bottom_xlsx",
+        )
+    with c2:
+        st.download_button(
+            "CSV indir",
+            data=dataframe_to_csv(base_df),
+            file_name=f"operasyonlar-{stamp}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="bottom_csv",
+        )
     st.markdown("</div>", unsafe_allow_html=True)
 
+
+init_state()
+render_topbar()
+
 base_df = st.session_state.base_df.copy()
-
-st.markdown('<div class="metric-grid">', unsafe_allow_html=True)
-with st.container(border=True):
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Satır", len(base_df))
-    m2.metric("Kolon", len(base_df.columns))
-    m3.metric("Dosya", len(st.session_state.loaded_files))
-    m4.metric("Hata", len(st.session_state.errors))
-st.markdown("</div>", unsafe_allow_html=True)
-
 if not base_df.empty:
-    with st.container(border=True):
-        st.subheader("Tablo")
-        st.caption("Hücrelere dokunarak düzenle · Mobilde yatay kaydır")
+    base_df = base_df.reset_index(drop=True)
+    st.session_state.base_df = base_df
 
-        search = st.text_input("Ara", placeholder="İsim, hat, acente, PNR…", label_visibility="collapsed")
-
-        tool_a, tool_b = st.columns(2)
-        with tool_a:
-            if st.button("Tekrarlı satırları sil", use_container_width=True):
-                st.session_state.base_df = st.session_state.base_df.drop_duplicates().reset_index(drop=True)
-                st.rerun()
-            if st.button("Boş satırları sil", use_container_width=True):
-                st.session_state.base_df = (
-                    st.session_state.base_df.replace("", pd.NA).dropna(how="all").fillna("").reset_index(drop=True)
-                )
-                st.rerun()
-        with tool_b:
-            if st.button("Boş satır ekle", use_container_width=True):
-                empty = pd.DataFrame([{c: "" for c in st.session_state.base_df.columns}])
-                st.session_state.base_df = pd.concat([st.session_state.base_df, empty], ignore_index=True)
-                st.rerun()
-
-        view_df = base_df
-        if search:
-            mask = view_df.apply(lambda row: row.astype(str).str.contains(search, case=False, na=False).any(), axis=1)
-            view_df = view_df.loc[mask]
-            st.caption(f"Arama: {len(view_df)} satır gösteriliyor. Aramayı temizleyince tüm tablo düzenlenir.")
-
-        st.markdown(
-            '<p class="table-scroll-hint">↔ Mobilde tabloyu yatay kaydırabilirsin.</p>',
-            unsafe_allow_html=True,
-        )
-        st.markdown('<div class="table-shell">', unsafe_allow_html=True)
-
-        table_height = 520 if len(base_df) > 8 else 380
-
-        if search:
-            st.dataframe(view_df, use_container_width=True, height=table_height, hide_index=True)
-        else:
-            edited = st.data_editor(
-                base_df,
-                use_container_width=True,
-                height=table_height,
-                num_rows="dynamic",
-                hide_index=True,
-                key="main_editor",
-            )
-            st.session_state.base_df = edited
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    if not st.session_state.base_df.empty:
-        stamp = datetime.now().strftime("%Y%m%d-%H%M")
-        st.markdown('<div class="mobile-actions">', unsafe_allow_html=True)
-        dl1, dl2 = st.columns(2)
-        with dl1:
-            st.download_button(
-                "Excel",
-                data=dataframe_to_xlsx(st.session_state.base_df),
-                file_name=f"excelbase-{stamp}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key="mobile_xlsx",
-            )
-        with dl2:
-            st.download_button(
-                "CSV",
-                data=dataframe_to_csv(st.session_state.base_df),
-                file_name=f"excelbase-{stamp}.csv",
-                mime="text/csv",
-                use_container_width=True,
-                key="mobile_csv",
-            )
-        st.markdown("</div>", unsafe_allow_html=True)
+if st.session_state.selected_idx is not None and not base_df.empty:
+    render_detail_view(st.session_state.base_df)
 else:
-    with st.container(border=True):
-        st.subheader("Henüz tablo yok")
-        st.markdown("Sol üstteki **☰** menüsünden Excel/CSV yükle veya sidebar’daki **Demo** ile başla.")
+    tab_ops, tab_import = st.tabs(["Operasyonlar", "Kaynak Import"])
+    with tab_import:
+        render_import_tab("import_main")
+    with tab_ops:
+        render_operations_tab(st.session_state.base_df)
+
+render_bottom_bar(st.session_state.base_df)
