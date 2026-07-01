@@ -50,7 +50,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "5.3.0"
+APP_VERSION = "5.4.0"
 PAGE_SIZE = 10
 
 _ICONS = {
@@ -750,33 +750,34 @@ div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-wei
 .package-check .ico.ok { color: #0f8a4b; }
 .package-check .ico.warn { color: #b45309; }
 
-/* ============ v5.3 HOLO iOS OVERRIDE — sade, şık, hafif holografik ============ */
+/* ============ v5.4 DEEP SEA / SPACE UI — sade, şık, lacivert holografik ============ */
 :root {
-  --accent: #0b74b8;
-  --accent-dark: #075f99;
-  --accent-soft: #eaf5ff;
-  --sun: #f58220;
-  --sun-dark: #d96e12;
-  --ink: #0f2233;
-  --ink-soft: #3d5368;
-  --muted: #718295;
-  --bg: #f6f9fc;
-  --panel: #ffffff;
-  --border: #e3ebf3;
-  --border-soft: #edf3f8;
-  --shadow: 0 1px 2px rgba(15, 34, 51, 0.04), 0 8px 22px rgba(15, 34, 51, 0.07);
-  --shadow-strong: 0 12px 34px rgba(15, 34, 51, 0.10);
-  --holo-a: rgba(58, 191, 248, 0.18);
-  --holo-b: rgba(245, 130, 32, 0.16);
-  --holo-c: rgba(125, 211, 252, 0.16);
+  --accent: #38bdf8;
+  --accent-dark: #7dd3fc;
+  --accent-soft: rgba(56, 189, 248, 0.14);
+  --sun: #f59e0b;
+  --sun-dark: #d97706;
+  --ink: #f4f8ff;
+  --ink-soft: #c9d8ea;
+  --muted: #8aa0b8;
+  --bg: #06101d;
+  --panel: rgba(10, 22, 38, 0.88);
+  --border: rgba(125, 211, 252, 0.18);
+  --border-soft: rgba(148, 163, 184, 0.16);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 12px 34px rgba(0, 0, 0, 0.28);
+  --shadow-strong: 0 18px 48px rgba(0, 0, 0, 0.36);
+  --holo-a: rgba(56, 189, 248, 0.24);
+  --holo-b: rgba(245, 158, 11, 0.16);
+  --holo-c: rgba(129, 140, 248, 0.16);
   --radius-control: 14px;
   --radius-card: 22px;
 }
 .stApp {
   background:
-    radial-gradient(ellipse 72% 32% at 92% -8%, rgba(245, 130, 32, 0.18), transparent 64%),
-    radial-gradient(ellipse 80% 34% at 0% 12%, rgba(58, 191, 248, 0.13), transparent 62%),
-    linear-gradient(180deg, #fbfdff 0%, #f5faff 46%, #eef7fb 100%) !important;
+    radial-gradient(ellipse 78% 34% at 88% -10%, rgba(56, 189, 248, 0.18), transparent 64%),
+    radial-gradient(ellipse 64% 30% at 6% 12%, rgba(245, 158, 11, 0.11), transparent 62%),
+    radial-gradient(circle at 50% 0%, rgba(129, 140, 248, 0.10), transparent 44%),
+    linear-gradient(180deg, #050b14 0%, #071526 48%, #04101d 100%) !important;
   background-attachment: fixed;
 }
 .block-container {
@@ -794,16 +795,17 @@ div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-wei
   margin-bottom: 18px !important;
   box-shadow: var(--shadow-strong) !important;
   background:
-    linear-gradient(#ffffff, #ffffff) padding-box,
-    linear-gradient(118deg, rgba(245,130,32,0.78), rgba(56,189,248,0.56), rgba(255,255,255,0.78), rgba(11,116,184,0.42)) border-box !important;
+    linear-gradient(180deg, rgba(12, 26, 45, 0.94), rgba(8, 19, 34, 0.94)) padding-box,
+    linear-gradient(118deg, rgba(245,158,11,0.72), rgba(56,189,248,0.56), rgba(129,140,248,0.36), rgba(255,255,255,0.10)) border-box !important;
   border: 1px solid transparent !important;
+  backdrop-filter: blur(18px);
 }
 .app-hero::after {
   content: "";
   position: absolute;
   right: -42px; top: -58px;
   width: 170px; height: 140px;
-  background: radial-gradient(circle, rgba(56,189,248,0.18), rgba(245,130,32,0.12) 44%, transparent 70%);
+  background: radial-gradient(circle, rgba(56,189,248,0.18), rgba(129,140,248,0.12) 44%, transparent 70%);
   pointer-events: none;
 }
 .brand-row { gap: 12px !important; }
@@ -816,7 +818,7 @@ div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-wei
 .brand-tag { color: var(--accent-dark) !important; letter-spacing: 0.13em !important; }
 .status-line {
   margin-top: 10px !important;
-  color: var(--muted) !important;
+  color: #9eb2c8 !important;
   font-size: 0.72rem !important;
   font-weight: 800 !important;
 }
@@ -824,22 +826,64 @@ div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-wei
   width: 8px !important; height: 8px !important;
   box-shadow: none !important;
 }
+h1, h2, h3, .app-panel-title, .cc-value, .pax-name, .boarding-pass-field .bp-v {
+  color: var(--ink) !important;
+  letter-spacing: -0.025em;
+}
+.app-panel-title {
+  font-size: 0.98rem !important;
+  font-weight: 850 !important;
+}
+.app-panel-sub, .cc-sub, .pax-line, .pax-date {
+  color: var(--muted) !important;
+}
+label, div[data-testid="stWidgetLabel"] p {
+  color: #a8b9cc !important;
+  font-size: 0.75rem !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.01em !important;
+}
+.compact-label {
+  margin-top: 8px !important;
+  margin-bottom: 6px !important;
+}
+.filter-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 14px;
+}
+.filter-summary span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.10);
+  color: #b9d9ef;
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.stMarkdown hr, hr {
+  border-color: rgba(148, 163, 184, 0.18) !important;
+}
 
 .stTabs [data-baseweb="tab-list"] {
   border-radius: 18px !important;
   padding: 6px !important;
   background:
-    linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)) padding-box,
-    linear-gradient(120deg, rgba(245,130,32,0.26), rgba(56,189,248,0.28), rgba(255,255,255,0.70)) border-box !important;
+    linear-gradient(rgba(8,19,34,0.84), rgba(8,19,34,0.84)) padding-box,
+    linear-gradient(120deg, rgba(245,158,11,0.22), rgba(56,189,248,0.30), rgba(255,255,255,0.08)) border-box !important;
   border: 1px solid transparent !important;
-  box-shadow: 0 10px 30px rgba(15, 34, 51, 0.10) !important;
-  backdrop-filter: blur(16px);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.30) !important;
+  backdrop-filter: blur(18px);
 }
 .stTabs [data-baseweb="tab"] {
   border-radius: 13px !important;
   min-height: 40px !important;
   padding: 8px 14px !important;
-  color: #6b7d90 !important;
+  color: #8fa4bc !important;
   font-weight: 800 !important;
 }
 .stTabs [data-baseweb="tab"] p {
@@ -847,9 +891,9 @@ div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-wei
   line-height: 1.1 !important;
 }
 .stTabs [aria-selected="true"] {
-  background: linear-gradient(180deg, #edf8ff, #e7f3ff) !important;
+  background: linear-gradient(180deg, rgba(56,189,248,0.20), rgba(56,189,248,0.12)) !important;
   color: var(--accent-dark) !important;
-  box-shadow: inset 0 -2px 0 var(--accent), 0 7px 16px rgba(11,116,184,0.08);
+  box-shadow: inset 0 -2px 0 var(--accent), 0 7px 16px rgba(56,189,248,0.12);
 }
 .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
 .stTabs [data-baseweb="tab-list"] ~ button,
@@ -863,14 +907,17 @@ div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-wei
 .stDateInput input,
 [data-baseweb="select"] {
   border-radius: var(--radius-control) !important;
-  border-color: #dde8f2 !important;
-  background: rgba(255,255,255,0.96) !important;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset !important;
+  border-color: rgba(125, 211, 252, 0.18) !important;
+  background: rgba(6, 16, 29, 0.76) !important;
+  color: var(--ink) !important;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset !important;
 }
 .stButton > button, .stDownloadButton > button {
   border-radius: var(--radius-control) !important;
-  border-color: #dfe9f3 !important;
-  box-shadow: 0 5px 16px rgba(15, 34, 51, 0.05) !important;
+  border-color: rgba(125, 211, 252, 0.18) !important;
+  background: rgba(10, 22, 38, 0.86) !important;
+  color: var(--ink-soft) !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22) !important;
 }
 
 .app-panel,
@@ -883,31 +930,34 @@ div[data-testid="stExpander"],
 div[data-testid="stForm"] {
   border-radius: var(--radius-card) !important;
   border-color: var(--border) !important;
-  background: rgba(255,255,255,0.96) !important;
+  background: rgba(10,22,38,0.86) !important;
   box-shadow: var(--shadow) !important;
+  backdrop-filter: blur(14px);
 }
 .section-label {
-  color: #7e90a3 !important;
-  letter-spacing: 0.14em !important;
+  color: #8fa9c4 !important;
+  letter-spacing: 0.16em !important;
+  font-size: 0.66rem !important;
 }
 .progress-wrap {
   height: 9px !important;
-  background: #e8eef5 !important;
+  background: rgba(148, 163, 184, 0.20) !important;
   border: 0 !important;
 }
 .progress-bar { background: linear-gradient(90deg, var(--accent), #22b8cf) !important; }
 .quick-action {
-  background: #ffffff !important;
+  background: rgba(8, 19, 34, 0.82) !important;
   color: var(--accent-dark) !important;
   border-color: var(--border) !important;
 }
 
 .pax-card {
   background:
-    linear-gradient(#ffffff, #ffffff) padding-box,
-    linear-gradient(125deg, rgba(245,130,32,0.26), rgba(56,189,248,0.30), rgba(255,255,255,0.90), rgba(11,116,184,0.14)) border-box !important;
+    linear-gradient(180deg, rgba(10,22,38,0.93), rgba(7,18,32,0.93)) padding-box,
+    linear-gradient(125deg, rgba(245,158,11,0.24), rgba(56,189,248,0.34), rgba(129,140,248,0.18), rgba(255,255,255,0.08)) border-box !important;
   border: 1px solid transparent !important;
   box-shadow: var(--shadow) !important;
+  backdrop-filter: blur(14px);
 }
 .pax-card::after {
   content: "" !important;
@@ -917,7 +967,7 @@ div[data-testid="stForm"] {
   width: 180px !important;
   height: 170px !important;
   background:
-    radial-gradient(circle, rgba(125,211,252,0.18), rgba(245,130,32,0.10) 42%, transparent 70%) !important;
+    radial-gradient(circle, rgba(125,211,252,0.13), rgba(245,158,11,0.08) 42%, transparent 70%) !important;
   transform: none !important;
   opacity: 1 !important;
   pointer-events: none !important;
@@ -945,22 +995,23 @@ div[data-testid="stForm"] {
 .pax-photo-lg,
 .pax-photo-empty {
   border-radius: 18px !important;
-  background: linear-gradient(180deg, #f5fbff, #eef6fb) !important;
-  border-color: #d9e7f1 !important;
+  background: linear-gradient(180deg, rgba(15,32,54,0.95), rgba(10,24,42,0.95)) !important;
+  border-color: rgba(125, 211, 252, 0.20) !important;
 }
 .pax-photo-frame::before,
 .pax-photo-frame::after { display: none !important; }
 .wallet-passport {
   border-radius: 14px !important;
-  background: linear-gradient(180deg, #f8fcff, #f2f8fd) !important;
-  border-color: #dfebf5 !important;
+  background: linear-gradient(180deg, rgba(7,18,32,0.94), rgba(8,23,40,0.94)) !important;
+  border-color: rgba(125, 211, 252, 0.18) !important;
 }
 .pax-tag {
   clip-path: none !important;
   border-radius: 999px !important;
   padding: 4px 9px !important;
-  background: #eef6ff !important;
-  color: #1d5f99 !important;
+  background: rgba(56, 189, 248, 0.12) !important;
+  color: #8bdcff !important;
+  border-color: rgba(125, 211, 252, 0.18) !important;
 }
 .pax-tags { gap: 5px !important; }
 .pax-tag b { display: none !important; }
@@ -992,12 +1043,13 @@ div[data-testid="stForm"] {
 }
 .pax-flag {
   border-radius: 999px !important;
-  background: #fff8ed !important;
-  color: #9a5a13 !important;
+  background: rgba(245, 158, 11, 0.13) !important;
+  color: #fbbf24 !important;
+  border-color: rgba(251, 191, 36, 0.22) !important;
 }
 .mrz-line {
-  background: #f8fbfd !important;
-  border-color: #e6eef5 !important;
+  background: rgba(7,18,32,0.90) !important;
+  border-color: rgba(125, 211, 252, 0.14) !important;
 }
 div[data-testid="stExpander"] summary svg,
 div[data-testid="stExpander"] summary [data-testid="stIconMaterial"] {
@@ -1565,7 +1617,7 @@ def render_topbar() -> None:
     tb1, tb2, tb3 = st.columns([1, 1, 1])
     with tb1:
         night = st.session_state.get("night_mode", False)
-        label = "Gündüz modu" if night else "Gece modu"
+        label = "Deniz laciverti" if night else "Uzay siyahı"
         if st.button(label, key="toggle_night_mode", use_container_width=True):
             st.session_state.night_mode = not night
             st.rerun()
@@ -2910,23 +2962,27 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
 
     search = st.text_input("Ara", placeholder="Ad, pasaport, voucher, tarih…", label_visibility="collapsed")
 
-    st.markdown(
-        '<div class="filter-sheet"><p class="app-panel-title">Filtre paneli</p>'
-        '<p class="app-panel-sub">Mobilde bottom-sheet hissi: görünüm, eksikler ve sıralama tek yerde.</p></div>',
-        unsafe_allow_html=True,
-    )
-
-    opt_c1, opt_c2 = st.columns([1, 1])
+    st.markdown('<p class="section-label compact-label">Kontrol</p>', unsafe_allow_html=True)
+    opt_c1, opt_c2, opt_c3 = st.columns([1, 1, 1])
     with opt_c1:
-        sizes = [6, 10, 20, 50]
-        cur_size = int(st.session_state.get("page_size", PAGE_SIZE))
-        st.session_state.page_size = st.selectbox(
-            "Sayfa başına kart",
-            options=sizes,
-            index=sizes.index(cur_size) if cur_size in sizes else 1,
-            key="page_size_select",
+        miss_opts = ["Tümü", "Fotosuz", "Pasaportsuz", "Voucher eksik", "Ücretsiz", "Tekrarlı"]
+        cur_miss = st.session_state.get("missing_filter", "Tümü")
+        st.session_state.missing_filter = st.selectbox(
+            "Durum",
+            options=miss_opts,
+            index=miss_opts.index(cur_miss) if cur_miss in miss_opts else 0,
+            key="missing_filter_select",
         )
     with opt_c2:
+        sort_opts = ["Varsayılan", "İsim", "Pasaport", "Gidiş Tarihi", "Ücret"]
+        cur_sort = st.session_state.get("sort_by", "Varsayılan")
+        st.session_state.sort_by = st.selectbox(
+            "Sırala",
+            options=sort_opts,
+            index=sort_opts.index(cur_sort) if cur_sort in sort_opts else 0,
+            key="sort_by_select",
+        )
+    with opt_c3:
         modes = ["Detaylı", "Kompakt", "Fotoğrafsız"]
         cur_mode = st.session_state.get("view_mode", "Detaylı")
         st.session_state.view_mode = st.selectbox(
@@ -2936,28 +2992,16 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
             key="view_mode_select",
         )
 
-    opt_c3, opt_c4 = st.columns([1, 1])
-    with opt_c3:
-        miss_opts = ["Tümü", "Fotosuz", "Pasaportsuz", "Voucher eksik", "Ücretsiz", "Tekrarlı"]
-        cur_miss = st.session_state.get("missing_filter", "Tümü")
-        st.session_state.missing_filter = st.selectbox(
-            "Hızlı filtre",
-            options=miss_opts,
-            index=miss_opts.index(cur_miss) if cur_miss in miss_opts else 0,
-            key="missing_filter_select",
-        )
-    with opt_c4:
-        sort_opts = ["Varsayılan", "İsim", "Pasaport", "Gidiş Tarihi", "Ücret"]
-        cur_sort = st.session_state.get("sort_by", "Varsayılan")
-        st.session_state.sort_by = st.selectbox(
-            "Sırala",
-            options=sort_opts,
-            index=sort_opts.index(cur_sort) if cur_sort in sort_opts else 0,
-            key="sort_by_select",
-        )
-
     filter_count = total_active_filters()
-    with st.expander("Başlıklara göre filtrele", expanded=filter_count > 0):
+    with st.expander(f"Gelişmiş filtreler{f' · {filter_count}' if filter_count else ''}", expanded=filter_count > 0):
+        sizes = [6, 10, 20, 50]
+        cur_size = int(st.session_state.get("page_size", PAGE_SIZE))
+        st.session_state.page_size = st.selectbox(
+            "Sayfa boyutu",
+            options=sizes,
+            index=sizes.index(cur_size) if cur_size in sizes else 1,
+            key="page_size_select",
+        )
         render_header_filters(base_df)
 
     active = {k: v for k, v in st.session_state.column_filters.items() if v}
@@ -2972,10 +3016,16 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
         st.session_state.pax_filter_sig = sig
         st.session_state.pax_page = 0
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Yolcu", len(view_df))
-    c2.metric("Kaynak", len(st.session_state.loaded_files))
-    c3.metric("Filtre", total_active_filters())
+    st.markdown(
+        f"""
+        <div class="filter-summary">
+          <span>{len(view_df)} yolcu</span>
+          <span>{len(st.session_state.loaded_files)} kaynak</span>
+          <span>{total_active_filters()} aktif filtre</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     if view_df.empty:
         st.warning("Filtreye uyan yolcu bulunamadı.")
