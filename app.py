@@ -50,7 +50,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "5.1.0"
+APP_VERSION = "5.2.0"
 PAGE_SIZE = 10
 
 _ICONS = {
@@ -74,6 +74,7 @@ _ICONS = {
     "eye": '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/>',
     "wave": '<path d="M2 12c2 -3 4 -3 6 0s4 3 6 0 4 -3 6 0"/><path d="M2 17c2 -3 4 -3 6 0s4 3 6 0 4 -3 6 0"/>',
     "pin": '<path d="M12 21s7-6.7 7-12a7 7 0 1 0-14 0c0 5.3 7 12 7 12z"/><circle cx="12" cy="9" r="2.4"/>',
+    "ferry": '<path d="M4 17 3 13h18l-1 4"/><path d="M6 13V8h5V5l3 3v5"/><path d="M2 20c1.3-1.3 2.7-1.3 4 0s2.7 1.3 4 0 2.7-1.3 4 0 2.7 1.3 4 0"/>',
 }
 
 
@@ -168,7 +169,20 @@ APP_CSS = """
   --border-soft: #e9f2f8;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 6px 16px rgba(16, 24, 40, 0.05);
   --shadow-strong: 0 4px 10px rgba(12, 60, 94, 0.1), 0 16px 34px rgba(12, 60, 94, 0.14);
+
+  /* Tasarım token'ları — tüm bileşenler bu ölçeklere bağlı (tutarlılık için) */
+  --radius-control: 10px;
+  --radius-card: 18px;
+  --radius-pill: 999px;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px;
+  --fs-title: 1.02rem;
+  --fs-body: 0.86rem;
+  --fs-sub: 0.8rem;
+  --fs-label: 0.68rem;
 }
+
+* { -webkit-tap-highlight-color: transparent; }
+
 
 /* Manage app / deploy / üst bar — status widget hariç */
 header[data-testid="stHeader"],
@@ -192,13 +206,14 @@ html, body, [class*="css"], .stApp, .stMarkdown, p, span, label, div {
 }
 
 /* Uzun metinlerin üst üste binmesini engelle */
-p, span, label, h1, h2, h3, .pax-name, .pax-line, .app-title, .app-sub {
+p, span, label, h1, h2, h3, .pax-name, .pax-line, .brand-word, .brand-tag {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 .stApp { background: var(--bg); }
 [data-testid="stAppViewContainer"] > .main { background: transparent !important; }
+[data-testid="stMain"], [data-testid="stAppViewContainer"] { -webkit-overflow-scrolling: touch; }
 .block-container {
   padding-top: max(1rem, env(safe-area-inset-top));
   padding-bottom: max(6.4rem, env(safe-area-inset-bottom));
@@ -228,7 +243,8 @@ p, span, label, h1, h2, h3, .pax-name, .pax-line, .app-title, .app-sub {
   background: var(--accent-soft) !important;
   color: var(--accent-dark) !important;
 }
-.stTabs [data-baseweb="tab-panel"] { padding-top: 1rem; }
+.stTabs [data-baseweb="tab-panel"] { padding-top: 1rem; animation: fadeIn 0.22s ease; }
+.stTabs [data-baseweb="tab-list"] { -webkit-overflow-scrolling: touch; }
 
 @media (max-width: 760px) {
   .stTabs [data-baseweb="tab-list"] {
@@ -292,28 +308,36 @@ div[data-testid="stMetricValue"] {
 }
 
 .stButton > button, .stDownloadButton > button {
-  border-radius: 10px !important;
+  border-radius: var(--radius-control) !important;
   min-height: 44px;
   font-weight: 700 !important;
   color: var(--ink-soft) !important;
   background: var(--panel) !important;
   border: 1px solid var(--border) !important;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 .stButton > button:hover, .stDownloadButton > button:hover {
   background: var(--accent-soft) !important;
   border-color: var(--accent) !important;
   color: var(--accent-dark) !important;
 }
+.stButton > button:active, .stDownloadButton > button:active {
+  transform: scale(0.97);
+}
 .stDownloadButton > button[kind="primary"], .stButton > button[kind="primary"] {
   background: var(--accent) !important;
   color: #ffffff !important;
   border: 1px solid var(--accent) !important;
+  box-shadow: 0 3px 10px rgba(15, 111, 179, 0.28) !important;
 }
 .stDownloadButton > button[kind="primary"]:hover, .stButton > button[kind="primary"]:hover {
   background: var(--accent-dark) !important;
   color: #ffffff !important;
 }
+
+/* Dokunma hedefleri — iOS HIG (min 44px) */
+[data-testid="stCheckbox"] { min-height: 44px; display: flex; align-items: center; }
+[data-testid="stCheckbox"] label { min-height: 44px; display: flex; align-items: center; gap: 8px; }
 
 [data-testid="stFileUploader"] section {
   background: var(--panel) !important;
@@ -332,32 +356,15 @@ div[data-testid="stForm"] {
 /* HERO — sade başlık kartı */
 .app-hero {
   background: var(--panel);
-  border-radius: 16px;
-  padding: 1.25rem 1.3rem;
-  margin-bottom: 1rem;
+  border-radius: var(--radius-card);
+  padding: var(--sp-4) var(--sp-4);
+  margin-bottom: var(--sp-4);
   border: 1px solid var(--border);
   border-left: 4px solid var(--accent);
   box-shadow: var(--shadow-strong);
   transition: border-left-color 0.2s ease;
 }
 .app-panel-lg { box-shadow: var(--shadow-strong) !important; border-width: 1.4px !important; }
-.app-title {
-  margin: 0;
-  font-size: 1.6rem;
-  font-weight: 800;
-  line-height: 1.25;
-  color: var(--ink);
-  letter-spacing: -0.01em;
-}
-.app-sub {
-  margin: 0.4rem 0 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-weight: 700;
-  line-height: 1.4;
-}
 .status-line {
   margin-top: 0.55rem;
   font-size: 0.76rem;
@@ -383,12 +390,15 @@ div[data-testid="stForm"] {
   background:
     linear-gradient(135deg, rgba(15, 111, 179, 0.08), transparent 42%),
     linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
-  border-radius: 20px;
-  padding: 1rem;
-  margin-bottom: 0.82rem;
+  border-radius: var(--radius-card);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-3);
   border: 1px solid #dfe6f2;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 10px 26px rgba(16, 24, 40, 0.08);
+  animation: cardIn 0.28s ease both;
 }
+@keyframes cardIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .pax-card::before {
   content: "";
   position: absolute;
@@ -494,9 +504,9 @@ div[data-testid="stForm"] {
 .app-panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 1rem 1.1rem;
-  margin-bottom: 0.8rem;
+  border-radius: var(--radius-card);
+  padding: var(--sp-4) var(--sp-4);
+  margin-bottom: var(--sp-3);
   box-shadow: var(--shadow);
 }
 .app-panel-title {
@@ -524,18 +534,18 @@ div[data-testid="stForm"] {
 .format-box b { color: var(--ink); }
 
 .section-label {
-  font-size: 0.72rem;
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 0.8rem 0 0.5rem;
+  margin: var(--sp-4) 0 var(--sp-2);
 }
 
-.cc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0.75rem 0; }
+.cc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); margin: var(--sp-3) 0; }
 .cc-card {
-  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
-  padding: 0.95rem; box-shadow: var(--shadow);
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-card);
+  padding: var(--sp-4); box-shadow: var(--shadow);
 }
 .cc-kicker { margin: 0; font-size: 0.68rem; color: var(--muted); font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; }
 .cc-value { margin: 0.18rem 0 0; font-size: 1.38rem; color: var(--ink); font-weight: 900; line-height: 1.1; }
@@ -545,11 +555,12 @@ div[data-testid="stForm"] {
 .quick-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0.8rem 0; }
 .quick-action {
   border: 1px solid #dbeafe; background: #f8fbff; color: var(--accent-dark);
-  padding: 0.75rem; border-radius: 14px; font-weight: 900; font-size: 0.86rem;
+  padding: var(--sp-3); border-radius: var(--radius-card); font-weight: 900; font-size: 0.86rem;
+  min-height: 44px; display: flex; align-items: center; justify-content: center;
 }
 .empty-hero {
   text-align: center; background: linear-gradient(180deg, #ffffff, #f8fbff);
-  border: 1px dashed #c9d7ee; border-radius: 18px; padding: 1.35rem 1rem;
+  border: 1px dashed #c9d7ee; border-radius: var(--radius-card); padding: 1.35rem 1rem;
   box-shadow: var(--shadow);
 }
 .empty-hero .big { font-size: 2.2rem; margin: 0; }
@@ -568,13 +579,13 @@ div[data-testid="stForm"] {
 }
 .wizard-step.on { background: var(--accent); color: #fff; }
 .filter-sheet {
-  background: #ffffff; border: 1px solid #dbeafe; border-radius: 18px;
-  padding: 0.75rem 0.9rem; margin: 0.7rem 0; box-shadow: var(--shadow);
+  background: #ffffff; border: 1px solid #dbeafe; border-radius: var(--radius-card);
+  padding: var(--sp-3) var(--sp-4); margin: var(--sp-3) 0; box-shadow: var(--shadow);
 }
-.gallery-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.gallery-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); }
 .gallery-card {
-  background: #fff; border: 1px solid var(--border); border-radius: 14px;
-  padding: 0.55rem; box-shadow: var(--shadow); min-width: 0;
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius-card);
+  padding: var(--sp-2); box-shadow: var(--shadow); min-width: 0;
 }
 .gallery-card img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 10px; background: var(--bg); }
 .gallery-card p { margin: 0.4rem 0 0; font-size: 0.68rem; color: var(--ink-soft); font-weight: 800; line-height: 1.25; }
@@ -619,11 +630,21 @@ div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-wei
   .manifest-scroll { overflow: visible; }
   .manifest-table { min-width: 0; }
 }
-.brand-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.brand-mark {
-  display: inline-flex; align-items: center; gap: 6px; font-size: 0.66rem; font-weight: 900;
-  letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-dark);
-  background: var(--accent-soft); border: 1px solid #d4e2ff; border-radius: 999px; padding: 3px 10px;
+.brand-row { display: flex; align-items: center; gap: 10px; }
+.brand-badge {
+  flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, var(--sun) 0%, var(--sun-dark) 78%);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; box-shadow: 0 3px 8px rgba(217, 122, 10, 0.35);
+}
+.brand-wrap { min-width: 0; }
+.brand-word {
+  font-size: 1.14rem; font-weight: 900; color: var(--ink); letter-spacing: -0.02em;
+  line-height: 1.15; margin: 0;
+}
+.brand-tag {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--accent-dark); margin: 1px 0 0;
 }
 
 /* Damga (stamp) — rozet */
@@ -674,13 +695,15 @@ div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-wei
 
 /* Yoğunluk ayarları */
 .pax-card.density-compact { padding: 0.62rem 0.75rem; margin-bottom: 0.55rem; }
+.pax-card.density-compact::after { content: none; }
 .pax-card.density-compact .pax-photo, .pax-card.density-compact .pax-photo-empty { width: 58px; height: 74px; }
 .pax-card.density-compact .pax-name { font-size: 0.94rem; margin-bottom: 0.2rem; }
 .pax-card.density-compact .mrz-line, .pax-card.density-compact .pax-tags { display: none; }
 .pax-card.density-dense { padding: 0.42rem 0.6rem; margin-bottom: 0.34rem; border-radius: 12px; }
+.pax-card.density-dense::after { content: none; }
 .pax-card.density-dense .pax-photo, .pax-card.density-dense .pax-photo-empty { width: 40px; height: 52px; border-radius: 9px; }
 .pax-card.density-dense .pax-name { font-size: 0.84rem; margin-bottom: 0.1rem; }
-.pax-card.density-dense .mrz-line, .pax-card.density-dense .pax-tags,
+.pax-card.density-dense .mrz-line, .pax-card.density-dense .pax-tags, .pax-card.density-dense .pax-flags,
 .pax-card.density-dense .wallet-passport-label, .pax-card.density-dense .pax-stamp { display: none; }
 .pax-card.density-dense .wallet-passport { padding: 3px 7px; margin-bottom: 0.15rem; }
 .pax-card.density-dense .wallet-passport-no { font-size: 0.86rem; }
@@ -1204,10 +1227,12 @@ def render_topbar() -> None:
         f"""
         <div class="app-hero" style="border-left-color:{hero_color};">
           <div class="brand-row">
-            <span class="brand-mark">{icon('passport', 13)} Sınır Kontrol</span>
+            <span class="brand-badge">{icon('ferry', 20)}</span>
+            <div class="brand-wrap">
+              <p class="brand-word">Gate Visa PAX</p>
+              <p class="brand-tag">Sınır Kontrol · v{APP_VERSION}</p>
+            </div>
           </div>
-          <p class="app-title">Gate Visa PAX</p>
-          <p class="app-sub">{TEMPLATE_NAME} · Pasaport operasyon merkezi · v{APP_VERSION}</p>
           <div class="status-line">{icon("check", 12)} {backend} · {count} yolcu{updated_html}{saved_html}</div>
         </div>
         <div class="sea-wave">
