@@ -18,6 +18,60 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## v6 hedef mimari: Next.js PWA + FastAPI
+
+Streamlit uygulaması korunurken, yeni nesil arayüz/API temeli paralel olarak eklendi:
+
+- `backend/` — FastAPI servis katmanı. Mevcut Excel parser, yolcu şeması ve persistence modüllerini kullanır.
+- `frontend/` — Next.js PWA. Deniz laciverti / uzay siyahı konseptinde mobil öncelikli React arayüzü.
+
+### Backend çalıştırma
+
+```bash
+pip install -r backend/requirements.txt
+GATEVISA_ALLOW_DEV_NO_AUTH=1 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Endpointler:
+
+- `GET /health`
+- `GET /api/summary`
+- `GET /api/passengers?search=...`
+- `POST /api/import`
+
+### Frontend çalıştırma
+
+```bash
+cd frontend
+npm install
+NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
+```
+
+Frontend varsayılan olarak `http://localhost:8000` API adresini kullanır. Production için
+`NEXT_PUBLIC_API_URL` ortam değişkeni ayarlanmalıdır.
+
+### Production güvenlik ayarları
+
+FastAPI backend public internete açılmadan önce aşağıdaki ortam değişkenleri ayarlanmalıdır:
+
+```bash
+export GATEVISA_API_KEY="uzun-rastgele-bir-anahtar"
+export GATEVISA_CORS_ORIGINS="https://frontend-domaininiz.com"
+export GATEVISA_MAX_UPLOAD_FILES=5
+export GATEVISA_MAX_UPLOAD_BYTES=15728640
+```
+
+Frontend tarafında aynı API anahtarı:
+
+```bash
+NEXT_PUBLIC_API_KEY="uzun-rastgele-bir-anahtar"
+```
+
+> Not: `GATEVISA_API_KEY` boş bırakılırsa backend lokal geliştirme modu gibi davranır.
+> Bunun için ayrıca `GATEVISA_ALLOW_DEV_NO_AUTH=1` verilmesi gerekir. Public deployment
+> için API anahtarı boş bırakılmamalı ve gerçek kullanıcı bazlı auth (JWT/OIDC/session)
+> eklenmeden yolcu PII verisi internete açılmamalıdır.
+
 ## Kalıcı veritabanı (önerilir)
 
 Veriler ve fotoğraflar bir SQL veritabanında saklanır. En kolay yol **Supabase** (ücretsiz Postgres):
