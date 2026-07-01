@@ -50,8 +50,51 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "4.9.0"
+APP_VERSION = "5.0.0"
 PAGE_SIZE = 10
+
+_ICONS = {
+    "photo": '<path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.4"/>',
+    "passport": '<rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="9.5" r="2.2"/><path d="M9 15.2h6M9.6 17.6h4.8"/>',
+    "ticket": '<path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a1.6 1.6 0 0 0 0 3.2v2A2 2 0 0 1 18 17H6a2 2 0 0 1-2-2v-2a1.6 1.6 0 0 0 0-3.2z"/><path d="M14 6v12" stroke-dasharray="2.4 2.4"/>',
+    "coin": '<circle cx="12" cy="12" r="8.4"/><path d="M12 8v8M9.6 9.6h3.5a1.6 1.6 0 0 1 0 3.2H10a1.6 1.6 0 0 0 0 3.2h3.9"/>',
+    "calendar": '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 9.5h16M8 3v3.4M16 3v3.4"/>',
+    "check": '<path d="M5 12.5 9.5 17 19 6.5"/>',
+    "warn": '<path d="M12 4 21 19H3z"/><path d="M12 10.5v4M12 17h.01"/>',
+    "flag": '<path d="M6 20V4"/><path d="M6 4h11l-2.4 3.6L17 11H6"/>',
+    "moon": '<path d="M20 14.5A8.4 8.4 0 1 1 9.5 4a6.6 6.6 0 0 0 10.5 10.5z"/>',
+    "sun": '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.2 12H1.6M22.4 12h-2.6M5.4 5.4l1.8 1.8M17.6 17.6l1.8 1.8M5.4 18.6l1.8-1.8M17.6 6.4l1.8-1.8"/>',
+    "grid": '<rect x="4" y="4" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1"/>',
+    "stamp": '<circle cx="12" cy="9" r="5.4"/><path d="M8.6 20.5 12 14.4l3.4 6.1M6 20.5h12"/>',
+    "camera_off": '<path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><path d="M3 3l18 18" stroke-width="2.2"/>',
+    "box": '<path d="M4 7.5 12 3l8 4.5M4 7.5v9L12 21l8-4.5v-9M4 7.5 12 12l8-4.5M12 12v9"/>',
+}
+
+
+def icon(name: str, size: int = 15, extra_class: str = "") -> str:
+    """Küçük, hafif SVG ikon (emoji yerine tutarlı çizgi ikon seti)."""
+    body = _ICONS.get(name, "")
+    if not body:
+        return ""
+    return (
+        f'<svg class="ico {extra_class}" width="{size}" height="{size}" viewBox="0 0 24 24" '
+        f'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" '
+        f'stroke-linejoin="round" aria-hidden="true">{body}</svg>'
+    )
+
+
+def mrz_line(name: str, surname: str, passport: str, country: str = "TUR") -> str:
+    """Pasaport MRZ (makine okunur bölge) görünümü — gerçek kontrol basamağı içermez,
+    yalnızca kart üzerinde 'gerçek pasaport' hissi veren estetik bir satırdır."""
+    import re as _re
+
+    def clean(s: str) -> str:
+        return _re.sub(r"[^A-Z]", "", (s or "").upper())
+
+    pp = _re.sub(r"[^A-Z0-9]", "", (passport or "").upper()) or "X" * 9
+    line = f"{pp}<{country}<{clean(surname)}<<{clean(name)}"
+    line = (line + "<" * 44)[:38]
+    return line
 
 
 def parse_amount(value) -> float:
@@ -376,11 +419,12 @@ div[data-testid="stForm"] {
   line-height: 1.25;
   letter-spacing: -0.01em;
 }
+.wallet-row { display: flex; align-items: center; gap: 8px; margin: 0.05rem 0 0.45rem; }
 .wallet-passport {
   display: inline-flex; flex-direction: column; gap: 1px;
   background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 13px;
-  padding: 7px 10px; margin: 0.05rem 0 0.45rem;
-  min-width: min(100%, 210px);
+  padding: 7px 10px;
+  min-width: min(100%, 190px); flex: 1;
 }
 .wallet-passport-label {
   font-size: 0.57rem; font-weight: 900; color: #94a3b8;
@@ -504,10 +548,168 @@ div[data-testid="stForm"] {
 
 div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-weight: 700; }
 .stDataFrame { border-radius: 14px; overflow: hidden; border: 1px solid var(--border); }
+
+/* ============ AEGEAN PASSPORT CONTROL — kimlik & ikon sistemi ============ */
+.ico { vertical-align: -3px; flex-shrink: 0; }
+.stApp {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(37, 99, 235, 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.brand-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.brand-mark {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 0.66rem; font-weight: 900;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-dark);
+  background: var(--accent-soft); border: 1px solid #d4e2ff; border-radius: 999px; padding: 3px 10px;
+}
+
+/* Damga (stamp) — rozet */
+.pax-stamp {
+  position: absolute; top: 10px; right: 10px;
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 1.6px solid currentColor; border-radius: 8px; padding: 2px 8px;
+  font-size: 0.6rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase;
+  transform: rotate(-6deg); mix-blend-mode: multiply; opacity: 0.92;
+}
+.pax-stamp.ok { color: #0f8a4b; }
+.pax-stamp.warn { color: #b45309; }
+.pax-stamp.bad { color: #c0261e; }
+
+/* Biyometrik foto çerçevesi (viewfinder köşeleri) */
+.pax-photo-frame { position: relative; flex-shrink: 0; }
+.pax-photo-frame::before, .pax-photo-frame::after {
+  content: ""; position: absolute; width: 12px; height: 12px; pointer-events: none;
+}
+.pax-photo-frame::before { top: -3px; left: -3px; border-top: 2px solid var(--accent-dark); border-left: 2px solid var(--accent-dark); border-radius: 4px 0 0 0; }
+.pax-photo-frame::after { bottom: -3px; right: -3px; border-bottom: 2px solid var(--accent-dark); border-right: 2px solid var(--accent-dark); border-radius: 0 0 4px 0; }
+.pax-photo-empty { position: relative; }
+.pax-photo-empty .miss-tag {
+  position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+  font-size: 0.48rem; font-weight: 900; letter-spacing: 0.05em; color: #b91c1c;
+  text-transform: uppercase; white-space: nowrap;
+}
+
+/* Mini hazırlık halkası (conic-gradient — JS/animasyon yok) */
+.ring {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: conic-gradient(var(--ring-color, var(--accent)) calc(var(--pct, 0) * 1%), #e7ecf5 0);
+}
+.ring span {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--panel);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.52rem; font-weight: 900; color: var(--ink-soft);
+}
+
+/* MRZ satırı (pasaport makine okunur bölgesi hissi) */
+.mrz-line {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 0.62rem; letter-spacing: 0.03em; color: #94a3b8; margin-top: 0.35rem;
+  overflow: hidden; white-space: nowrap; text-overflow: clip;
+  background: #f8fafc; border-radius: 6px; padding: 3px 7px; border: 1px solid var(--border-soft);
+}
+
+/* Yoğunluk ayarları */
+.pax-card.density-compact { padding: 0.62rem 0.75rem; margin-bottom: 0.55rem; }
+.pax-card.density-compact .pax-photo, .pax-card.density-compact .pax-photo-empty { width: 58px; height: 74px; }
+.pax-card.density-compact .pax-name { font-size: 0.94rem; margin-bottom: 0.2rem; }
+.pax-card.density-compact .mrz-line, .pax-card.density-compact .pax-tags { display: none; }
+.pax-card.density-dense { padding: 0.42rem 0.6rem; margin-bottom: 0.34rem; border-radius: 12px; }
+.pax-card.density-dense .pax-photo, .pax-card.density-dense .pax-photo-empty { width: 40px; height: 52px; border-radius: 9px; }
+.pax-card.density-dense .pax-name { font-size: 0.84rem; margin-bottom: 0.1rem; }
+.pax-card.density-dense .mrz-line, .pax-card.density-dense .pax-tags,
+.pax-card.density-dense .wallet-passport-label, .pax-card.density-dense .pax-stamp { display: none; }
+.pax-card.density-dense .wallet-passport { padding: 3px 7px; margin-bottom: 0.15rem; }
+.pax-card.density-dense .wallet-passport-no { font-size: 0.86rem; }
+
+/* Boarding-pass detay görünümü */
+.boarding-pass { position: relative; }
+.boarding-pass .stub-divider {
+  position: relative; height: 0; border-top: 2px dashed #cbd5e1; margin: 0.9rem -1.1rem;
+}
+.boarding-pass .stub-divider::before, .boarding-pass .stub-divider::after {
+  content: ""; position: absolute; top: -9px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--bg);
+}
+.boarding-pass .stub-divider::before { left: -9px; }
+.boarding-pass .stub-divider::after { right: -9px; }
+.boarding-pass-row { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.boarding-pass-field { min-width: 90px; }
+.boarding-pass-field .bp-k { font-size: 0.62rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+.boarding-pass-field .bp-v { font-size: 0.92rem; font-weight: 800; color: var(--ink); }
+
+/* Contact-sheet galeri */
+.gallery-card { position: relative; border: 1px solid var(--border); background: var(--panel); }
+.gallery-card img { border: 3px solid #fff; box-shadow: 0 0 0 1px var(--border); }
+.gallery-card::before {
+  content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;
+  border-radius: 50%; background: #cbd5e1;
+}
+
+/* Eksikler ısı haritası */
+.heatmap { display: grid; grid-template-columns: repeat(auto-fill, minmax(15px, 1fr)); gap: 3px; margin: 0.6rem 0; }
+.heatmap-cell { height: 15px; border-radius: 3px; }
+.heatmap-cell.ok { background: #34d399; }
+.heatmap-cell.warn { background: #fbbf24; }
+.heatmap-cell.bad { background: #f87171; }
+
+/* Timeline ikon renkleri */
+.timeline-item.t-import::before { background: #2563eb; box-shadow: 0 0 0 4px #eaf1ff; }
+.timeline-item.t-status::before { background: #0f8a4b; box-shadow: 0 0 0 4px #e6f7ee; }
+.timeline-item .ico { margin-right: 4px; color: var(--accent-dark); }
+
+/* Premium paket checklist */
+.package-check { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border-soft); font-size: 0.85rem; color: var(--ink-soft); font-weight: 700; }
+.package-check:last-child { border-bottom: none; }
+.package-check .ico.ok { color: #0f8a4b; }
+.package-check .ico.warn { color: #b45309; }
+</style>
+"""
+
+NIGHT_CSS = """
+<style>
+:root {
+  --accent: #38bdf8;
+  --accent-dark: #38bdf8;
+  --accent-soft: #14304a;
+  --ink: #eef2ff;
+  --ink-soft: #c7d2e6;
+  --muted: #8a96b0;
+  --bg: #0a0f1c;
+  --panel: #121a2c;
+  --border: #253150;
+  --border-soft: #1c2740;
+  --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 10px 26px rgba(0,0,0,0.35);
+}
+.stApp { background-image: radial-gradient(circle at 1px 1px, rgba(56, 189, 248, 0.09) 1px, transparent 1px); }
+.pax-card { background: linear-gradient(135deg, rgba(56,189,248,0.08), transparent 42%), linear-gradient(180deg, #121a2c, #0e1526) !important; border-color: #253150 !important; }
+.wallet-passport { background: #0e1526 !important; border-color: #253150 !important; }
+.wallet-passport-label { color: #5b6b8c !important; }
+.pax-flag { background: #2a2116 !important; color: #fbbf24 !important; border-color: #423318 !important; }
+.pax-flag.bad { background: #2a1414 !important; color: #f87171 !important; border-color: #452020 !important; }
+.pax-tag { background: #142033 !important; color: #7dd3fc !important; border-color: #1f3350 !important; }
+.pax-no { background: #0f2a20 !important; color: #34d399 !important; }
+.empty-hero { background: linear-gradient(180deg, #121a2c, #0e1526) !important; border-color: #253150 !important; }
+.quick-action { background: #101c2f !important; border-color: #1f3350 !important; color: #7dd3fc !important; }
+.filter-sheet { background: #121a2c !important; border-color: #1f3350 !important; }
+.mrz-line { background: #0e1526 !important; color: #5b6b8c !important; border-color: #1c2740 !important; }
+.ring span { background: #121a2c !important; }
+.stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stDateInput input, [data-baseweb="select"] {
+  background: #121a2c !important; border-color: #253150 !important; color: #eef2ff !important;
+}
+.stButton > button, .stDownloadButton > button { background: #121a2c !important; border-color: #253150 !important; color: #c7d2e6 !important; }
+[data-testid="stFileUploader"] section { background: #121a2c !important; border-color: #253150 !important; }
+div[data-testid="stExpander"], div[data-testid="stForm"] { background: #121a2c !important; border-color: #253150 !important; }
+div[data-testid="stMetric"] { background: #121a2c !important; border-color: #253150 !important; }
+.stTabs [data-baseweb="tab-list"] { background: #121a2c !important; border-color: #253150 !important; }
+.stTabs [aria-selected="true"] { background: #14304a !important; }
+.boarding-pass .stub-divider::before, .boarding-pass .stub-divider::after { background: #0a0f1c !important; }
 </style>
 """
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
+if st.session_state.get("night_mode"):
+    st.markdown(NIGHT_CSS, unsafe_allow_html=True)
 
 # iPhone "Ana Ekrana Ekle" / tam ekran uygulama (PWA): manifest ve ikon etiketlerini
 # ana dokümanın <head> bölümüne enjekte et (Streamlit aksi halde <body>'ye koyar).
@@ -572,6 +774,8 @@ def init_state() -> None:
         "view_mode": "Detaylı",
         "missing_filter": "Tümü",
         "sort_by": "Varsayılan",
+        "night_mode": False,
+        "card_density": "Rahat",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -862,13 +1066,33 @@ def render_topbar() -> None:
     st.markdown(
         f"""
         <div class="app-hero">
+          <div class="brand-row">
+            <span class="brand-mark">{icon('passport', 13)} Sınır Kontrol</span>
+          </div>
           <p class="app-title">Gate Visa PAX</p>
-          <p class="app-sub">{TEMPLATE_NAME} · Yolcu kartları · v{APP_VERSION}</p>
+          <p class="app-sub">{TEMPLATE_NAME} · Pasaport operasyon merkezi · v{APP_VERSION}</p>
           <div class="status-line">{backend} · {count} yolcu{updated_html}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    tb1, tb2 = st.columns([1, 1])
+    with tb1:
+        night = st.session_state.get("night_mode", False)
+        label = f"{'☀️ Gündüz moduna geç' if night else '🌙 Night Ops moduna geç'}"
+        if st.button(label, key="toggle_night_mode", use_container_width=True):
+            st.session_state.night_mode = not night
+            st.rerun()
+    with tb2:
+        dens_opts = ["Rahat", "Sıkı", "Mini"]
+        cur = st.session_state.get("card_density", "Rahat")
+        st.session_state.card_density = st.selectbox(
+            "Kart yoğunluğu",
+            options=dens_opts,
+            index=dens_opts.index(cur) if cur in dens_opts else 0,
+            key="card_density_select",
+            label_visibility="collapsed",
+        )
 
 
 def render_active_filter_chips(filters: dict[str, str | None]) -> None:
@@ -1014,13 +1238,16 @@ def _unmatched_reason(filename: str, base_df: pd.DataFrame) -> str:
     return "Eşleşmedi"
 
 
-def photo_html(row: pd.Series, css_class: str = "pax-photo", size: str = "list") -> str:
+def photo_html(row: pd.Series, css_class: str = "pax-photo", size: str = "list", framed: bool = True) -> str:
     ref = str(row.get("Foto", "") or "")
+    frame_open = '<div class="pax-photo-frame">' if framed else ""
+    frame_close = "</div>" if framed else ""
     if ref:
         uri = thumb_uri(ref, 96, 55) if size == "list" else thumb_uri(ref, 380, 82)
         if uri:
-            return f'<img class="{css_class}" src="{uri}" alt="foto" loading="lazy" decoding="async" />'
-    return f'<div class="{css_class} pax-photo-empty">👤</div>'
+            return f'{frame_open}<img class="{css_class}" src="{uri}" alt="foto" loading="lazy" decoding="async" />{frame_close}'
+    inner = f'<div class="{css_class} pax-photo-empty">👤<span class="miss-tag">Foto yok</span></div>'
+    return f"{frame_open}{inner}{frame_close}" if framed else inner
 
 
 def card_issues(row: pd.Series) -> list[tuple[str, str]]:
@@ -1041,7 +1268,8 @@ def card_issues(row: pd.Series) -> list[tuple[str, str]]:
 def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") -> None:
     card = passenger_card_view(row)
     view_mode = st.session_state.get("view_mode", "Detaylı")
-    name = html.escape(cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu")
+    name_raw = cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu"
+    name = html.escape(name_raw)
     passport_raw = cell_text(row.get("Pasaport No")) or "—"
     passport = html.escape(passport_raw)
     voucher = html.escape(cell_text(row.get("Voucher")))
@@ -1049,21 +1277,36 @@ def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") ->
     arr = html.escape(cell_text(row.get("Varış Tarihi")))
 
     issues = card_issues(row)
-    card_cls = "pax-card"
+    density_cls = {"Rahat": "", "Sıkı": " density-compact", "Mini": " density-dense"}.get(
+        st.session_state.get("card_density", "Rahat"), ""
+    )
+    card_cls = "pax-card" + density_cls
     if any(sev == "bad" for _, sev in issues):
         card_cls += " bad"
+        stamp = ("EKSİK", "bad")
     elif issues:
         card_cls += " warn"
+        stamp = ("KONTROL", "warn")
+    else:
+        stamp = ("ONAYLI", "ok")
     flags_html = ""
     if issues:
         flags_html = '<div class="pax-flags">' + "".join(
-            f'<span class="pax-flag {sev}">{label}</span>' for label, sev in issues
+            f'<span class="pax-flag {sev}">{icon("warn", 10)} {label}</span>' for label, sev in issues
         ) + "</div>"
 
+    checks = 4 - len(set(lbl for lbl, _ in issues))
+    ring_pct = round(max(0, checks) / 4 * 100)
+    ring_color = "#0f8a4b" if ring_pct == 100 else ("#f59e0b" if ring_pct >= 50 else "#ef4444")
+
     wallet_passport = (
+        f'<div class="wallet-row">'
         f'<div class="wallet-passport">'
-        f'<span class="wallet-passport-label">Passport</span>'
+        f'<span class="wallet-passport-label">{icon("passport", 10)} Passport</span>'
         f'<span class="wallet-passport-no">{passport}</span>'
+        f"</div>"
+        f'<span class="pax-date">{dep or "—"}</span>'
+        f'<div class="ring" style="--pct:{ring_pct};--ring-color:{ring_color};"><span>{ring_pct}</span></div>'
         f"</div>"
     )
 
@@ -1072,31 +1315,35 @@ def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") ->
     else:
         chips = []
         if voucher:
-            chips.append(f"<span class='pax-tag'><b>Voucher</b> {voucher}</span>")
+            chips.append(f"<span class='pax-tag'>{icon('ticket', 10)} <b>Voucher</b> {voucher}</span>")
         if dep or arr:
             date_val = f'{dep or "—"} → {arr or "—"}'
-            chips.append(f"<span class='pax-tag'><b>Tarih</b> {date_val}</span>")
+            chips.append(f"<span class='pax-tag'>{icon('calendar', 10)} <b>Tarih</b> {date_val}</span>")
         if card["amount"]:
-            chips.append(f"<span class='pax-tag'><b>Ücret</b> {html.escape(card['amount'])}</span>")
+            chips.append(f"<span class='pax-tag'>{icon('coin', 10)} <b>Ücret</b> {html.escape(card['amount'])}</span>")
     chips_html = f'<div class="pax-tags">{"".join(chips)}</div>' if chips else ""
 
     show_photo = st.session_state.get("show_photos", True) and view_mode != "Fotoğrafsız"
     photo = photo_html(row) if show_photo else ""
+    mrz_html = ""
+    if view_mode == "Detaylı":
+        mrz_html = f'<div class="mrz-line">{html.escape(mrz_line(name_raw.split(" ")[0] if name_raw else "", " ".join(name_raw.split(" ")[1:]), passport_raw))}</div>'
 
     st.markdown(
         f"""
         <div class="{card_cls}">
+          <span class="pax-stamp {stamp[1]}">{icon("stamp", 11)} {stamp[0]}</span>
           <div class="pax-card-row">
             {photo}
             <div class="pax-card-body">
               <div class="pax-card-top">
                 <span class="pax-no">{html.escape(card["status"] or "Yolcu")}</span>
-                <span class="pax-date">{dep or "—"}</span>
               </div>
               <div class="pax-name">{name}</div>
               {wallet_passport}
               {chips_html}
               {flags_html}
+              {mrz_html}
             </div>
           </div>
         </div>
@@ -1117,6 +1364,14 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
 
     row = base_df.loc[idx]
     card = passenger_card_view(row)
+    m = readiness_metrics(pd.DataFrame([row]))
+    issues = card_issues(row)
+    stamp = ("ONAYLI", "ok") if not issues else (
+        ("EKSİK", "bad") if any(s == "bad" for _, s in issues) else ("KONTROL", "warn")
+    )
+    passport_raw = cell_text(row.get("Pasaport No")) or "—"
+    name_raw = cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu"
+    mrz_html = html.escape(mrz_line(name_raw.split(" ")[0] if name_raw else "", " ".join(name_raw.split(" ")[1:]), passport_raw))
 
     if st.button("← Listeye dön"):
         st.session_state.selected_idx = None
@@ -1124,13 +1379,22 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
 
     st.markdown(
         f"""
-        <div class="app-panel">
+        <div class="app-panel boarding-pass">
+          <span class="pax-stamp {stamp[1]}">{icon("stamp", 11)} {stamp[0]}</span>
           <div class="pax-card-row">
             {photo_html(row, css_class="pax-photo-lg", size="detail")}
             <div class="pax-card-body">
               <p class="app-panel-title">{card["title"]}</p>
               <p class="app-panel-sub">{card["subtitle"]}</p>
+              <div class="mrz-line">{mrz_html}</div>
             </div>
+          </div>
+          <div class="stub-divider"></div>
+          <div class="boarding-pass-row">
+            <div class="boarding-pass-field"><div class="bp-k">{icon("passport", 10)} Pasaport</div><div class="bp-v">{html.escape(passport_raw)}</div></div>
+            <div class="boarding-pass-field"><div class="bp-k">{icon("calendar", 10)} Gidiş</div><div class="bp-v">{html.escape(cell_text(row.get("Gidiş Tarihi")) or "—")}</div></div>
+            <div class="boarding-pass-field"><div class="bp-k">{icon("ticket", 10)} Voucher</div><div class="bp-v">{html.escape(cell_text(row.get("Voucher")) or "—")}</div></div>
+            <div class="boarding-pass-field"><div class="bp-k">{icon("coin", 10)} Ücret</div><div class="bp-v">{html.escape(card["amount"] or "—")}</div></div>
           </div>
         </div>
         """,
@@ -1299,6 +1563,10 @@ def render_command_center(base_df: pd.DataFrame) -> None:
         render_smart_empty_state()
         return
 
+    st.markdown(
+        f'<p class="section-label">{icon("stamp", 12)} Operasyon Kokpiti</p>',
+        unsafe_allow_html=True,
+    )
     m = render_readiness_panel(base_df, "home")
     summ = summarize_group(base_df)
     st.markdown(
@@ -1376,11 +1644,31 @@ def render_quick_fix_card(idx: int, row: pd.Series, category: str) -> None:
         st.toast("Yolcular sekmesinde filtre hazır", icon="✅")
 
 
+def render_readiness_heatmap(base_df: pd.DataFrame) -> None:
+    cells = []
+    for _, row in base_df.iterrows():
+        issues = card_issues(row)
+        name = html.escape(cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu")
+        if any(sev == "bad" for _, sev in issues):
+            cls, label = "bad", "eksik"
+        elif issues:
+            cls, label = "warn", "kontrol"
+        else:
+            cls, label = "ok", "tamam"
+        cells.append(f'<div class="heatmap-cell {cls}" title="{name} · {label}"></div>')
+    st.markdown(
+        f'<p class="section-label">{icon("grid", 12)} Hazırlık ısı haritası ({len(base_df)} yolcu)</p>'
+        f'<div class="heatmap">{"".join(cells)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_issues_center(base_df: pd.DataFrame) -> None:
     if base_df.empty:
         render_smart_empty_state()
         return
 
+    render_readiness_heatmap(base_df)
     categories = ["Fotosuz", "Pasaportsuz", "Voucher eksik", "Ücretsiz", "Tekrarlı"]
     counts = {c: len(issue_indexes(base_df, c)) for c in categories}
     st.markdown(
@@ -1417,23 +1705,25 @@ def render_issues_center(base_df: pd.DataFrame) -> None:
 def render_operation_timeline(base_df: pd.DataFrame, compact: bool = False) -> None:
     history = list(st.session_state.get("import_history", []))
     meta = st.session_state.get("date_meta", {})
-    items: list[str] = []
+    items: list[tuple[str, str]] = []
     for h in history[:8]:
-        items.append(
-            f'{html.escape(str(h.get("time", "")))} · {html.escape(str(h.get("files", "Import")))} · '
-            f'{int(h.get("rows", 0) or 0)} yolcu'
-        )
+        items.append((
+            "t-import",
+            f'{icon("box", 12)} {html.escape(str(h.get("time", "")))} · {html.escape(str(h.get("files", "Import")))} · '
+            f'{int(h.get("rows", 0) or 0)} yolcu',
+        ))
     for date_key, info in list(meta.items())[:5]:
-        items.append(
-            f'{html.escape(str(date_key))} · Operasyon {html.escape(str(info.get("status", "Hazırlanıyor")))}'
-        )
+        items.append((
+            "t-status",
+            f'{icon("flag", 12)} {html.escape(str(date_key))} · Operasyon {html.escape(str(info.get("status", "Hazırlanıyor")))}',
+        ))
     if not items and not base_df.empty:
-        items.append(f"{len(base_df)} yolcu hazırlandı")
+        items.append(("t-import", f'{icon("check", 12)} {len(base_df)} yolcu hazırlandı'))
     if not items:
         return
     title = "Son hareketler" if compact else "Operation Timeline"
     st.markdown(f'<p class="section-label">{title}</p><div class="timeline">' + "".join(
-        f'<div class="timeline-item">{item}</div>' for item in items
+        f'<div class="timeline-item {cls}">{item}</div>' for cls, item in items
     ) + "</div>", unsafe_allow_html=True)
 
 
@@ -1462,7 +1752,10 @@ def render_photo_gallery(base_df: pd.DataFrame) -> None:
             continue
         name = html.escape(cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu")
         pp = html.escape(cell_text(row.get("Pasaport No")) or "")
-        cards.append(f'<div class="gallery-card"><img src="{uri}" loading="lazy" decoding="async"><p>{name}<br>{pp}</p></div>')
+        cards.append(
+            f'<div class="gallery-card"><img src="{uri}" loading="lazy" decoding="async">'
+            f'<p>{icon("passport", 10)} {name}<br>{pp}</p></div>'
+        )
     st.markdown('<div class="gallery-grid">' + "".join(cards) + "</div>", unsafe_allow_html=True)
     render_pagination("gallery_page", page, pages, "gallery")
 
@@ -1493,16 +1786,31 @@ def render_package_builder(base_df: pd.DataFrame) -> None:
         return
     m = readiness_metrics(base_df)
     summ = summarize_group(base_df)
+    ring_color = "#0f8a4b" if m["pct"] >= 90 else ("#f59e0b" if m["pct"] >= 60 else "#ef4444")
+
+    def _row(name: str, ok: bool, icon_name: str) -> str:
+        cls = "ok" if ok else "warn"
+        mark = icon("check", 13, cls) if ok else icon("warn", 13, cls)
+        return f'<div class="package-check">{icon(icon_name, 14)} {name} <span style="margin-left:auto">{mark}</span></div>'
+
     st.markdown(
         f"""
         <div class="app-panel">
-          <p class="app-panel-title">Teslim Paketi</p>
-          <div class="format-box">
-          ✅ Yolcu Excel<br>
-          {'✅' if summ['with_photo'] else '⚠️'} Foto ZIP ({summ['with_photo']} foto)<br>
-          ✅ Ücret özeti ({_fmt_amount(summ['total'])})<br>
-          {'✅' if m['pct'] >= 90 else '⚠️'} Hazırlık raporu (%{m['pct']})<br>
-          ✅ Operasyon notları
+          <div class="pax-card-row" style="align-items:center;">
+            <div class="ring" style="width:52px;height:52px;--pct:{m['pct']};--ring-color:{ring_color};">
+              <span style="width:40px;height:40px;font-size:0.78rem;">%{m['pct']}</span>
+            </div>
+            <div class="pax-card-body">
+              <p class="app-panel-title">Teslim Paketi</p>
+              <p class="app-panel-sub">Operasyon dosyasını sınır kontrolüne teslim etmeye hazır mı?</p>
+            </div>
+          </div>
+          <div style="margin-top:0.6rem;">
+            {_row("Yolcu Excel / CSV", True, "ticket")}
+            {_row(f"Fotoğraf ZIP ({summ['with_photo']}/{summ['count']})", summ['with_photo'] == summ['count'] and summ['count'] > 0, "photo")}
+            {_row(f"Ücret özeti ({_fmt_amount(summ['total'])})", summ['total'] > 0, "coin")}
+            {_row(f"Hazırlık raporu (%{m['pct']})", m['pct'] >= 90, "flag")}
+            {_row("Operasyon notları", bool(st.session_state.get("date_meta")), "box")}
           </div>
         </div>
         """,
