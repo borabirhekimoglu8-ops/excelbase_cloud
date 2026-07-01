@@ -143,8 +143,9 @@ def apply_filters(
 
     view = df.copy()
     if search.strip():
+        term = search.strip()[:120]
         mask = view.apply(
-            lambda row: row.astype(str).str.contains(search.strip(), case=False, na=False).any(),
+            lambda row: row.astype(str).str.contains(term, case=False, na=False, regex=False).any(),
             axis=1,
         )
         view = view.loc[mask]

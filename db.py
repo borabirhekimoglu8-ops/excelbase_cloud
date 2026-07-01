@@ -57,13 +57,15 @@ def get_engine() -> "Engine | None":
         if url.startswith("postgresql://"):
             url = url.replace("postgresql://", "postgresql+pg8000://", 1)
         if "+pg8000" in url:
-            # Supabase vb. barındırılan DB'ler için TLS gerekir.
+            # Supabase vb. barındırılan DB'ler için TLS gerekir. Varsayılan güvenli
+            # doğrulamadır; sadece eski/özel ortamlarda açıkça gevşetilebilir.
             try:
                 import ssl
 
                 ctx = ssl.create_default_context()
-                ctx.check_hostname = False
-                ctx.verify_mode = ssl.CERT_NONE
+                if os.environ.get("APP_ENV") == "development" and os.environ.get("DATABASE_SSL_INSECURE") == "1":
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
                 connect_args = {"ssl_context": ctx}
             except Exception:
                 connect_args = {}
