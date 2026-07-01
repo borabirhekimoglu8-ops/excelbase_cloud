@@ -27,7 +27,7 @@ export type OperationSummary = {
   loaded_files: string[];
 };
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
