@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Gate Visa PAX",
-  description: "Gate Visa PAX Next.js PWA operasyon merkezi",
+  title: "Gate Visa PAX V7",
+  description: "Gate Visa PAX V7 — tek servis operasyon merkezi (Next.js PWA + FastAPI)",
   appleWebApp: {
     capable: true,
     title: "Gate Visa",
