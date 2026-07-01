@@ -104,11 +104,30 @@ otomatik olarak yerel dosya yedeğine geçer.
 
 ## Render kurulumu
 
-Render artık v6 tek-servis Docker deploy kullanır:
+Render blueprint artık iki ayrı web servis oluşturur:
 
-- Docker build sırasında `frontend/` Next.js statik PWA olarak build edilir.
-- FastAPI (`backend.main:app`) aynı servis içinde hem `/api/*` endpointlerini hem de Next çıktısını sunar.
-- Public URL doğrudan yeni v6 arayüzünü açar.
+1. **`excelbase`** — V6 Next.js PWA + FastAPI tek-servis Docker deploy.
+   - Docker build sırasında `frontend/` Next.js statik PWA olarak build edilir.
+   - FastAPI (`backend.main:app`) aynı servis içinde hem `/api/*` endpointlerini hem de Next çıktısını sunar.
+   - Public URL doğrudan yeni v6 arayüzünü açar.
+
+2. **`excelbase-streamlit`** — Orijinal Streamlit uygulamasının Render kopyası.
+   - `app.py` değişmeden korunur.
+   - Build: `pip install -r requirements.txt`
+   - Start: `streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT --server.headless=true`
+   - Streamlit Cloud'daki/asıl uygulamayı silmez; Render'da paralel bir kopya olarak çalışır.
+   - Render blueprint deploy ederken `STREAMLIT_ACCESS_CODE` değeri istenir. Bu kod,
+     iPhone'dan Streamlit Render linkine girildiğinde istenecek erişim kodudur.
 
 Blueprint: `render.yaml`
 Dockerfile: `Dockerfile`
+
+### iPhone'dan Render servis linkini bulma
+
+1. `https://dashboard.render.com` adresini Safari'de aç.
+2. Dashboard / Services bölümünde:
+   - Yeni V6 için `excelbase`
+   - Orijinal Streamlit kopyası için `excelbase-streamlit`
+3. Servise gir ve **Live URL** / **Service URL** linkine dokun.
+4. `excelbase-streamlit` açılırken Render'da belirlediğin `STREAMLIT_ACCESS_CODE`
+   kodunu gir.
