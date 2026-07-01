@@ -9,3 +9,14 @@ services:
       # Streamlit benzeri tek-kullanıcı/public davranışı korur.
       - key: GATEVISA_ALLOW_DEV_NO_AUTH
         value: "1"
+
+  # Orijinal Streamlit uygulaması — V6'yı silmeden Render'da paralel kopya.
+  - type: web
+    name: excelbase-streamlit
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT --server.headless=true
+    envVars:
+      - key: STREAMLIT_ACCESS_CODE
+        sync: false

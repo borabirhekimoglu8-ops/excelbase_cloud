@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import html
 import json
+import os
+import secrets
 import zipfile
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -148,6 +150,41 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+
+def require_streamlit_access() -> None:
+    """Render'daki Streamlit kopyası için opsiyonel erişim kodu.
+
+    STREAMLIT_ACCESS_CODE yoksa uygulama eski davranışıyla açık çalışır. Render'da
+    bu env var ayarlanırsa pasaport/foto verileri public linkte korunur.
+    """
+    expected = os.environ.get("STREAMLIT_ACCESS_CODE", "").strip()
+    if not expected or st.session_state.get("streamlit_access_ok"):
+        return
+
+    st.markdown(
+        """
+        <style>
+        .block-container { max-width: 440px; padding-top: 20vh; }
+        [data-testid="stAppViewContainer"] { background: #071526; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.title("Gate Visa PAX")
+    st.caption("Render Streamlit kopyası için erişim kodunu girin.")
+    with st.form("streamlit_access_form"):
+        entered = st.text_input("Erişim kodu", type="password")
+        submitted = st.form_submit_button("Giriş")
+    if submitted:
+        if secrets.compare_digest(entered.strip(), expected):
+            st.session_state.streamlit_access_ok = True
+            st.rerun()
+        st.error("Erişim kodu hatalı.")
+    st.stop()
+
+
+require_streamlit_access()
 
 APP_CSS = """
 <style>
