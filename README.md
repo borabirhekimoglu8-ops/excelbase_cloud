@@ -104,5 +104,11 @@ otomatik olarak yerel dosya yedeğine geçer.
 
 ## Render kurulumu
 
-Build: `pip install -r requirements.txt`
-Start: `streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT`
+Render artık v6 tek-servis Docker deploy kullanır:
+
+- Docker build sırasında `frontend/` Next.js statik PWA olarak build edilir.
+- FastAPI (`backend.main:app`) aynı servis içinde hem `/api/*` endpointlerini hem de Next çıktısını sunar.
+- Public URL doğrudan yeni v6 arayüzünü açar.
+
+Blueprint: `render.yaml`
+Dockerfile: `Dockerfile`
