@@ -50,7 +50,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "5.0.0"
+APP_VERSION = "5.1.0"
 PAGE_SIZE = 10
 
 _ICONS = {
@@ -68,7 +68,21 @@ _ICONS = {
     "stamp": '<circle cx="12" cy="9" r="5.4"/><path d="M8.6 20.5 12 14.4l3.4 6.1M6 20.5h12"/>',
     "camera_off": '<path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><path d="M3 3l18 18" stroke-width="2.2"/>',
     "box": '<path d="M4 7.5 12 3l8 4.5M4 7.5v9L12 21l8-4.5v-9M4 7.5 12 12l8-4.5M12 12v9"/>',
+    "undo": '<path d="M4 8h9a6 6 0 1 1 0 12h-2"/><path d="M8 4 4 8l4 4"/>',
+    "merge": '<path d="M6 4v6a4 4 0 0 0 4 4h4"/><path d="M6 4 3.5 6.5M6 4l2.5 2.5"/><circle cx="18" cy="18" r="2.3"/>',
+    "printer": '<rect x="6" y="9" width="12" height="7" rx="1.2"/><path d="M7 9V4h10v5M7 16v4h10v-4"/>',
+    "eye": '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/>',
+    "wave": '<path d="M2 12c2 -3 4 -3 6 0s4 3 6 0 4 -3 6 0"/><path d="M2 17c2 -3 4 -3 6 0s4 3 6 0 4 -3 6 0"/>',
+    "pin": '<path d="M12 21s7-6.7 7-12a7 7 0 1 0-14 0c0 5.3 7 12 7 12z"/><circle cx="12" cy="9" r="2.4"/>',
 }
+
+
+def status_palette() -> dict:
+    """Kart/rozet renk paleti — renk körlüğü modunda kırmızı/yeşil yerine
+    mavi/turuncu/mor gibi ayırt edilebilirliği yüksek tonlar kullanılır."""
+    if st.session_state.get("colorblind_mode"):
+        return {"ok": "#0f6fb3", "warn": "#f5941e", "bad": "#7c3aed"}
+    return {"ok": "#0f8a4b", "warn": "#f59e0b", "bad": "#ef4444"}
 
 
 def icon(name: str, size: int = 15, extra_class: str = "") -> str:
@@ -139,17 +153,21 @@ APP_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --accent: #2563eb;
-  --accent-dark: #1d4ed8;
-  --accent-soft: #eaf1ff;
-  --ink: #1b2433;
-  --ink-soft: #3a465a;
-  --muted: #6b7688;
-  --bg: #f5f7fb;
+  --accent: #0f6fb3;
+  --accent-dark: #0c5a91;
+  --accent-soft: #e6f2fb;
+  --sun: #f5941e;
+  --sun-dark: #d97a0a;
+  --sun-soft: #fff1de;
+  --ink: #102233;
+  --ink-soft: #2f4356;
+  --muted: #66798c;
+  --bg: #eef6fb;
   --panel: #ffffff;
-  --border: #e4e8f0;
-  --border-soft: #eef1f6;
+  --border: #d9e7f0;
+  --border-soft: #e9f2f8;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 6px 16px rgba(16, 24, 40, 0.05);
+  --shadow-strong: 0 4px 10px rgba(12, 60, 94, 0.1), 0 16px 34px rgba(12, 60, 94, 0.14);
 }
 
 /* Manage app / deploy / üst bar — status widget hariç */
@@ -319,8 +337,10 @@ div[data-testid="stForm"] {
   margin-bottom: 1rem;
   border: 1px solid var(--border);
   border-left: 4px solid var(--accent);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-strong);
+  transition: border-left-color 0.2s ease;
 }
+.app-panel-lg { box-shadow: var(--shadow-strong) !important; border-width: 1.4px !important; }
 .app-title {
   margin: 0;
   font-size: 1.6rem;
@@ -361,7 +381,7 @@ div[data-testid="stForm"] {
   position: relative;
   overflow: hidden;
   background:
-    linear-gradient(135deg, rgba(37, 99, 235, 0.08), transparent 42%),
+    linear-gradient(135deg, rgba(15, 111, 179, 0.08), transparent 42%),
     linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
   border-radius: 20px;
   padding: 1rem;
@@ -374,10 +394,22 @@ div[data-testid="stForm"] {
   position: absolute;
   inset: 0 auto 0 0;
   width: 5px;
-  background: linear-gradient(180deg, var(--accent), #06b6d4);
+  background: linear-gradient(180deg, var(--accent), var(--sun));
+  z-index: 1;
 }
 .pax-card.warn::before { background: #f59e0b; }
 .pax-card.bad::before { background: #ef4444; }
+/* Holografik şerit — pasaport bio-sayfası hissi, statik (animasyonsuz) */
+.pax-card::after {
+  content: "";
+  position: absolute; top: -30%; right: -14%; width: 46%; height: 160%;
+  background: linear-gradient(115deg, transparent 32%, rgba(255,255,255,0.65) 46%,
+    rgba(245, 148, 30, 0.22) 52%, rgba(15, 111, 179, 0.15) 58%, transparent 70%);
+  transform: rotate(6deg);
+  pointer-events: none;
+  z-index: 0;
+}
+.pax-card-row, .pax-stamp, .wallet-row, .pax-tags, .pax-flags, .mrz-line { position: relative; z-index: 2; }
 .pax-flags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 0.45rem; }
 .pax-flag {
   font-size: 0.62rem; font-weight: 800; padding: 2px 8px; border-radius: 999px;
@@ -424,7 +456,12 @@ div[data-testid="stForm"] {
   display: inline-flex; flex-direction: column; gap: 1px;
   background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 13px;
   padding: 7px 10px;
-  min-width: min(100%, 190px); flex: 1;
+  min-width: 0; max-width: min(100%, 190px); flex: 1;
+  overflow: hidden;
+}
+.wallet-passport-no { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 480px) {
+  .pax-date { display: none; }
 }
 .wallet-passport-label {
   font-size: 0.57rem; font-weight: 900; color: #94a3b8;
@@ -443,9 +480,10 @@ div[data-testid="stForm"] {
 .pax-v { flex: 1; min-width: 0; color: var(--ink-soft); font-weight: 600; }
 .pax-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .pax-tag {
-  font-size: 0.66rem; font-weight: 800; padding: 4px 9px; border-radius: 999px;
+  font-size: 0.66rem; font-weight: 800; padding: 4px 9px 4px 13px; border-radius: 7px;
   background: #eef4ff; color: #1e40af; border: 1px solid #dbeafe;
   max-width: 100%;
+  clip-path: polygon(7px 0%, 100% 0%, 100% 100%, 7px 100%, 7px 62%, 0% 50%, 7px 38%);
 }
 .pax-tag b { color: #64748b; font-weight: 800; }
 .pax-fee {
@@ -549,12 +587,37 @@ div[data-testid="stForm"] {
 div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-weight: 700; }
 .stDataFrame { border-radius: 14px; overflow: hidden; border: 1px solid var(--border); }
 
-/* ============ AEGEAN PASSPORT CONTROL — kimlik & ikon sistemi ============ */
+/* ============ İDO DENİZ TEMASI — canlı, mavi-turuncu ============ */
 .ico { vertical-align: -3px; flex-shrink: 0; }
 .stApp {
-  background-image:
-    radial-gradient(circle at 1px 1px, rgba(37, 99, 235, 0.06) 1px, transparent 1px);
-  background-size: 22px 22px;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(15, 111, 179, 0.07) 1px, transparent 1px) 0 0 / 22px 22px,
+    radial-gradient(ellipse 70% 45% at 82% 0%, rgba(245, 148, 30, 0.24), transparent 65%),
+    radial-gradient(ellipse 90% 60% at 10% 100%, rgba(15, 111, 179, 0.22), transparent 70%),
+    linear-gradient(180deg, #eaf5fb 0%, #eef6fb 40%, #e4f0f7 100%);
+  background-attachment: fixed;
+}
+.sea-wave {
+  height: 34px; margin: -1.1rem -1.3rem 0.6rem; overflow: hidden; line-height: 0;
+}
+.sea-wave svg { width: 100%; height: 100%; display: block; }
+
+/* ============ Yazdırılabilir manifest ============ */
+.manifest-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.manifest-table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 0.78rem; margin-top: 0.5rem; }
+.manifest-table th, .manifest-table td { border: 1px solid #ccd6e2; padding: 4px 7px; text-align: left; }
+.manifest-table th { background: #f1f6fb; }
+.print-btn {
+  margin-top: 10px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--accent);
+  background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; font-size: 0.82rem;
+}
+@media print {
+  body * { visibility: hidden; }
+  .print-manifest, .print-manifest * { visibility: visible; }
+  .print-manifest { position: fixed; top: 0; left: 0; width: 100%; padding: 12px; }
+  .print-btn { display: none; }
+  .manifest-scroll { overflow: visible; }
+  .manifest-table { min-width: 0; }
 }
 .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .brand-mark {
@@ -681,7 +744,16 @@ NIGHT_CSS = """
   --border-soft: #1c2740;
   --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 10px 26px rgba(0,0,0,0.35);
 }
-.stApp { background-image: radial-gradient(circle at 1px 1px, rgba(56, 189, 248, 0.09) 1px, transparent 1px); }
+.stApp {
+  background:
+    radial-gradient(circle at 1px 1px, rgba(56, 189, 248, 0.1) 1px, transparent 1px) 0 0 / 22px 22px,
+    radial-gradient(ellipse 70% 45% at 82% 0%, rgba(245, 148, 30, 0.16), transparent 65%),
+    radial-gradient(ellipse 90% 60% at 10% 100%, rgba(56, 189, 248, 0.16), transparent 70%),
+    linear-gradient(180deg, #070c16 0%, #0a0f1c 45%, #060a13 100%) !important;
+  background-attachment: fixed;
+}
+.sea-wave svg path:nth-child(1) { fill: #38bdf8 !important; }
+.sea-wave svg path:nth-child(2) { fill: #f5941e !important; }
 .pax-card { background: linear-gradient(135deg, rgba(56,189,248,0.08), transparent 42%), linear-gradient(180deg, #121a2c, #0e1526) !important; border-color: #253150 !important; }
 .wallet-passport { background: #0e1526 !important; border-color: #253150 !important; }
 .wallet-passport-label { color: #5b6b8c !important; }
@@ -707,9 +779,27 @@ div[data-testid="stMetric"] { background: #121a2c !important; border-color: #253
 </style>
 """
 
+CB_CSS = """
+<style>
+.pax-stamp.ok { color: #0f6fb3 !important; }
+.pax-stamp.warn { color: #f5941e !important; }
+.pax-stamp.bad { color: #7c3aed !important; }
+.pax-flag { background: #fff1de !important; color: #c9720a !important; border-color: #ffdcae !important; }
+.pax-flag.bad { background: #f1e9fb !important; color: #6b21a8 !important; border-color: #ddc9f2 !important; }
+.heatmap-cell.ok { background: #0f6fb3 !important; }
+.heatmap-cell.warn { background: #f5941e !important; }
+.heatmap-cell.bad { background: #7c3aed !important; }
+.pax-card.warn::before { background: #f5941e !important; }
+.pax-card.bad::before { background: #7c3aed !important; }
+.status-dot.warn { background: #f5941e !important; }
+</style>
+"""
+
 st.markdown(APP_CSS, unsafe_allow_html=True)
 if st.session_state.get("night_mode"):
     st.markdown(NIGHT_CSS, unsafe_allow_html=True)
+if st.session_state.get("colorblind_mode"):
+    st.markdown(CB_CSS, unsafe_allow_html=True)
 
 # iPhone "Ana Ekrana Ekle" / tam ekran uygulama (PWA): manifest ve ikon etiketlerini
 # ana dokümanın <head> bölümüne enjekte et (Streamlit aksi halde <body>'ye koyar).
@@ -776,6 +866,9 @@ def init_state() -> None:
         "sort_by": "Varsayılan",
         "night_mode": False,
         "card_density": "Rahat",
+        "colorblind_mode": False,
+        "bulk_selected": set(),
+        "undo_snapshot": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -795,6 +888,40 @@ def persist() -> None:
     except TypeError:
         # Eski/stale persistence modülü ile uyumluluk
         save_store(st.session_state.base_df, st.session_state.get("loaded_files", []))
+
+
+def snapshot_for_undo(label: str) -> None:
+    """Yıkıcı bir işlemden (silme vb.) önce tüm tabloyu yedekler — 'Geri al' bunu kullanır."""
+    st.session_state.undo_snapshot = {
+        "label": label,
+        "df": st.session_state.base_df.copy(deep=True),
+        "ts": datetime.now().strftime("%H:%M:%S"),
+    }
+
+
+def render_undo_banner() -> None:
+    snap = st.session_state.get("undo_snapshot")
+    if not snap:
+        return
+    c1, c2, c3 = st.columns([3, 1, 1])
+    with c1:
+        st.markdown(
+            f'<div class="app-panel" style="border-left:3px solid var(--sun);margin-bottom:0.6rem;padding:0.6rem 0.9rem;">'
+            f'<p class="app-panel-sub" style="margin:0;">{icon("undo", 13)} <b>{html.escape(snap["label"])}</b> · {snap["ts"]}</p></div>',
+            unsafe_allow_html=True,
+        )
+    with c2:
+        if st.button("Geri al", key="undo_apply", use_container_width=True, type="primary"):
+            st.session_state.base_df = normalize_passenger_dataframe(snap["df"])
+            st.session_state.undo_snapshot = None
+            st.session_state.selected_idx = None
+            persist()
+            st.toast("İşlem geri alındı", icon="↩️")
+            st.rerun()
+    with c3:
+        if st.button("Kapat", key="undo_dismiss", use_container_width=True):
+            st.session_state.undo_snapshot = None
+            st.rerun()
 
 
 def uploaded_signature(files) -> str:
@@ -1056,27 +1183,43 @@ def render_unmatched_photos() -> None:
 
 
 def render_topbar() -> None:
-    count = len(st.session_state.get("base_df", pd.DataFrame()))
+    df = st.session_state.get("base_df", pd.DataFrame())
+    count = len(df)
     if db.enabled():
         backend = '<span class="status-dot ok"></span>Veritabanı bağlı (kalıcı)'
     else:
         backend = '<span class="status-dot warn"></span>Geçici depolama'
     updated = st.session_state.get("updated_at", "")
     updated_html = f" · Son güncelleme {updated}" if updated else ""
+    saved_html = f' · {icon("check", 11)} Kaydedildi' if updated else ""
+
+    pal = status_palette()
+    if df is None or df.empty:
+        hero_color = "var(--accent)"
+    else:
+        m = readiness_metrics(df)
+        hero_color = pal["ok"] if m["pct"] >= 90 else (pal["warn"] if m["pct"] >= 60 else pal["bad"])
+
     st.markdown(
         f"""
-        <div class="app-hero">
+        <div class="app-hero" style="border-left-color:{hero_color};">
           <div class="brand-row">
             <span class="brand-mark">{icon('passport', 13)} Sınır Kontrol</span>
           </div>
           <p class="app-title">Gate Visa PAX</p>
           <p class="app-sub">{TEMPLATE_NAME} · Pasaport operasyon merkezi · v{APP_VERSION}</p>
-          <div class="status-line">{backend} · {count} yolcu{updated_html}</div>
+          <div class="status-line">{icon("check", 12)} {backend} · {count} yolcu{updated_html}{saved_html}</div>
+        </div>
+        <div class="sea-wave">
+          <svg viewBox="0 0 1200 60" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M0,32 C150,60 350,4 600,28 C850,52 1050,8 1200,30 L1200,60 L0,60 Z" fill="var(--accent)" opacity="0.16"></path>
+            <path d="M0,42 C200,18 400,54 650,34 C900,14 1050,46 1200,26 L1200,60 L0,60 Z" fill="var(--sun)" opacity="0.14"></path>
+          </svg>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    tb1, tb2 = st.columns([1, 1])
+    tb1, tb2, tb3 = st.columns([1, 1, 1])
     with tb1:
         night = st.session_state.get("night_mode", False)
         label = f"{'☀️ Gündüz moduna geç' if night else '🌙 Night Ops moduna geç'}"
@@ -1092,6 +1235,12 @@ def render_topbar() -> None:
             index=dens_opts.index(cur) if cur in dens_opts else 0,
             key="card_density_select",
             label_visibility="collapsed",
+        )
+    with tb3:
+        st.session_state.colorblind_mode = st.checkbox(
+            "Renk körlüğü modu",
+            value=st.session_state.get("colorblind_mode", False),
+            key="colorblind_toggle",
         )
 
 
@@ -1265,14 +1414,24 @@ def card_issues(row: pd.Series) -> list[tuple[str, str]]:
     return issues
 
 
-def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") -> None:
+def _sync_bulk_selection(key_prefix: str, idx: int) -> None:
+    checked = st.session_state.get(f"bulk_{key_prefix}_{idx}", False)
+    if checked:
+        st.session_state.bulk_selected.add(idx)
+    else:
+        st.session_state.bulk_selected.discard(idx)
+
+
+def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list", selectable: bool = False) -> None:
     card = passenger_card_view(row)
     view_mode = st.session_state.get("view_mode", "Detaylı")
     name_raw = cell_text(row.get("Yolcu Adı Soyadı")) or "Yolcu"
     name = html.escape(name_raw)
     passport_raw = cell_text(row.get("Pasaport No")) or "—"
     passport = html.escape(passport_raw)
-    voucher = html.escape(cell_text(row.get("Voucher")))
+    voucher_raw = cell_text(row.get("Voucher"))
+    voucher = html.escape(voucher_raw)
+    fee_raw = cell_text(row.get("Vize Ücreti Yetişkin"))
     dep = html.escape(cell_text(row.get("Gidiş Tarihi")))
     arr = html.escape(cell_text(row.get("Varış Tarihi")))
 
@@ -1297,7 +1456,8 @@ def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") ->
 
     checks = 4 - len(set(lbl for lbl, _ in issues))
     ring_pct = round(max(0, checks) / 4 * 100)
-    ring_color = "#0f8a4b" if ring_pct == 100 else ("#f59e0b" if ring_pct >= 50 else "#ef4444")
+    pal = status_palette()
+    ring_color = pal["ok"] if ring_pct == 100 else (pal["warn"] if ring_pct >= 50 else pal["bad"])
 
     wallet_passport = (
         f'<div class="wallet-row">'
@@ -1350,9 +1510,34 @@ def render_passenger_card(idx: int, row: pd.Series, key_prefix: str = "list") ->
         """,
         unsafe_allow_html=True,
     )
-    if st.button("Detayı aç →", key=f"open_card_{key_prefix}_{idx}", use_container_width=True):
-        st.session_state.selected_idx = idx
-        st.rerun()
+    if selectable:
+        sel_col, btn_col = st.columns([1, 3])
+        with sel_col:
+            st.checkbox(
+                "Seç", value=idx in st.session_state.get("bulk_selected", set()),
+                key=f"bulk_{key_prefix}_{idx}", label_visibility="collapsed",
+                on_change=_sync_bulk_selection, args=(key_prefix, idx),
+            )
+        with btn_col:
+            if st.button("Detayı aç →", key=f"open_card_{key_prefix}_{idx}", use_container_width=True):
+                st.session_state.selected_idx = idx
+                st.rerun()
+    else:
+        if st.button("Detayı aç →", key=f"open_card_{key_prefix}_{idx}", use_container_width=True):
+            st.session_state.selected_idx = idx
+            st.rerun()
+
+    with st.expander("Hızlı düzenle", expanded=False):
+        qc1, qc2 = st.columns(2)
+        q_voucher = qc1.text_input("Voucher", value=voucher_raw, key=f"qedit_voucher_{key_prefix}_{idx}")
+        q_fee = qc2.text_input("Ücret (Yetişkin)", value=fee_raw, key=f"qedit_fee_{key_prefix}_{idx}")
+        if st.button("Kaydet", key=f"qedit_save_{key_prefix}_{idx}", use_container_width=True):
+            st.session_state.base_df.at[idx, "Voucher"] = q_voucher
+            st.session_state.base_df.at[idx, "Vize Ücreti Yetişkin"] = q_fee
+            st.session_state.base_df = normalize_passenger_dataframe(st.session_state.base_df)
+            persist()
+            st.toast("Kart güncellendi", icon="✅")
+            st.rerun()
 
 
 def render_detail_view(base_df: pd.DataFrame) -> None:
@@ -1379,7 +1564,7 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
 
     st.markdown(
         f"""
-        <div class="app-panel boarding-pass">
+        <div class="app-panel boarding-pass app-panel-lg">
           <span class="pax-stamp {stamp[1]}">{icon("stamp", 11)} {stamp[0]}</span>
           <div class="pax-card-row">
             {photo_html(row, css_class="pax-photo-lg", size="detail")}
@@ -1400,6 +1585,17 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+    dep_date = parse_date_value(row.get("Gidiş Tarihi"))
+    arr_raw = cell_text(row.get("Varış Tarihi"))
+    if dep_date and not arr_raw:
+        suggested = (dep_date + timedelta(days=7)).isoformat()
+        if st.button(f"📅 Varışı otomatik doldur → {suggested}", key=f"smart_date_{idx}", use_container_width=True):
+            st.session_state.base_df.at[idx, "Varış Tarihi"] = suggested
+            st.session_state.base_df = normalize_passenger_dataframe(st.session_state.base_df)
+            persist()
+            st.toast("Varış tarihi dolduruldu", icon="📅")
+            st.rerun()
 
     with st.expander("Fotoğraf", expanded=False):
         has_photo = bool(str(row.get("Foto", "") or "").strip())
@@ -1426,12 +1622,31 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
             st.toast("Fotoğraf silindi", icon="🗑️")
             st.rerun()
 
+    import re as _re
+
+    st.markdown('<p class="section-label">Canlı doğrulama</p>', unsafe_allow_html=True)
+    lv1, lv2 = st.columns(2)
+    with lv1:
+        live_passport = st.text_input("Pasaport No", value=str(row.get("Pasaport No", "") or ""), key=f"live_passport_{idx}")
+        pp_clean = _re.sub(r"[^A-Za-z0-9]", "", live_passport or "")
+        if not live_passport:
+            st.caption("⚪ Pasaport numarası boş")
+        elif len(pp_clean) < 6:
+            st.caption("🔴 Çok kısa görünüyor (min 6 karakter)")
+        else:
+            st.caption("🟢 Format uygun")
+    with lv2:
+        live_voucher = st.text_input("Voucher", value=str(row.get("Voucher", "") or ""), key=f"live_voucher_{idx}")
+        st.caption("🟢 Voucher girildi" if live_voucher else "🟡 Voucher boş")
+
     with st.form("passenger_detail_form", border=True):
         updates: dict[str, str] = {}
         for field in editable_passenger_fields():
             if field == "Yolcu Adı Soyadı":
                 st.text_input(field, value=str(row.get(field, "") or ""), disabled=True)
                 continue
+            if field in ("Pasaport No", "Voucher"):
+                continue  # yukarıda canlı doğrulama alanlarıyla alınıyor
             updates[field] = st.text_input(field, value=str(row.get(field, "") or ""))
 
         st.divider()
@@ -1444,6 +1659,8 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
         delete = delete_col.form_submit_button("Sil", use_container_width=True)
 
     if saved:
+        updates["Pasaport No"] = live_passport
+        updates["Voucher"] = live_voucher
         updates["Yolcu Adı Soyadı"] = f'{updates.get("Ad", "").strip()} {updates.get("Soyad", "").strip()}'.strip()
         for field, value in updates.items():
             st.session_state.base_df.at[idx, field] = value
@@ -1454,6 +1671,7 @@ def render_detail_view(base_df: pd.DataFrame) -> None:
         st.rerun()
 
     if delete:
+        snapshot_for_undo(f"{name_raw} silindi")
         st.session_state.base_df = normalize_passenger_dataframe(
             st.session_state.base_df.drop(index=idx).reset_index(drop=True)
         )
@@ -1515,19 +1733,24 @@ def set_missing_filter(choice: str) -> None:
     st.session_state.pax_page = 0
 
 
-def render_smart_empty_state() -> None:
+def render_smart_empty_state(
+    emoji: str = "🛂",
+    title: str = "Henüz operasyon yok",
+    subtitle: str = "Excel yükleyerek başlayın, şablon indirin veya demo veriyle uygulamayı deneyin.",
+    key_suffix: str = "",
+) -> None:
     st.markdown(
-        """
+        f"""
         <div class="empty-hero">
-          <p class="big">🛂</p>
-          <h3>Henüz operasyon yok</h3>
-          <p class="app-panel-sub">Excel yükleyerek başlayın, şablon indirin veya demo veriyle uygulamayı deneyin.</p>
+          <p class="big">{emoji}</p>
+          <h3>{html.escape(title)}</h3>
+          <p class="app-panel-sub">{html.escape(subtitle)}</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
     c1, c2 = st.columns(2)
-    if c1.button("Demo veri yükle", type="primary", use_container_width=True, key="empty_demo"):
+    if c1.button("Demo veri yükle", type="primary", use_container_width=True, key=f"empty_demo{key_suffix}"):
         st.session_state.base_df = normalize_passenger_dataframe(make_demo_passengers())
         st.session_state.read_log = ["✓ Demo: 3 yolcu kartı"]
         persist()
@@ -1538,7 +1761,7 @@ def render_smart_empty_state() -> None:
         file_name="gate-visa-pax-sablonu.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
-        key="empty_template",
+        key=f"empty_template{key_suffix}",
     )
 
 
@@ -1546,7 +1769,7 @@ def render_readiness_panel(df: pd.DataFrame, prefix: str) -> dict:
     m = readiness_metrics(df)
     st.markdown(
         f"""
-        <div class="app-panel">
+        <div class="app-panel app-panel-lg">
           <p class="app-panel-title">Operasyon hazırlığı: %{m['pct']}</p>
           <div class="progress-wrap"><div class="progress-bar" style="width:{m['pct']}%;"></div></div>
           <p class="app-panel-sub">{m['photo_ok']}/{m['total']} foto · {m['passport_ok']}/{m['total']} pasaport ·
@@ -1558,15 +1781,39 @@ def render_readiness_panel(df: pd.DataFrame, prefix: str) -> dict:
     return m
 
 
+def render_today_banner(base_df: pd.DataFrame) -> None:
+    if base_df is None or base_df.empty:
+        return
+    today = datetime.now().date()
+    mask = base_df["Gidiş Tarihi"].map(lambda v: parse_date_value(v) == today)
+    todays = base_df[mask]
+    if todays.empty:
+        return
+    summ = summarize_group(todays)
+    st.markdown(
+        f"""
+        <div class="app-panel app-panel-lg" style="border-left:3px solid var(--sun);">
+          <p class="app-panel-title">{icon("pin", 13)} Bugün ({today.strftime('%d.%m.%Y')}) {summ['count']} yolcu için operasyon var</p>
+          <p class="app-panel-sub">{summ['with_photo']}/{summ['count']} fotolu · toplam ücret {_fmt_amount(summ['total'])}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("📁 Bugünün listesini Arşiv'de aç", key="today_banner_open", use_container_width=True):
+        st.session_state.arch_range_choice = "Bugün"
+        st.toast("Arşiv sekmesine geçin — 'Bugün' filtresi hazır", icon="📁")
+
+
 def render_command_center(base_df: pd.DataFrame) -> None:
     if base_df.empty:
-        render_smart_empty_state()
+        render_smart_empty_state(key_suffix="_home")
         return
 
     st.markdown(
         f'<p class="section-label">{icon("stamp", 12)} Operasyon Kokpiti</p>',
         unsafe_allow_html=True,
     )
+    render_today_banner(base_df)
     m = render_readiness_panel(base_df, "home")
     summ = summarize_group(base_df)
     st.markdown(
@@ -1643,6 +1890,27 @@ def render_quick_fix_card(idx: int, row: pd.Series, category: str) -> None:
         set_missing_filter("Fotosuz" if category == "Voucher eksik" else category)
         st.toast("Yolcular sekmesinde filtre hazır", icon="✅")
 
+    if category == "Fotosuz":
+        quick_photo = st.file_uploader(
+            "Fotoğrafı doğrudan buraya bırak", key=f"qf_photo_{idx}",
+            help="Sürükle-bırak veya seç — foto anında bu yolcuya atanır.",
+        )
+        sig_key = f"qf_photo_sig_{idx}"
+        if quick_photo is not None and st.session_state.get(sig_key) != quick_photo.name + str(getattr(quick_photo, "size", 0)):
+            st.session_state[sig_key] = quick_photo.name + str(getattr(quick_photo, "size", 0))
+            data = quick_photo.getvalue()
+            if looks_like_image(quick_photo.name, data):
+                key = cell_text(row.get("Pasaport No")) or f"row{idx}"
+                stored = save_photo_bytes(_norm_match(key) or "foto", ".jpg", _resize_bytes(data))
+                st.session_state.base_df.at[idx, "Foto"] = stored
+                st.session_state.base_df = normalize_passenger_dataframe(st.session_state.base_df)
+                thumb_uri.clear()
+                persist()
+                st.toast(f"{name} için fotoğraf atandı", icon="✅")
+                st.rerun()
+            else:
+                st.error("Seçilen dosya bir görüntü değil.")
+
 
 def render_readiness_heatmap(base_df: pd.DataFrame) -> None:
     cells = []
@@ -1665,7 +1933,12 @@ def render_readiness_heatmap(base_df: pd.DataFrame) -> None:
 
 def render_issues_center(base_df: pd.DataFrame) -> None:
     if base_df.empty:
-        render_smart_empty_state()
+        render_smart_empty_state(
+            emoji="🛡️",
+            title="Kontrol edilecek bir şey yok",
+            subtitle="Henüz yolcu eklenmedi. Eklendiğinde eksik foto/pasaport/voucher/ücret burada listelenecek.",
+            key_suffix="_issues",
+        )
         return
 
     render_readiness_heatmap(base_df)
@@ -1697,9 +1970,65 @@ def render_issues_center(base_df: pd.DataFrame) -> None:
     if not idxs:
         st.success(f"{category} için eksik yok.")
         return
+    if category == "Tekrarlı":
+        render_duplicate_merge_ui(base_df)
+        return
     st.markdown(f'<p class="section-label">{len(idxs)} hızlı düzeltme</p>', unsafe_allow_html=True)
     for idx in idxs[:20]:
         render_quick_fix_card(idx, base_df.loc[idx], category)
+
+
+def merge_duplicate_group(passport_key: str) -> int:
+    """Aynı normalize pasaporta sahip satırları birleştirir (her sütun için en dolu değeri
+    tutar) ve fazlalıkları kaldırır. Kaldırılan satır sayısını döndürür."""
+    df = st.session_state.base_df
+    norm = df["Pasaport No"].astype(str).map(_norm_match)
+    group_idx = list(df[norm == passport_key].index)
+    if len(group_idx) < 2:
+        return 0
+    merged: dict[str, str] = {}
+    for col in ALL_COLUMNS:
+        merged[col] = ""
+        for i in group_idx:
+            val = str(df.at[i, col] or "").strip()
+            if val:
+                merged[col] = val
+                break
+    keep_idx = group_idx[0]
+    for col, val in merged.items():
+        df.at[keep_idx, col] = val
+    drop_idx = group_idx[1:]
+    st.session_state.base_df = normalize_passenger_dataframe(df.drop(index=drop_idx).reset_index(drop=True))
+    return len(drop_idx)
+
+
+def render_duplicate_merge_ui(base_df: pd.DataFrame) -> None:
+    norm = base_df["Pasaport No"].astype(str).map(_norm_match)
+    dup_keys = sorted(set(norm[norm.ne("") & norm.duplicated(keep=False)]))
+    if not dup_keys:
+        st.success("Tekrarlı pasaport yok.")
+        return
+    st.markdown(f'<p class="section-label">{icon("merge", 12)} {len(dup_keys)} tekrarlı pasaport grubu</p>', unsafe_allow_html=True)
+    for key in dup_keys[:15]:
+        group = base_df[norm == key]
+        st.markdown(
+            f'<div class="app-panel"><p class="app-panel-title">{icon("passport", 12)} {html.escape(key.upper())} '
+            f'<span class="filter-chip">{len(group)} kayıt</span></p></div>',
+            unsafe_allow_html=True,
+        )
+        for _, grow in group.iterrows():
+            st.caption(
+                f'{cell_text(grow.get("Yolcu Adı Soyadı")) or "—"} · '
+                f'Voucher: {cell_text(grow.get("Voucher")) or "—"} · '
+                f'Gidiş: {cell_text(grow.get("Gidiş Tarihi")) or "—"} · '
+                f'Foto: {"var" if str(grow.get("Foto", "") or "").strip() else "yok"}'
+            )
+        if st.button("🔗 Birleştir (en dolu satırı tut)", key=f"merge_{key}", use_container_width=True):
+            snapshot_for_undo(f"{len(group)} tekrarlı kayıt birleştirildi ({key.upper()})")
+            removed = merge_duplicate_group(key)
+            persist()
+            st.toast(f"{removed} tekrarlı kayıt birleştirildi", icon="🔗")
+            st.rerun()
 
 
 def render_operation_timeline(base_df: pd.DataFrame, compact: bool = False) -> None:
@@ -1729,7 +2058,12 @@ def render_operation_timeline(base_df: pd.DataFrame, compact: bool = False) -> N
 
 def render_photo_gallery(base_df: pd.DataFrame) -> None:
     if base_df.empty:
-        render_smart_empty_state()
+        render_smart_empty_state(
+            emoji="📷",
+            title="Galeri boş",
+            subtitle="Önce yolcu ekleyin, ardından Import sekmesinden fotoğraf veya ZIP yükleyin.",
+            key_suffix="_gallery",
+        )
         return
     rows = [(int(i), r) for i, r in base_df.iterrows() if str(r.get("Foto", "") or "").strip()]
     pending = st.session_state.get("pending_photos", [])
@@ -1782,11 +2116,17 @@ def build_operation_package(base_df: pd.DataFrame) -> bytes:
 
 def render_package_builder(base_df: pd.DataFrame) -> None:
     if base_df.empty:
-        render_smart_empty_state()
+        render_smart_empty_state(
+            emoji="📦",
+            title="Teslim paketi hazırlanamaz",
+            subtitle="Önce yolcu ekleyin, ardından operasyon dosyasını paketleyebilirsiniz.",
+            key_suffix="_package",
+        )
         return
     m = readiness_metrics(base_df)
     summ = summarize_group(base_df)
-    ring_color = "#0f8a4b" if m["pct"] >= 90 else ("#f59e0b" if m["pct"] >= 60 else "#ef4444")
+    pal = status_palette()
+    ring_color = pal["ok"] if m["pct"] >= 90 else (pal["warn"] if m["pct"] >= 60 else pal["bad"])
 
     def _row(name: str, ok: bool, icon_name: str) -> str:
         cls = "ok" if ok else "warn"
@@ -1795,7 +2135,7 @@ def render_package_builder(base_df: pd.DataFrame) -> None:
 
     st.markdown(
         f"""
-        <div class="app-panel">
+        <div class="app-panel app-panel-lg">
           <div class="pax-card-row" style="align-items:center;">
             <div class="ring" style="width:52px;height:52px;--pct:{m['pct']};--ring-color:{ring_color};">
               <span style="width:40px;height:40px;font-size:0.78rem;">%{m['pct']}</span>
@@ -1825,6 +2165,35 @@ def render_package_builder(base_df: pd.DataFrame) -> None:
         use_container_width=True,
         key="package_builder_zip",
     )
+
+    with st.expander("🖨️ Yazdırılabilir manifest", expanded=False):
+        render_printable_manifest(base_df)
+
+
+def render_printable_manifest(base_df: pd.DataFrame) -> None:
+    rows_html = "".join(
+        f"<tr><td>{i + 1}</td><td>{html.escape(cell_text(r.get('Yolcu Adı Soyadı')) or '—')}</td>"
+        f"<td>{html.escape(cell_text(r.get('Pasaport No')) or '—')}</td>"
+        f"<td>{html.escape(cell_text(r.get('Voucher')) or '—')}</td>"
+        f"<td>{html.escape(cell_text(r.get('Gidiş Tarihi')) or '—')}</td>"
+        f"<td>{html.escape(cell_text(r.get('Varış Tarihi')) or '—')}</td>"
+        f"<td>{'✓' if str(r.get('Foto', '') or '').strip() else '—'}</td></tr>"
+        for i, (_, r) in enumerate(base_df.iterrows())
+    )
+    manifest_html = f"""
+    <div class="print-manifest">
+      <h3>Gate Visa PAX — Manifest ({datetime.now().strftime('%d.%m.%Y %H:%M')})</h3>
+      <div class="manifest-scroll">
+        <table class="manifest-table">
+          <thead><tr><th>#</th><th>Ad Soyad</th><th>Pasaport</th><th>Voucher</th><th>Gidiş</th><th>Varış</th><th>Foto</th></tr></thead>
+          <tbody>{rows_html}</tbody>
+        </table>
+      </div>
+      <p style="margin-top:8px;font-size:0.75rem;color:#667;">Toplam {len(base_df)} yolcu</p>
+      <button class="print-btn" onclick="window.print()">🖨️ Yazdır</button>
+    </div>
+    """
+    st.markdown(manifest_html, unsafe_allow_html=True)
 
 
 def build_backup_json() -> bytes:
@@ -2030,6 +2399,7 @@ def render_import_tab() -> None:
         st.warning("Tüm yolcular ve fotoğraf eşleştirmeleri silinecek. Emin misin?")
         cc1, cc2 = st.columns(2)
         if cc1.button("Evet, hepsini sil", type="primary", use_container_width=True, key="confirm_clear_yes"):
+            snapshot_for_undo(f"Tüm liste temizlendi ({len(st.session_state.base_df)} yolcu)")
             st.session_state.base_df = pd.DataFrame(columns=ALL_COLUMNS)
             st.session_state.last_signature = ""
             st.session_state.read_log = []
@@ -2135,7 +2505,7 @@ def render_pagination(state_key: str, page: int, pages: int, nav_prefix: str) ->
         st.rerun()
 
 
-def render_card_page(view_df: pd.DataFrame, state_key: str, key_prefix: str) -> None:
+def render_card_page(view_df: pd.DataFrame, state_key: str, key_prefix: str, selectable: bool = False) -> None:
     """Kartları sayfalayarak gösterir; iPhone'da tek seferde çok kart yüklenmesini engeller."""
     page_size = int(st.session_state.get("page_size", PAGE_SIZE))
     total = len(view_df)
@@ -2148,7 +2518,7 @@ def render_card_page(view_df: pd.DataFrame, state_key: str, key_prefix: str) -> 
 
     render_pagination(state_key, page, pages, f"{key_prefix}_top")
     for idx, row in chunk.iterrows():
-        render_passenger_card(int(idx), row, key_prefix=key_prefix)
+        render_passenger_card(int(idx), row, key_prefix=key_prefix, selectable=selectable)
     render_pagination(state_key, page, pages, f"{key_prefix}_bot")
 
 
@@ -2192,7 +2562,7 @@ def apply_sort(df: pd.DataFrame, choice: str) -> pd.DataFrame:
 
 def render_passengers_tab(base_df: pd.DataFrame) -> None:
     if base_df.empty:
-        render_smart_empty_state()
+        render_smart_empty_state(key_suffix="_pax")
         return
 
     search = st.text_input("Ara", placeholder="Ad, pasaport, voucher, tarih…", label_visibility="collapsed")
@@ -2268,8 +2638,63 @@ def render_passengers_tab(base_df: pd.DataFrame) -> None:
         st.warning("Filtreye uyan yolcu bulunamadı.")
         return
 
+    render_bulk_toolbar(base_df)
     st.markdown(f'<p class="section-label">{len(view_df)} yolcu</p>', unsafe_allow_html=True)
-    render_card_page(view_df, "pax_page", "list")
+    render_card_page(view_df, "pax_page", "list", selectable=True)
+
+
+def render_bulk_toolbar(base_df: pd.DataFrame) -> None:
+    selected = st.session_state.get("bulk_selected", set())
+    valid = sorted(i for i in selected if i in base_df.index)
+    if valid != sorted(selected):
+        st.session_state.bulk_selected = set(valid)
+    if not valid:
+        return
+
+    sub = base_df.loc[valid]
+    st.markdown(
+        f'<div class="app-panel" style="border-left:3px solid var(--accent);">'
+        f'<p class="app-panel-title">{icon("grid", 13)} {len(valid)} yolcu seçili</p></div>',
+        unsafe_allow_html=True,
+    )
+    b1, b2, b3, b4 = st.columns(4)
+    stamp_now = datetime.now().strftime("%Y%m%d-%H%M")
+    b1.download_button(
+        "Excel indir", data=dataframe_to_xlsx(sub), file_name=f"secili-yolcular-{stamp_now}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True, key="bulk_xlsx",
+    )
+    photo_zip = build_date_photo_zip(sub)
+    if photo_zip:
+        b2.download_button(
+            "Foto ZIP", data=photo_zip, file_name=f"secili-fotolar-{stamp_now}.zip",
+            mime="application/zip", use_container_width=True, key="bulk_photo_zip",
+        )
+    else:
+        b2.button("Foto ZIP", disabled=True, use_container_width=True, key="bulk_photo_zip_disabled")
+    if b3.button("Seçilenleri sil", use_container_width=True, key="bulk_delete"):
+        snapshot_for_undo(f"{len(valid)} yolcu toplu silindi")
+        st.session_state.base_df = normalize_passenger_dataframe(
+            st.session_state.base_df.drop(index=valid).reset_index(drop=True)
+        )
+        st.session_state.bulk_selected = set()
+        st.session_state.pax_page = 0
+        persist()
+        st.toast(f"{len(valid)} yolcu silindi", icon="🗑️")
+        st.rerun()
+    if b4.button("Seçimi temizle", use_container_width=True, key="bulk_clear"):
+        st.session_state.bulk_selected = set()
+        st.rerun()
+
+    with st.expander(f"{len(valid)} seçili yolcuya toplu voucher ata", expanded=False):
+        bulk_voucher = st.text_input("Voucher kodu", key="bulk_voucher_input")
+        if st.button("Uygula", key="bulk_voucher_apply", use_container_width=True) and bulk_voucher:
+            for i in valid:
+                st.session_state.base_df.at[i, "Voucher"] = bulk_voucher
+            st.session_state.base_df = normalize_passenger_dataframe(st.session_state.base_df)
+            persist()
+            st.toast("Voucher toplu güncellendi", icon="✅")
+            st.rerun()
 
 
 def _fmt_amount(value: float) -> str:
@@ -2502,6 +2927,7 @@ def render_bottom_bar(base_df: pd.DataFrame) -> None:
 
 init_state()
 render_topbar()
+render_undo_banner()
 
 base_df = normalize_passenger_dataframe(st.session_state.base_df.copy())
 st.session_state.base_df = base_df
@@ -2512,8 +2938,10 @@ st.session_state.dup_passports = set(_pp_norm[_pp_norm.ne("") & _pp_norm.duplica
 if st.session_state.selected_idx is not None and not base_df.empty:
     render_detail_view(st.session_state.base_df)
 else:
+    _issue_count = int(sum(1 for _, r in base_df.iterrows() if card_issues(r))) if not base_df.empty else 0
+    _issues_label = "⚠️ Eksikler" + (f" ({_issue_count})" if _issue_count else "")
     tab_home, tab_passengers, tab_issues, tab_gallery, tab_archive, tab_import, tab_package = st.tabs(
-        ["🏠 Ana", "👥 Yolcular", "⚠️ Eksikler", "📷 Galeri", "📁 Arşiv", "⬆️ Import", "📦 Paket"]
+        ["🏠 Ana", "👥 Yolcular", _issues_label, "📷 Galeri", "📁 Arşiv", "⬆️ Import", "📦 Paket"]
     )
     with tab_home:
         render_command_center(st.session_state.base_df)
