@@ -1,11 +1,15 @@
 services:
+  # V7 — tek servis: FastAPI backend + Next.js PWA (Streamlit'in tüm
+  # fonksiyonları buraya taşındı). Docker imajı frontend'i build edip
+  # FastAPI üzerinden statik olarak sunar.
   - type: web
     name: excelbase
     env: docker
     plan: free
     dockerfilePath: ./Dockerfile
     envVars:
-      # Geçici v6 migration modu: gerçek kullanıcı auth eklenene kadar mevcut
-      # Streamlit benzeri tek-kullanıcı/public davranışı korur.
+      # Kalıcı disk yoksa veriyi Postgres'te tutmak için DATABASE_URL ekleyin.
+      # API anahtarı ile korumak için GATEVISA_API_KEY + NEXT_PUBLIC_API_KEY
+      # ayarlanabilir. Şimdilik tek-kullanıcı/public davranış korunur.
       - key: GATEVISA_ALLOW_DEV_NO_AUTH
         value: "1"

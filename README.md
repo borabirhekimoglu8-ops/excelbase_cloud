@@ -1,114 +1,96 @@
-# Gate Visa PAX
+# Gate Visa PAX — V7
 
-Kapı vizesi yolcu listesi yönetimi. Excel (GATE VISA PAX LIST) yükle → her satır bir yolcu kartı olur. Biyometrik fotoğrafları toplu ekle, tarihe göre arşivle, telefonda uygulama gibi kullan.
+Kapı vizesi yolcu listesi yönetimi. Excel (GATE VISA PAX LIST) yükle → her satır bir yolcu kartı olur. Biyometrik fotoğrafları toplu ekle, tarihe göre arşivle, eksikleri düzelt, teslim paketi oluştur — hepsi telefonda native uygulama gibi.
 
-## Özellikler
+**V7**, eski Streamlit uygulamasının **tüm fonksiyonlarını** modern tek servise taşır: **FastAPI backend + Next.js PWA**. Streamlit dosyası (`app.py`) referans olarak repoda kalır ama Render'da yayınlanan tek servis artık V7'dir.
 
-- **Excel/CSV import** — GATE VISA PAX LIST şablonu (iki satırlı başlık) ve esnek format tespiti.
-- **Yolcu kartları** — her satır = 1 kart; arama ve tüm başlıklara göre filtre.
-- **Biyometrik foto toplu import** — dosya adı `TARİH_İSİM_SOYİSİM_PASAPORT` formatında ise kartla otomatik eşleşir.
-- **Arşiv** — gidiş tarihine göre gruplanmış bölümler.
-- **Kalıcı saklama** — veritabanı bağlıysa veriler ve fotoğraflar kalıcıdır; değilse yerel dosya yedeği.
-- **iPhone/Android PWA** — Safari'de "Ana Ekrana Ekle" ile tam ekran uygulama gibi açılır.
+## Özellikler (V7)
 
-## Lokal kurulum
+- **Ana (Kokpit)** — operasyon hazırlık yüzdesi, bugünkü operasyon, özet metrikler, hızlı aksiyonlar, son hareketler.
+- **Yolcular** — arama, durum filtresi (Hazır/Eksik/Fotosuz/Pasaportsuz/Tekrarlı), sıralama, sayfalama, toplu seçim + silme, kart detayında düzenleme.
+- **Eksikler** — kategori sayaçları, hazırlık ısı çubuğu, hızlı düzeltme (detay aç / doğrudan foto ata), tekrarlı pasaport birleştirme.
+- **Galeri** — eşleşmiş biyometrik fotoğraflar, ZIP indirme.
+- **Arşiv** — gidiş tarihine göre gruplar, tarih bazlı Excel/CSV/Foto indirme, operasyon durumu/görevli/not kaydı.
+- **Import** — Excel/CSV içe aktarma (değiştir / ekle / atla / üzerine yaz), foto & ZIP otomatik eşleştirme, şablon indirme, import geçmişi.
+- **Paket** — teslim paketi (ZIP: Excel + CSV + rapor + fotoğraflar), yazdırılabilir manifest, JSON yedek al / geri yükle, tümünü temizle.
+- **iPhone/Android PWA** — Safari'de "Ana Ekrana Ekle" ile tam ekran, alt tab bar ile native gezinme, HEIC foto desteği.
 
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
+## Mimari
 
-## v6 hedef mimari: Next.js PWA + FastAPI
+- `backend/` — FastAPI servis katmanı. Mevcut Excel parser, yolcu şeması, persistence ve foto modüllerini kullanır. Tüm iş mantığı REST endpoint'lerinden sunulur ve Next.js statik çıktısını da aynı servisten yayınlar.
+- `frontend/` — Next.js PWA (deniz laciverti / uzay siyahı holografik tema, mobil öncelikli React).
+- `app.py` + yardımcı modüller — orijinal Streamlit uygulaması (referans / iş mantığı kaynağı).
 
-Streamlit uygulaması korunurken, yeni nesil arayüz/API temeli paralel olarak eklendi:
+### API endpoint'leri
 
-- `backend/` — FastAPI servis katmanı. Mevcut Excel parser, yolcu şeması ve persistence modüllerini kullanır.
-- `frontend/` — Next.js PWA. Deniz laciverti / uzay siyahı konseptinde mobil öncelikli React arayüzü.
+| Alan | Endpoint |
+| --- | --- |
+| Sağlık | `GET /health` |
+| Özet | `GET /api/summary` |
+| Yolcular | `GET /api/passengers?search=&status=&sort=` |
+| Güncelle/Sil | `PATCH /api/passengers/{id}` · `DELETE /api/passengers/{id}` |
+| Toplu sil / temizle | `POST /api/passengers/bulk-delete` · `POST /api/passengers/clear` |
+| Import | `POST /api/import?replace=&dup_strategy=` |
+| Foto | `POST /api/passengers/{id}/photo` · `DELETE .../photo` · `POST /api/photos/match` · `GET /api/photo/{ref}` |
+| Tekrarlı | `POST /api/merge-duplicates` |
+| Arşiv | `GET /api/archive?range=` · `POST /api/operation-meta` |
+| Çıktı | `GET /api/export?kind=` · `GET /api/manifest` · `GET /api/package` · `GET /api/photos-zip` · `GET /api/template` |
+| Yedek | `GET /api/backup` · `POST /api/restore` |
+| Demo | `POST /api/demo` |
 
-### Backend çalıştırma
+## Lokal çalıştırma
+
+Backend (Next build ile aynı servisten sunmak için önce frontend build alın):
 
 ```bash
 pip install -r backend/requirements.txt
+cd frontend && npm install && npm run build && cd ..
 GATEVISA_ALLOW_DEV_NO_AUTH=1 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+# http://localhost:8000
 ```
 
-Endpointler:
-
-- `GET /health`
-- `GET /api/summary`
-- `GET /api/passengers?search=...`
-- `POST /api/import`
-
-### Frontend çalıştırma
+Frontend'i ayrı geliştirme sunucusunda çalıştırmak isterseniz:
 
 ```bash
 cd frontend
-npm install
 NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 ```
 
-Frontend varsayılan olarak `http://localhost:8000` API adresini kullanır. Production için
-`NEXT_PUBLIC_API_URL` ortam değişkeni ayarlanmalıdır.
-
 ### Production güvenlik ayarları
 
-FastAPI backend public internete açılmadan önce aşağıdaki ortam değişkenleri ayarlanmalıdır:
+Yolcu PII verisi internete açılmadan önce API anahtarı ayarlanmalıdır:
 
 ```bash
 export GATEVISA_API_KEY="uzun-rastgele-bir-anahtar"
 export GATEVISA_CORS_ORIGINS="https://frontend-domaininiz.com"
-export GATEVISA_MAX_UPLOAD_FILES=5
-export GATEVISA_MAX_UPLOAD_BYTES=15728640
 ```
 
-Frontend tarafında aynı API anahtarı:
+Frontend build'inde aynı anahtar (görsel/indirmeler query param `?k=` ile de gönderilir):
 
 ```bash
 NEXT_PUBLIC_API_KEY="uzun-rastgele-bir-anahtar"
 ```
 
-> Not: `GATEVISA_API_KEY` boş bırakılırsa backend lokal geliştirme modu gibi davranır.
-> Bunun için ayrıca `GATEVISA_ALLOW_DEV_NO_AUTH=1` verilmesi gerekir. Public deployment
-> için API anahtarı boş bırakılmamalı ve gerçek kullanıcı bazlı auth (JWT/OIDC/session)
-> eklenmeden yolcu PII verisi internete açılmamalıdır.
+> `GATEVISA_API_KEY` boşsa backend yalnızca `GATEVISA_ALLOW_DEV_NO_AUTH=1` ile açılır (lokal geliştirme).
 
 ## Kalıcı veritabanı (önerilir)
 
-Veriler ve fotoğraflar bir SQL veritabanında saklanır. En kolay yol **Supabase** (ücretsiz Postgres):
+Render free plan diski kalıcı değildir. Veri ve fotoğrafların kalıcı olması için `DATABASE_URL` (Postgres) ayarlayın:
 
-1. [supabase.com](https://supabase.com) üzerinde proje oluştur.
-2. **Project Settings → Database → Connection string** (URI) kopyala. Örn:
-   `postgresql://postgres:[PAROLA]@db.xxxx.supabase.co:5432/postgres`
-3. Streamlit Cloud'da **App → Settings → Secrets** bölümüne ekle:
+```
+DATABASE_URL = "postgresql://postgres:PAROLA@db.xxxx.supabase.co:5432/postgres"
+```
 
-   ```toml
-   DATABASE_URL = "postgresql://postgres:PAROLA@db.xxxx.supabase.co:5432/postgres"
-   ```
+Tablolar (`app_state`, `photos`) otomatik oluşturulur. DB yoksa uygulama yerel dosya yedeğine geçer.
 
-   Lokal çalışırken `.streamlit/secrets.toml` dosyasına aynı satırı koyabilir ya da
-   `export DATABASE_URL=...` ortam değişkenini kullanabilirsin.
+## Render kurulumu
 
-Tablolar (`app_state`, `photos`) ilk açılışta otomatik oluşturulur. Herhangi bir
-SQLAlchemy uyumlu URL çalışır (Postgres, MySQL, SQLite). Veritabanı yoksa uygulama
-otomatik olarak yerel dosya yedeğine geçer.
+- Tek servis, Docker deploy (`render.yaml` + `Dockerfile`).
+- Docker build sırasında `frontend/` statik PWA olarak build edilir; FastAPI hem `/api/*` hem de PWA'yı sunar.
+- Public URL doğrudan V7 arayüzünü açar.
 
 ## iPhone'da uygulama gibi kullanma (PWA)
 
 1. Uygulama linkini **Safari**'de aç.
 2. **Paylaş** → **Ana Ekrana Ekle**.
-3. Ana ekranda Gate Visa ikonu çıkar; tarayıcı çubuğu olmadan tam ekran açılır.
-
-> Not: Bu bir PWA'dır (web tabanlı, ana ekrana eklenebilir uygulama). App Store'da
-> dağıtılan native bir iOS uygulaması için Capacitor/React Native + Xcode + Apple
-> Developer hesabı gereken ayrı bir paketleme adımı gerekir.
-
-## Render kurulumu
-
-Render artık v6 tek-servis Docker deploy kullanır:
-
-- Docker build sırasında `frontend/` Next.js statik PWA olarak build edilir.
-- FastAPI (`backend.main:app`) aynı servis içinde hem `/api/*` endpointlerini hem de Next çıktısını sunar.
-- Public URL doğrudan yeni v6 arayüzünü açar.
-
-Blueprint: `render.yaml`
-Dockerfile: `Dockerfile`
+3. Ana ekranda Gate Visa ikonu ile tam ekran açılır.
