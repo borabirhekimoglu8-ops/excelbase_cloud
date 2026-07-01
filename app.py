@@ -50,7 +50,7 @@ from passenger_schema import (
     validate_passenger_rows,
 )
 
-APP_VERSION = "5.2.0"
+APP_VERSION = "5.3.0"
 PAGE_SIZE = 10
 
 _ICONS = {
@@ -749,6 +749,290 @@ div[data-testid="stExpander"] summary p { color: var(--ink) !important; font-wei
 .package-check:last-child { border-bottom: none; }
 .package-check .ico.ok { color: #0f8a4b; }
 .package-check .ico.warn { color: #b45309; }
+
+/* ============ v5.3 HOLO iOS OVERRIDE — sade, şık, hafif holografik ============ */
+:root {
+  --accent: #0b74b8;
+  --accent-dark: #075f99;
+  --accent-soft: #eaf5ff;
+  --sun: #f58220;
+  --sun-dark: #d96e12;
+  --ink: #0f2233;
+  --ink-soft: #3d5368;
+  --muted: #718295;
+  --bg: #f6f9fc;
+  --panel: #ffffff;
+  --border: #e3ebf3;
+  --border-soft: #edf3f8;
+  --shadow: 0 1px 2px rgba(15, 34, 51, 0.04), 0 8px 22px rgba(15, 34, 51, 0.07);
+  --shadow-strong: 0 12px 34px rgba(15, 34, 51, 0.10);
+  --holo-a: rgba(58, 191, 248, 0.18);
+  --holo-b: rgba(245, 130, 32, 0.16);
+  --holo-c: rgba(125, 211, 252, 0.16);
+  --radius-control: 14px;
+  --radius-card: 22px;
+}
+.stApp {
+  background:
+    radial-gradient(ellipse 72% 32% at 92% -8%, rgba(245, 130, 32, 0.18), transparent 64%),
+    radial-gradient(ellipse 80% 34% at 0% 12%, rgba(58, 191, 248, 0.13), transparent 62%),
+    linear-gradient(180deg, #fbfdff 0%, #f5faff 46%, #eef7fb 100%) !important;
+  background-attachment: fixed;
+}
+.block-container {
+  max-width: 680px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+.sea-wave { display: none !important; }
+.app-hero {
+  position: relative;
+  overflow: hidden;
+  border-left: none !important;
+  border-top: 0 !important;
+  padding: 18px !important;
+  margin-bottom: 18px !important;
+  box-shadow: var(--shadow-strong) !important;
+  background:
+    linear-gradient(#ffffff, #ffffff) padding-box,
+    linear-gradient(118deg, rgba(245,130,32,0.78), rgba(56,189,248,0.56), rgba(255,255,255,0.78), rgba(11,116,184,0.42)) border-box !important;
+  border: 1px solid transparent !important;
+}
+.app-hero::after {
+  content: "";
+  position: absolute;
+  right: -42px; top: -58px;
+  width: 170px; height: 140px;
+  background: radial-gradient(circle, rgba(56,189,248,0.18), rgba(245,130,32,0.12) 44%, transparent 70%);
+  pointer-events: none;
+}
+.brand-row { gap: 12px !important; }
+.brand-badge {
+  width: 42px !important; height: 42px !important;
+  background: linear-gradient(145deg, var(--sun), var(--sun-dark)) !important;
+  box-shadow: 0 10px 22px rgba(245, 130, 32, 0.22), inset 0 1px 0 rgba(255,255,255,0.34) !important;
+}
+.brand-word { font-size: 1.08rem !important; letter-spacing: -0.03em !important; }
+.brand-tag { color: var(--accent-dark) !important; letter-spacing: 0.13em !important; }
+.status-line {
+  margin-top: 10px !important;
+  color: var(--muted) !important;
+  font-size: 0.72rem !important;
+  font-weight: 800 !important;
+}
+.status-dot {
+  width: 8px !important; height: 8px !important;
+  box-shadow: none !important;
+}
+
+.stTabs [data-baseweb="tab-list"] {
+  border-radius: 18px !important;
+  padding: 6px !important;
+  background:
+    linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)) padding-box,
+    linear-gradient(120deg, rgba(245,130,32,0.26), rgba(56,189,248,0.28), rgba(255,255,255,0.70)) border-box !important;
+  border: 1px solid transparent !important;
+  box-shadow: 0 10px 30px rgba(15, 34, 51, 0.10) !important;
+  backdrop-filter: blur(16px);
+}
+.stTabs [data-baseweb="tab"] {
+  border-radius: 13px !important;
+  min-height: 40px !important;
+  padding: 8px 14px !important;
+  color: #6b7d90 !important;
+  font-weight: 800 !important;
+}
+.stTabs [data-baseweb="tab"] p {
+  font-size: 0.78rem !important;
+  line-height: 1.1 !important;
+}
+.stTabs [aria-selected="true"] {
+  background: linear-gradient(180deg, #edf8ff, #e7f3ff) !important;
+  color: var(--accent-dark) !important;
+  box-shadow: inset 0 -2px 0 var(--accent), 0 7px 16px rgba(11,116,184,0.08);
+}
+.stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+.stTabs [data-baseweb="tab-list"] ~ button,
+.stTabs button[aria-label*="scroll" i],
+.stTabs button[title*="scroll" i] {
+  display: none !important;
+}
+
+.stTextInput input,
+.stSelectbox div[data-baseweb="select"] > div,
+.stDateInput input,
+[data-baseweb="select"] {
+  border-radius: var(--radius-control) !important;
+  border-color: #dde8f2 !important;
+  background: rgba(255,255,255,0.96) !important;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset !important;
+}
+.stButton > button, .stDownloadButton > button {
+  border-radius: var(--radius-control) !important;
+  border-color: #dfe9f3 !important;
+  box-shadow: 0 5px 16px rgba(15, 34, 51, 0.05) !important;
+}
+
+.app-panel,
+.cc-card,
+.filter-sheet,
+.empty-hero,
+.gallery-card,
+div[data-testid="stMetric"],
+div[data-testid="stExpander"],
+div[data-testid="stForm"] {
+  border-radius: var(--radius-card) !important;
+  border-color: var(--border) !important;
+  background: rgba(255,255,255,0.96) !important;
+  box-shadow: var(--shadow) !important;
+}
+.section-label {
+  color: #7e90a3 !important;
+  letter-spacing: 0.14em !important;
+}
+.progress-wrap {
+  height: 9px !important;
+  background: #e8eef5 !important;
+  border: 0 !important;
+}
+.progress-bar { background: linear-gradient(90deg, var(--accent), #22b8cf) !important; }
+.quick-action {
+  background: #ffffff !important;
+  color: var(--accent-dark) !important;
+  border-color: var(--border) !important;
+}
+
+.pax-card {
+  background:
+    linear-gradient(#ffffff, #ffffff) padding-box,
+    linear-gradient(125deg, rgba(245,130,32,0.26), rgba(56,189,248,0.30), rgba(255,255,255,0.90), rgba(11,116,184,0.14)) border-box !important;
+  border: 1px solid transparent !important;
+  box-shadow: var(--shadow) !important;
+}
+.pax-card::after {
+  content: "" !important;
+  position: absolute !important;
+  top: -42px !important;
+  right: -72px !important;
+  width: 180px !important;
+  height: 170px !important;
+  background:
+    radial-gradient(circle, rgba(125,211,252,0.18), rgba(245,130,32,0.10) 42%, transparent 70%) !important;
+  transform: none !important;
+  opacity: 1 !important;
+  pointer-events: none !important;
+  z-index: 0 !important;
+}
+.pax-card::before {
+  width: 3px !important;
+  background: linear-gradient(180deg, var(--sun), var(--accent)) !important;
+}
+.pax-card.warn::before { background: #f59e0b !important; }
+.pax-card.bad::before { background: #ef4444 !important; }
+.pax-stamp {
+  transform: none !important;
+  mix-blend-mode: normal !important;
+  opacity: 1 !important;
+  border-radius: 999px !important;
+  border-width: 1px !important;
+  background: #fff7ed !important;
+  color: #b45309 !important;
+  font-size: 0.55rem !important;
+}
+.pax-stamp.ok { background: #ecfdf5 !important; color: #047857 !important; }
+.pax-stamp.bad { background: #fef2f2 !important; color: #b91c1c !important; }
+.pax-photo,
+.pax-photo-lg,
+.pax-photo-empty {
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, #f5fbff, #eef6fb) !important;
+  border-color: #d9e7f1 !important;
+}
+.pax-photo-frame::before,
+.pax-photo-frame::after { display: none !important; }
+.wallet-passport {
+  border-radius: 14px !important;
+  background: linear-gradient(180deg, #f8fcff, #f2f8fd) !important;
+  border-color: #dfebf5 !important;
+}
+.pax-tag {
+  clip-path: none !important;
+  border-radius: 999px !important;
+  padding: 4px 9px !important;
+  background: #eef6ff !important;
+  color: #1d5f99 !important;
+}
+.pax-tags { gap: 5px !important; }
+.pax-tag b { display: none !important; }
+.pax-name { font-size: 1.02rem !important; }
+.wallet-passport-no { font-size: 1rem !important; }
+.pax-stamp,
+.mrz-line {
+  display: none !important;
+}
+.pax-flags {
+  display: flex !important;
+  gap: 5px !important;
+  margin-top: 6px !important;
+}
+.pax-flag {
+  font-size: 0.52rem !important;
+  padding: 2px 7px !important;
+  letter-spacing: 0.04em !important;
+}
+.ring {
+  display: flex !important;
+  width: 26px !important;
+  height: 26px !important;
+}
+.ring span {
+  width: 20px !important;
+  height: 20px !important;
+  font-size: 0.48rem !important;
+}
+.pax-flag {
+  border-radius: 999px !important;
+  background: #fff8ed !important;
+  color: #9a5a13 !important;
+}
+.mrz-line {
+  background: #f8fbfd !important;
+  border-color: #e6eef5 !important;
+}
+div[data-testid="stExpander"] summary svg,
+div[data-testid="stExpander"] summary [data-testid="stIconMaterial"] {
+  display: none !important;
+}
+
+@media (max-width: 760px) {
+  .block-container {
+    padding-top: max(14px, env(safe-area-inset-top));
+    padding-bottom: max(92px, env(safe-area-inset-bottom));
+  }
+  .stTabs [data-baseweb="tab-list"] {
+    left: max(10px, env(safe-area-inset-left)) !important;
+    right: max(10px, env(safe-area-inset-right)) !important;
+    bottom: max(10px, env(safe-area-inset-bottom)) !important;
+    border-radius: 24px !important;
+    padding: 7px !important;
+  }
+  .stTabs [data-baseweb="tab"] {
+    min-width: 70px !important;
+    min-height: 48px !important;
+    padding: 7px 6px !important;
+  }
+  .stTabs [data-baseweb="tab"] p {
+    font-size: 0.70rem !important;
+  }
+  .app-hero {
+    padding: 16px !important;
+    margin-bottom: 14px !important;
+  }
+  .pax-card-row { gap: 12px !important; }
+  .pax-photo,
+  .pax-photo-empty { width: 68px !important; height: 88px !important; }
+  .pax-card { padding: 14px !important; }
+}
 </style>
 """
 
@@ -799,6 +1083,40 @@ div[data-testid="stMetric"] { background: #121a2c !important; border-color: #253
 .stTabs [data-baseweb="tab-list"] { background: #121a2c !important; border-color: #253150 !important; }
 .stTabs [aria-selected="true"] { background: #14304a !important; }
 .boarding-pass .stub-divider::before, .boarding-pass .stub-divider::after { background: #0a0f1c !important; }
+
+/* v5.3 Night Holo iOS — noktalı/sert görünüm yerine sakin cam katman */
+.stApp {
+  background:
+    radial-gradient(ellipse 70% 32% at 92% -8%, rgba(245, 130, 32, 0.14), transparent 64%),
+    radial-gradient(ellipse 80% 34% at 0% 12%, rgba(56, 189, 248, 0.13), transparent 62%),
+    linear-gradient(180deg, #07101d 0%, #0a1322 50%, #07101d 100%) !important;
+}
+.app-hero,
+.pax-card,
+.app-panel,
+.cc-card,
+.filter-sheet,
+.empty-hero,
+.gallery-card,
+div[data-testid="stMetric"],
+div[data-testid="stExpander"],
+div[data-testid="stForm"] {
+  background:
+    linear-gradient(180deg, rgba(18,26,44,0.96), rgba(14,21,38,0.96)) padding-box,
+    linear-gradient(125deg, rgba(245,130,32,0.24), rgba(56,189,248,0.28), rgba(255,255,255,0.10)) border-box !important;
+  border: 1px solid transparent !important;
+}
+.app-hero::after,
+.pax-card::after {
+  background: radial-gradient(circle, rgba(56,189,248,0.12), rgba(245,130,32,0.08) 42%, transparent 70%) !important;
+}
+.stTabs [data-baseweb="tab-list"] {
+  background:
+    linear-gradient(rgba(18,26,44,0.90), rgba(18,26,44,0.90)) padding-box,
+    linear-gradient(120deg, rgba(245,130,32,0.20), rgba(56,189,248,0.28), rgba(255,255,255,0.08)) border-box !important;
+  border: 1px solid transparent !important;
+}
+.stTabs [aria-selected="true"] { background: #122a42 !important; }
 </style>
 """
 
@@ -1247,7 +1565,7 @@ def render_topbar() -> None:
     tb1, tb2, tb3 = st.columns([1, 1, 1])
     with tb1:
         night = st.session_state.get("night_mode", False)
-        label = f"{'☀️ Gündüz moduna geç' if night else '🌙 Night Ops moduna geç'}"
+        label = "Gündüz modu" if night else "Gece modu"
         if st.button(label, key="toggle_night_mode", use_container_width=True):
             st.session_state.night_mode = not night
             st.rerun()
@@ -2964,9 +3282,9 @@ if st.session_state.selected_idx is not None and not base_df.empty:
     render_detail_view(st.session_state.base_df)
 else:
     _issue_count = int(sum(1 for _, r in base_df.iterrows() if card_issues(r))) if not base_df.empty else 0
-    _issues_label = "⚠️ Eksikler" + (f" ({_issue_count})" if _issue_count else "")
+    _issues_label = "Eksikler" + (f" ({_issue_count})" if _issue_count else "")
     tab_home, tab_passengers, tab_issues, tab_gallery, tab_archive, tab_import, tab_package = st.tabs(
-        ["🏠 Ana", "👥 Yolcular", _issues_label, "📷 Galeri", "📁 Arşiv", "⬆️ Import", "📦 Paket"]
+        ["Ana", "Yolcular", _issues_label, "Galeri", "Arşiv", "Import", "Paket"]
     )
     with tab_home:
         render_command_center(st.session_state.base_df)
