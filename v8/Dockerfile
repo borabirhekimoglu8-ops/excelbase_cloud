@@ -12,4 +12,4 @@ RUN pip install --upgrade pip==25.1.1 && pip install '.[postgres,s3]'
 
 USER excelbase
 EXPOSE 8080
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "-c", "alembic upgrade head && python scripts/auto_bootstrap.py && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

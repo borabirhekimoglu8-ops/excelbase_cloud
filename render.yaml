@@ -21,10 +21,13 @@ services:
       # ayarlanabilir. Şimdilik tek-kullanıcı/public davranış korunur.
       - key: GATEVISA_ALLOW_DEV_NO_AUTH
         value: "1"
+      # /v8 sayfasının varsayılan API adresi (build sırasında gömülür).
+      # Boş bırakılırsa /v8 sayfasındaki "API adresi" alanından da girilebilir.
+      - key: NEXT_PUBLIC_V8_API_URL
+        value: https://excelbase-v8.onrender.com
 
-  # V8 — ilişkisel çekirdek API'si. Gizli anahtarlar Render dashboard'dan
-  # (sync: false) girilir; asla repoya yazılmaz. Anahtar üretimi için:
-  #   python v8/scripts/generate_keys.py
+  # V8 — ilişkisel çekirdek API'si. Gizli anahtarlar Render tarafından
+  # otomatik üretilir (generateValue) ve asla repoya yazılmaz.
   - type: web
     name: excelbase-v8
     env: docker
@@ -42,29 +45,35 @@ services:
         value: "0"
       - key: V8_AUTO_CREATE_SCHEMA
         value: "0"
-      # "keyid:fernetkey" çiftleri; ilk anahtar aktif yazma anahtarıdır.
-      # Rotasyon: yeni anahtarı başa ekleyin, eskisini listede bırakın.
-      - key: V8_FIELD_ENCRYPTION_KEYS
-        sync: false
+      # Rotasyon gerektiğinde V8_FIELD_ENCRYPTION_KEYS ("keyid:anahtar,...")
+      # değişkeni bu tekil anahtarın yerine geçer.
+      - key: V8_FIELD_ENCRYPTION_KEY
+        generateValue: true
       - key: V8_PASSPORT_HMAC_KEY
-        sync: false
+        generateValue: true
       - key: V8_JWT_SECRET
-        sync: false
+        generateValue: true
       - key: V8_JWT_ISSUER
         value: excelbase-v8
       - key: V8_JWT_AUDIENCE
         value: excelbase-v8
       - key: V8_ALLOWED_ORIGINS
+        value: https://excelbase.onrender.com
+      # Açılışta ilk organizasyon + sahip kullanıcıyı otomatik oluşturur ve
+      # giriş JWT'sini servis loglarına yazar (idempotent; her açılışta güvenli).
+      - key: V8_BOOTSTRAP_ORGANIZATION
+        value: Excelbase
+      - key: V8_BOOTSTRAP_SLUG
+        value: excelbase
+      - key: V8_BOOTSTRAP_EMAIL
         sync: false
+      - key: V8_BOOTSTRAP_DISPLAY_NAME
+        sync: false
+      # Başlangıçta yerel disk (ücretsiz planda kalıcı değildir; yeniden
+      # deploy'da fotoğraflar silinir). Kalıcı fotoğraf için S3/R2'ye geçin:
+      # V8_STORAGE_BACKEND=s3 + V8_S3_BUCKET/V8_S3_REGION/V8_S3_ENDPOINT_URL
+      # + AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY değişkenlerini ekleyin.
       - key: V8_STORAGE_BACKEND
-        value: s3
-      - key: V8_S3_BUCKET
-        sync: false
-      - key: V8_S3_REGION
-        sync: false
-      - key: V8_S3_ENDPOINT_URL
-        sync: false
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
+        value: local
+      - key: V8_STORAGE_LOCAL_ROOT
+        value: /tmp/excelbase-objects

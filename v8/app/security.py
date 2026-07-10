@@ -22,6 +22,25 @@ def normalize_passport(value: str) -> str:
     return _NORMALIZE_RE.sub("", value.upper().strip())
 
 
+def _fernet_from_secret(key_id: str, secret: str) -> Fernet:
+    """Accepts either a proper Fernet key or any high-entropy secret.
+
+    Secret managers (e.g. Render generateValue) produce random strings that are
+    not Fernet-formatted; those are deterministically stretched with SHA-256 so
+    the same secret always yields the same key.
+    """
+    try:
+        return Fernet(secret.encode("ascii"))
+    except (ValueError, TypeError):
+        pass
+    if len(secret.encode("utf-8")) < 32:
+        raise RuntimeError(
+            f"'{key_id}' şifreleme anahtarı geçersiz: Fernet anahtarı ya da en az 32 karakterlik bir gizli değer olmalıdır."
+        )
+    derived = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+    return Fernet(derived)
+
+
 class SensitiveFieldCodec:
     def __init__(self, encryption_keys: tuple[tuple[str, str], ...], hmac_key: str) -> None:
         if not encryption_keys:
@@ -32,10 +51,7 @@ class SensitiveFieldCodec:
         for key_id, key in encryption_keys:
             if ":" in key_id:
                 raise RuntimeError("Şifreleme anahtarı kimliği ':' içeremez.")
-            try:
-                self._fernets[key_id] = Fernet(key.encode("ascii"))
-            except (ValueError, TypeError) as exc:
-                raise RuntimeError(f"'{key_id}' geçerli bir Fernet anahtarı değil.") from exc
+            self._fernets[key_id] = _fernet_from_secret(key_id, key)
         self._active_key_id = encryption_keys[0][0]
         self._hmac_key = hmac_key.encode("utf-8")
 

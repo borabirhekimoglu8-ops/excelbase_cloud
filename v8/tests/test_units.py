@@ -72,6 +72,20 @@ def test_codec_key_rotation_reads_old_key_writes_new_key():
         new_only.decrypt_passport(ciphertext_v1)
 
 
+def test_codec_accepts_non_fernet_high_entropy_secret():
+    # Render generateValue benzeri rastgele bir gizli değer Fernet formatında
+    # değildir; codec bunu deterministik olarak türetmelidir.
+    secret = "a-random-secret-manager-value-with-enough-length-123456"
+    hmac_key = "unit-test-hmac-key-that-is-longer-than-32-bytes"
+    codec_one = SensitiveFieldCodec((("k1", secret),), hmac_key)
+    codec_two = SensitiveFieldCodec((("k1", secret),), hmac_key)
+    ciphertext = codec_one.encrypt_passport("U12345678")
+    assert codec_two.decrypt_passport(ciphertext) == "U12345678"
+
+    with pytest.raises(RuntimeError):
+        SensitiveFieldCodec((("k1", "too-short"),), hmac_key)
+
+
 def test_codec_reads_legacy_ciphertext_without_envelope():
     key = generate_fernet_key()
     hmac_key = "unit-test-hmac-key-that-is-longer-than-32-bytes"

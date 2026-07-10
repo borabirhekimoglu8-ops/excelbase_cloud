@@ -91,7 +91,30 @@ export type V8ImportCommit = {
   invalid_rows: number;
 };
 
-const V8_API_BASE = process.env.NEXT_PUBLIC_V8_API_URL ?? "http://localhost:8080";
+const API_URL_STORAGE_KEY = "excelbase-v8-api-url";
+
+/** Build-time default, overridable at runtime so a static export can point
+ * at a different API origin without a rebuild. */
+function v8ApiBase(): string {
+  if (typeof window !== "undefined") {
+    const saved = window.localStorage.getItem(API_URL_STORAGE_KEY);
+    if (saved) return saved.replace(/\/+$/, "");
+  }
+  return process.env.NEXT_PUBLIC_V8_API_URL ?? "http://localhost:8080";
+}
+
+export function getV8ApiUrl(): string {
+  return v8ApiBase();
+}
+
+export function setV8ApiUrl(url: string): void {
+  const trimmed = url.trim().replace(/\/+$/, "");
+  if (trimmed) {
+    window.localStorage.setItem(API_URL_STORAGE_KEY, trimmed);
+  } else {
+    window.localStorage.removeItem(API_URL_STORAGE_KEY);
+  }
+}
 
 function identityHeaders(identity: V8Identity, headers: Headers): void {
   if (identity.token) {
@@ -110,7 +133,7 @@ async function v8Request<T>(
 ): Promise<T> {
   const headers = new Headers(init.headers);
   identityHeaders(identity, headers);
-  const response = await fetch(`${V8_API_BASE}${path}`, {
+  const response = await fetch(`${v8ApiBase()}${path}`, {
     ...init,
     headers,
     credentials: "include",
@@ -217,7 +240,7 @@ export async function fetchV8PassengerPhoto(
 ): Promise<Blob> {
   const headers = new Headers();
   identityHeaders(identity, headers);
-  const response = await fetch(`${V8_API_BASE}/api/v8/passengers/${passengerId}/photo`, {
+  const response = await fetch(`${v8ApiBase()}/api/v8/passengers/${passengerId}/photo`, {
     headers,
     credentials: "include",
     cache: "no-store",
