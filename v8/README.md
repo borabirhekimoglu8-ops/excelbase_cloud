@@ -1,0 +1,177 @@
+# Excelbase V8 Foundation
+
+Excelbase V8 is an isolated, relational replacement foundation for the V7 global-JSON state model. V7 remains untouched and can continue serving production while V8 is validated.
+
+## Implemented
+
+- PostgreSQL-first normalized schema with Alembic migrations
+- Permanent UUID identifiers; DataFrame row indexes are never used as IDs
+- Multi-tenant organizations, users, memberships and roles
+- Tenant-scoped repositories that return `404` for cross-organization object access
+- Operations with an explicit state machine and optimistic locking
+- Passengers with soft deletion and optimistic locking
+- Passport encryption with Fernet plus HMAC fingerprinting for duplicate detection
+- Key-ID envelope encryption (`v8:<key_id>:<token>`) with rotation support via `V8_FIELD_ENCRYPTION_KEYS`
+- Masked passports by default; the full value requires the audited reveal endpoint
+- Passenger photo upload/download/delete backed by local or S3-compatible object storage
+- Import staging: parse → redact/encrypt → preview → atomic commit (batch row is locked during commit)
+- Import file SHA-256 idempotency protection
+- Database-level partial unique index against duplicate active passports
+- Organization-serialized, hash-chained audit events with incremental checkpoint verification
+- Pagination envelopes (`items`, `total`, `limit`, `offset`, `next_offset`) on list endpoints
+- Per-identity rate limiting on import staging and passport reveal
+- Structured JSON request logging with request IDs
+- Security headers and `private, no-store` API caching
+- V7 JSON backup migration utility with a post-migration verification report
+- Integration tests, unit tests, GitHub Actions CI (SQLite + PostgreSQL matrix) and a Playwright e2e smoke test
+
+## Authentication
+
+Two mechanisms exist:
+
+1. **JWT bearer (production)** — set `V8_JWT_SECRET` (plus optional `V8_JWT_ISSUER`, `V8_JWT_AUDIENCE`). Requests carry `Authorization: Bearer <token>`; the token's `sub`/`org` claims are resolved against active memberships. Tokens for staging/smoke tests can be issued with:
+
+```bash
+python scripts/issue_token.py --user-id <UUID> --organization-id <UUID>
+```
+
+2. **Development headers** — only when `V8_ALLOW_DEV_IDENTITY=1` (refused outright in production): `X-User-ID` and `X-Organization-ID`.
+
+Production mode refuses to start with dev identity enabled, and returns 503 if no JWT secret is configured. This prevents a temporary development mechanism from silently becoming production authentication.
+
+## Key rotation
+
+Ciphertexts embed the key ID that encrypted them. To rotate:
+
+1. Generate a new Fernet key and prepend it: `V8_FIELD_ENCRYPTION_KEYS=k2:NEW_KEY,k1:OLD_KEY`.
+2. New writes use `k2`; existing `k1` ciphertexts stay readable.
+3. Re-encrypt at leisure (the codec exposes `needs_rotation`), then drop `k1`.
+
+## Apply to the existing repository
+
+Extract the bundle, then from the bundle directory run:
+
+```bash
+./apply_to_repo.sh /path/to/excelbase_cloud
+```
+
+This adds only:
+
+- `v8/`
+- `.github/workflows/v8-ci.yml`
+- `frontend/src/lib/api-v8.ts`
+- `frontend/src/app/v8/` pilot route
+- `V8_IMPLEMENTATION.md`
+
+It does not replace V7 files.
+
+## Local setup
+
+```bash
+cd v8
+python scripts/generate_keys.py
+cp .env.example .env
+# Put the generated values into .env and export them in your shell.
+python -m pip install -e '.[dev]'
+alembic upgrade head
+python scripts/bootstrap.py \
+  --organization "Aegean Ops" \
+  --slug aegean-ops \
+  --email owner@example.com \
+  --display-name "Owner"
+uvicorn app.main:app --reload --port 8080
+```
+
+API documentation: `http://localhost:8080/api/v8/docs`
+
+After applying the bundle and rebuilding the existing Next.js frontend, the isolated pilot screen is available at `/v8`. Set `NEXT_PUBLIC_V8_API_URL` to the V8 API origin.
+
+For local development, send the two IDs printed by the bootstrap command:
+
+```http
+X-Organization-ID: <organization UUID>
+X-User-ID: <user UUID>
+```
+
+## Docker with PostgreSQL
+
+The compose file expects the build context to be the repository root because the transitional import adapter reuses the proven V7 Excel parser.
+
+```bash
+cd v8
+export POSTGRES_PASSWORD='replace-me'
+eval "$(python scripts/generate_keys.py | sed 's/^/export /')"
+docker compose up --build
+```
+
+## Core API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/v8/health` | Health and DB check |
+| POST | `/api/v8/operations` | Create operation |
+| GET | `/api/v8/operations` | List tenant operations (paginated) |
+| PATCH | `/api/v8/operations/{id}` | Versioned update/state transition |
+| POST | `/api/v8/operations/{id}/passengers` | Create passenger |
+| GET | `/api/v8/operations/{id}/passengers` | List passengers (paginated, masked passports) |
+| PATCH | `/api/v8/passengers/{id}` | Versioned passenger update |
+| DELETE | `/api/v8/passengers/{id}?version=N` | Soft delete |
+| POST | `/api/v8/passengers/{id}/passport/reveal` | Audited full-passport reveal (role-gated, rate-limited) |
+| POST | `/api/v8/passengers/{id}/photo` | Upload passenger photo (JPEG/PNG/WebP) |
+| GET | `/api/v8/passengers/{id}/photo` | Download passenger photo |
+| DELETE | `/api/v8/passengers/{id}/photo` | Remove passenger photo |
+| POST | `/api/v8/operations/{id}/imports` | Stage an Excel/CSV import (rate-limited) |
+| GET | `/api/v8/imports/{batch_id}` | Review staged rows |
+| POST | `/api/v8/imports/{batch_id}/commit` | Atomically commit valid rows |
+| GET | `/api/v8/audit` | Read tenant audit chain |
+| GET | `/api/v8/audit/verify` | Incrementally verify the hash chain |
+
+## V7 backup migration
+
+First export a V7 JSON backup. Then:
+
+```bash
+python scripts/migrate_v7_backup.py \
+  --input /path/to/gate-visa-backup.json \
+  --organization-id <UUID> \
+  --actor-id <UUID> \
+  --origin Kuşadası \
+  --destination Samos
+```
+
+The migration:
+
+- groups records by departure date,
+- creates one legacy operation per date,
+- encrypts passport numbers,
+- skips duplicate passports,
+- reports undated and passportless records,
+- records a migration audit event,
+- verifies the result against the source backup (counts, HMAC matches and
+  decrypt round-trips) and fails loudly on any mismatch.
+
+An existing migration can be re-checked without writing anything:
+
+```bash
+python scripts/migrate_v7_backup.py --input backup.json \
+  --organization-id <UUID> --actor-id <UUID> --verify-only
+```
+
+V7 photo blobs are intentionally not copied by this first migration. They should be exported to object storage with checksum verification in the next migration phase.
+
+## Test
+
+```bash
+python -m pytest
+ruff check app tests scripts
+```
+
+## Next production increments
+
+1. Full OIDC provider (JWT bearer support is in place; connect an external IdP and HttpOnly secure sessions)
+2. Short-lived signed URLs for photo downloads
+3. Background jobs for large import, photo processing and package generation
+4. V7 photo migration with SHA-256 verification
+5. PostgreSQL backup/restore drill and load testing
+6. Next.js UI migration to `/api/v8`
+7. Redis-backed rate limiting when scaling beyond one API instance

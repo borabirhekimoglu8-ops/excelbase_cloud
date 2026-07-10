@@ -1,3 +1,11 @@
+databases:
+  # V8 üretim veritabanı. Şema yalnızca Alembic ile yönetilir
+  # (container açılışında `alembic upgrade head` çalışır).
+  - name: excelbase-v8-db
+    plan: free
+    databaseName: excelbase_v8
+    user: excelbase
+
 services:
   # V7 — tek servis: FastAPI backend + Next.js PWA (Streamlit'in tüm
   # fonksiyonları buraya taşındı). Docker imajı frontend'i build edip
@@ -13,3 +21,50 @@ services:
       # ayarlanabilir. Şimdilik tek-kullanıcı/public davranış korunur.
       - key: GATEVISA_ALLOW_DEV_NO_AUTH
         value: "1"
+
+  # V8 — ilişkisel çekirdek API'si. Gizli anahtarlar Render dashboard'dan
+  # (sync: false) girilir; asla repoya yazılmaz. Anahtar üretimi için:
+  #   python v8/scripts/generate_keys.py
+  - type: web
+    name: excelbase-v8
+    env: docker
+    plan: free
+    dockerfilePath: ./v8/Dockerfile
+    healthCheckPath: /api/v8/health
+    envVars:
+      - key: V8_APP_ENV
+        value: production
+      - key: V8_DATABASE_URL
+        fromDatabase:
+          name: excelbase-v8-db
+          property: connectionString
+      - key: V8_ALLOW_DEV_IDENTITY
+        value: "0"
+      - key: V8_AUTO_CREATE_SCHEMA
+        value: "0"
+      # "keyid:fernetkey" çiftleri; ilk anahtar aktif yazma anahtarıdır.
+      # Rotasyon: yeni anahtarı başa ekleyin, eskisini listede bırakın.
+      - key: V8_FIELD_ENCRYPTION_KEYS
+        sync: false
+      - key: V8_PASSPORT_HMAC_KEY
+        sync: false
+      - key: V8_JWT_SECRET
+        sync: false
+      - key: V8_JWT_ISSUER
+        value: excelbase-v8
+      - key: V8_JWT_AUDIENCE
+        value: excelbase-v8
+      - key: V8_ALLOWED_ORIGINS
+        sync: false
+      - key: V8_STORAGE_BACKEND
+        value: s3
+      - key: V8_S3_BUCKET
+        sync: false
+      - key: V8_S3_REGION
+        sync: false
+      - key: V8_S3_ENDPOINT_URL
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
