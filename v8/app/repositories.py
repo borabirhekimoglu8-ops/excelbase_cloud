@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .models import AuditEvent, ImportBatch, ImportRow, Operation, Passenger
@@ -29,6 +29,17 @@ class OperationRepository:
             .limit(limit)
             .offset(offset)
         ).all()
+
+    @staticmethod
+    def count(db: Session, organization_id: uuid.UUID) -> int:
+        return int(
+            db.scalar(
+                select(func.count())
+                .select_from(Operation)
+                .where(Operation.organization_id == organization_id, Operation.deleted_at.is_(None))
+            )
+            or 0
+        )
 
 
 class PassengerRepository:
@@ -59,6 +70,21 @@ class PassengerRepository:
         ).all()
 
     @staticmethod
+    def count_for_operation(db: Session, organization_id: uuid.UUID, operation_id: uuid.UUID) -> int:
+        return int(
+            db.scalar(
+                select(func.count())
+                .select_from(Passenger)
+                .where(
+                    Passenger.organization_id == organization_id,
+                    Passenger.operation_id == operation_id,
+                    Passenger.deleted_at.is_(None),
+                )
+            )
+            or 0
+        )
+
+    @staticmethod
     def duplicate_exists(
         db: Session,
         organization_id: uuid.UUID,
@@ -87,6 +113,31 @@ class AuditRepository:
             .limit(limit)
         ).all()
 
+    @staticmethod
+    def events_after(
+        db: Session, organization_id: uuid.UUID, position: int, limit: int = 5000
+    ) -> Sequence[AuditEvent]:
+        return db.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.organization_id == organization_id,
+                AuditEvent.chain_position > position,
+            )
+            .order_by(AuditEvent.chain_position.asc())
+            .limit(limit)
+        ).all()
+
+    @staticmethod
+    def count(db: Session, organization_id: uuid.UUID) -> int:
+        return int(
+            db.scalar(
+                select(func.count())
+                .select_from(AuditEvent)
+                .where(AuditEvent.organization_id == organization_id)
+            )
+            or 0
+        )
+
 
 class ImportRepository:
     @staticmethod
@@ -96,6 +147,17 @@ class ImportRepository:
                 ImportBatch.id == batch_id,
                 ImportBatch.organization_id == organization_id,
             )
+        )
+
+    @staticmethod
+    def get_batch_locked(db: Session, organization_id: uuid.UUID, batch_id: uuid.UUID) -> ImportBatch | None:
+        return db.scalar(
+            select(ImportBatch)
+            .where(
+                ImportBatch.id == batch_id,
+                ImportBatch.organization_id == organization_id,
+            )
+            .with_for_update()
         )
 
     @staticmethod

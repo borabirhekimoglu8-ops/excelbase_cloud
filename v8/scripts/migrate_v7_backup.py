@@ -17,7 +17,7 @@ from app.audit import emit_audit_event
 from app.database import get_session_factory
 from app.models import Membership, Operation, OperationStatus, Passenger
 from app.repositories import PassengerRepository
-from app.security import get_codec
+from app.security import get_codec, normalize_passport
 
 
 def text(value) -> str:
@@ -65,6 +65,70 @@ def names(record: dict) -> tuple[str, str]:
     return full or "Bilinmiyor", "Bilinmiyor"
 
 
+def verify_migration(
+    db,
+    codec,
+    organization_id: uuid.UUID,
+    grouped: dict[date, list[dict]],
+) -> dict:
+    """Compares the migrated relational data against the source backup.
+
+    For each departure group the expected passenger set is the unique set of
+    normalized passports; each one must resolve to a stored row whose HMAC
+    fingerprint matches and whose ciphertext decrypts back to the same value.
+    """
+    report: dict = {"operations": [], "total_expected": 0, "total_matched": 0, "mismatches": []}
+    for departure, rows in sorted(grouped.items()):
+        code = f"LEGACY-{departure:%Y%m%d}"
+        operation = db.scalar(
+            select(Operation).where(
+                Operation.organization_id == organization_id,
+                Operation.code == code,
+            )
+        )
+        expected_hashes: dict[str, str] = {}
+        for record in rows:
+            passport = text(record.get("Pasaport No"))
+            if passport:
+                expected_hashes[codec.passport_hash(passport)] = passport
+        entry = {
+            "code": code,
+            "expected_passengers": len(expected_hashes),
+            "stored_passengers": 0,
+            "hash_matches": 0,
+            "decrypt_matches": 0,
+        }
+        if operation is None:
+            if expected_hashes:
+                report["mismatches"].append(f"{code}: operasyon veritabanında yok")
+            report["operations"].append(entry)
+            continue
+        stored = db.scalars(
+            select(Passenger).where(
+                Passenger.organization_id == organization_id,
+                Passenger.operation_id == operation.id,
+                Passenger.deleted_at.is_(None),
+            )
+        ).all()
+        entry["stored_passengers"] = len(stored)
+        stored_by_hash = {p.passport_hash: p for p in stored}
+        for passport_hash, source_passport in expected_hashes.items():
+            passenger = stored_by_hash.get(passport_hash)
+            if passenger is None:
+                report["mismatches"].append(f"{code}: pasaport hash eşleşmesi yok ({passport_hash[:12]}…)")
+                continue
+            entry["hash_matches"] += 1
+            if codec.decrypt_passport(passenger.passport_ciphertext) == normalize_passport(source_passport):
+                entry["decrypt_matches"] += 1
+            else:
+                report["mismatches"].append(f"{code}: ciphertext kaynak pasaportla uyuşmuyor")
+        report["total_expected"] += entry["expected_passengers"]
+        report["total_matched"] += entry["decrypt_matches"]
+        report["operations"].append(entry)
+    report["verified"] = report["total_expected"] == report["total_matched"] and not report["mismatches"]
+    return report
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Migrate a V7 JSON backup into the V8 relational schema.")
     parser.add_argument("--input", required=True, type=Path)
@@ -72,6 +136,11 @@ def main() -> None:
     parser.add_argument("--actor-id", required=True, type=uuid.UUID)
     parser.add_argument("--origin", default="Kuşadası")
     parser.add_argument("--destination", default="Samos")
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Veri taşımadan yalnızca mevcut V8 verisini yedeğe karşı doğrula.",
+    )
     args = parser.parse_args()
 
     payload = json.loads(args.input.read_text(encoding="utf-8"))
@@ -87,6 +156,15 @@ def main() -> None:
 
     db = get_session_factory()()
     codec = get_codec()
+
+    if args.verify_only:
+        try:
+            report = verify_migration(db, codec, args.organization_id, grouped)
+        finally:
+            db.close()
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        raise SystemExit(0 if report["verified"] else 1)
+
     created_operations = 0
     created_passengers = 0
     duplicate_passengers = 0
@@ -174,6 +252,7 @@ def main() -> None:
             },
         )
         db.commit()
+        verification = verify_migration(db, codec, args.organization_id, grouped)
     except Exception:
         db.rollback()
         raise
@@ -188,11 +267,14 @@ def main() -> None:
                 "duplicate_passengers": duplicate_passengers,
                 "skipped_without_passport": skipped_without_passport,
                 "undated_rows": len(undated),
+                "verification": verification,
             },
             ensure_ascii=False,
             indent=2,
         )
     )
+    if not verification["verified"]:
+        raise SystemExit("Doğrulama başarısız: geçiş raporundaki mismatches alanını inceleyin.")
 
 
 if __name__ == "__main__":

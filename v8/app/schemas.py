@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -12,6 +13,17 @@ from .security import normalize_passport
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+ItemT = TypeVar("ItemT")
+
+
+class Page(BaseModel, Generic[ItemT]):
+    items: list[ItemT]
+    total: int
+    limit: int
+    offset: int
+    next_offset: int | None
 
 
 class OrganizationCreate(StrictModel):
@@ -123,7 +135,7 @@ class PassengerRead(StrictModel):
     first_name: str
     last_name: str
     full_name: str
-    passport_no: str
+    passport_masked: str
     voucher: str
     arrival_date: date | None
     adult_fee: Decimal
@@ -135,6 +147,20 @@ class PassengerRead(StrictModel):
     version: int
     created_at: datetime
     updated_at: datetime
+
+
+class PassportRevealRead(StrictModel):
+    passenger_id: uuid.UUID
+    passport_no: str
+
+
+class PassengerPhotoRead(StrictModel):
+    passenger_id: uuid.UUID
+    object_key: str
+    sha256: str
+    size_bytes: int
+    mime_type: str
+    version: int
 
 
 class AuditEventRead(StrictModel):
@@ -202,4 +228,5 @@ class AuditVerifyRead(StrictModel):
     valid: bool
     event_count: int
     last_hash: str
+    checkpoint_position: int = 0
     error: str = ""

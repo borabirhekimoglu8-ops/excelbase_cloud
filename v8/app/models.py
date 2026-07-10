@@ -18,6 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -132,6 +133,16 @@ class Passenger(TimestampMixin, Base):
     __table_args__ = (
         Index("ix_passengers_org_operation", "organization_id", "operation_id"),
         Index("ix_passengers_org_passport_hash", "organization_id", "passport_hash"),
+        # Closes the duplicate-passport race at the database level for active rows.
+        Index(
+            "uq_passengers_active_passport",
+            "organization_id",
+            "operation_id",
+            "passport_hash",
+            unique=True,
+            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -220,6 +231,25 @@ class AuditHead(Base):
     sequence: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_hash: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class AuditCheckpoint(Base):
+    """Last fully verified position of an organization's audit chain.
+
+    Incremental verification starts from this checkpoint instead of replaying
+    the whole chain on every verify call.
+    """
+
+    __tablename__ = "audit_checkpoints"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    verified_position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    verified_hash: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    verified_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 

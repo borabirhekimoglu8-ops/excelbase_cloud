@@ -14,12 +14,15 @@ from . import models  # noqa: F401
 from .auth import (
     AUDIT_ROLES,
     READ_ROLES,
+    REVEAL_ROLES,
     WRITE_ROLES,
     IdentityContext,
     require_roles,
 )
 from .config import get_settings
 from .database import Base, get_db, get_engine
+from .logging_setup import RequestTimer, configure_logging
+from .ratelimit import SlidingWindowLimiter
 from .schemas import (
     AuditEventRead,
     AuditVerifyRead,
@@ -29,11 +32,16 @@ from .schemas import (
     OperationCreate,
     OperationRead,
     OperationUpdate,
+    Page,
     PassengerCreate,
+    PassengerPhotoRead,
     PassengerRead,
     PassengerUpdate,
+    PassportRevealRead,
 )
 from . import services
+
+logger = configure_logging()
 
 
 @asynccontextmanager
@@ -47,7 +55,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 settings = get_settings()
 app = FastAPI(
     title="Excelbase V8 API",
-    version="8.0.0-alpha.1",
+    version="8.0.0-alpha.2",
     docs_url="/api/v8/docs",
     openapi_url="/api/v8/openapi.json",
     lifespan=lifespan,
@@ -64,25 +72,46 @@ DbSession = Annotated[Session, Depends(get_db)]
 ReadIdentity = Annotated[IdentityContext, Depends(require_roles(*READ_ROLES))]
 WriteIdentity = Annotated[IdentityContext, Depends(require_roles(*WRITE_ROLES))]
 AuditIdentity = Annotated[IdentityContext, Depends(require_roles(*AUDIT_ROLES))]
+RevealIdentity = Annotated[IdentityContext, Depends(require_roles(*REVEAL_ROLES))]
+
+import_limiter = SlidingWindowLimiter(settings.rate_limit_import_per_minute)
+reveal_limiter = SlidingWindowLimiter(settings.rate_limit_reveal_per_minute)
+
+
+def _rate_limit_key(request: Request, identity: IdentityContext) -> str:
+    client = request.client.host if request.client else "unknown"
+    return f"{identity.organization_id}:{identity.user_id}:{client}"
 
 
 @app.middleware("http")
 async def request_context(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
+    timer = RequestTimer()
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     if request.url.path.startswith("/api/v8"):
         response.headers["Cache-Control"] = "private, no-store"
+        logger.info(
+            "request",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": timer.duration_ms(),
+                "client": request.client.host if request.client else None,
+            },
+        )
     return response
 
 
 @app.get("/api/v8/health", response_model=HealthRead)
 def health(db: DbSession) -> HealthRead:
     db.execute(text("SELECT 1"))
-    return HealthRead(status="ok", version="8.0.0-alpha.1", database="ok")
+    return HealthRead(status="ok", version="8.0.0-alpha.2", database="ok")
 
 
 @app.post("/api/v8/operations", response_model=OperationRead, status_code=status.HTTP_201_CREATED)
@@ -95,13 +124,13 @@ def create_operation(
     return services.create_operation(db, identity, payload, request.state.request_id)
 
 
-@app.get("/api/v8/operations", response_model=list[OperationRead])
+@app.get("/api/v8/operations", response_model=Page[OperationRead])
 def list_operations(
     db: DbSession,
     identity: ReadIdentity,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-) -> list[OperationRead]:
+) -> Page[OperationRead]:
     return services.list_operations(db, identity, limit, offset)
 
 
@@ -136,14 +165,14 @@ def create_passenger(
     return services.create_passenger(db, identity, operation_id, payload, request.state.request_id)
 
 
-@app.get("/api/v8/operations/{operation_id}/passengers", response_model=list[PassengerRead])
+@app.get("/api/v8/operations/{operation_id}/passengers", response_model=Page[PassengerRead])
 def list_passengers(
     operation_id: uuid.UUID,
     db: DbSession,
     identity: ReadIdentity,
     limit: int = Query(default=500, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
-) -> list[PassengerRead]:
+) -> Page[PassengerRead]:
     return services.list_passengers(db, identity, operation_id, limit, offset)
 
 
@@ -175,6 +204,64 @@ def delete_passenger(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@app.post("/api/v8/passengers/{passenger_id}/passport/reveal", response_model=PassportRevealRead)
+def reveal_passport(
+    passenger_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    identity: RevealIdentity,
+) -> PassportRevealRead:
+    if settings.rate_limit_enabled:
+        reveal_limiter.check(_rate_limit_key(request, identity))
+    return services.reveal_passport(db, identity, passenger_id, request.state.request_id)
+
+
+@app.post(
+    "/api/v8/passengers/{passenger_id}/photo",
+    response_model=PassengerPhotoRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_passenger_photo(
+    passenger_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    identity: WriteIdentity,
+    file: UploadFile = File(...),
+) -> PassengerPhotoRead:
+    data = await file.read(settings.max_photo_bytes + 1)
+    if len(data) > settings.max_photo_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Fotoğraf boyut limitini aşıyor.",
+        )
+    return services.upload_passenger_photo(
+        db,
+        identity,
+        passenger_id,
+        file.filename or "photo",
+        file.content_type or "application/octet-stream",
+        data,
+        request.state.request_id,
+    )
+
+
+@app.get("/api/v8/passengers/{passenger_id}/photo")
+def get_passenger_photo(passenger_id: uuid.UUID, db: DbSession, identity: ReadIdentity) -> Response:
+    data, mime_type = services.get_passenger_photo(db, identity, passenger_id)
+    return Response(content=data, media_type=mime_type)
+
+
+@app.delete("/api/v8/passengers/{passenger_id}/photo", status_code=status.HTTP_204_NO_CONTENT)
+def delete_passenger_photo(
+    passenger_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    identity: WriteIdentity,
+) -> Response:
+    services.delete_passenger_photo(db, identity, passenger_id, request.state.request_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @app.post(
     "/api/v8/operations/{operation_id}/imports",
     response_model=ImportPreviewRead,
@@ -187,6 +274,8 @@ async def stage_import(
     identity: WriteIdentity,
     file: UploadFile = File(...),
 ) -> ImportPreviewRead:
+    if settings.rate_limit_enabled:
+        import_limiter.check(_rate_limit_key(request, identity))
     filename = file.filename or "gate-visa.xlsx"
     extension = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
     if extension not in {"xlsx", "xls", "xlsm", "ods", "csv"}:

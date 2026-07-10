@@ -8,7 +8,7 @@ WORKDIR /app
 RUN useradd --create-home --shell /usr/sbin/nologin excelbase
 COPY . /app
 WORKDIR /app/v8
-RUN pip install --upgrade pip==25.1.1 && pip install '.[postgres]'
+RUN pip install --upgrade pip==25.1.1 && pip install '.[postgres,s3]'
 
 USER excelbase
 EXPOSE 8080

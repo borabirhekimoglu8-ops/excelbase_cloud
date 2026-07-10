@@ -11,17 +11,41 @@ Excelbase V8 is an isolated, relational replacement foundation for the V7 global
 - Operations with an explicit state machine and optimistic locking
 - Passengers with soft deletion and optimistic locking
 - Passport encryption with Fernet plus HMAC fingerprinting for duplicate detection
-- Import staging: parse → redact/encrypt → preview → atomic commit
+- Key-ID envelope encryption (`v8:<key_id>:<token>`) with rotation support via `V8_FIELD_ENCRYPTION_KEYS`
+- Masked passports by default; the full value requires the audited reveal endpoint
+- Passenger photo upload/download/delete backed by local or S3-compatible object storage
+- Import staging: parse → redact/encrypt → preview → atomic commit (batch row is locked during commit)
 - Import file SHA-256 idempotency protection
-- Organization-serialized, hash-chained audit events
-- Object-storage abstraction and metadata tables; binary data is not stored as Base64 in PostgreSQL
+- Database-level partial unique index against duplicate active passports
+- Organization-serialized, hash-chained audit events with incremental checkpoint verification
+- Pagination envelopes (`items`, `total`, `limit`, `offset`, `next_offset`) on list endpoints
+- Per-identity rate limiting on import staging and passport reveal
+- Structured JSON request logging with request IDs
 - Security headers and `private, no-store` API caching
-- V7 JSON backup migration utility
-- Integration tests and GitHub Actions CI
+- V7 JSON backup migration utility with a post-migration verification report
+- Integration tests, unit tests, GitHub Actions CI (SQLite + PostgreSQL matrix) and a Playwright e2e smoke test
 
-## Deliberate production gate
+## Authentication
 
-V8 currently supports identity headers only when `V8_ALLOW_DEV_IDENTITY=1`. Production mode refuses to run that path. OIDC/session integration must be connected before public production deployment. This prevents a temporary development mechanism from silently becoming production authentication.
+Two mechanisms exist:
+
+1. **JWT bearer (production)** — set `V8_JWT_SECRET` (plus optional `V8_JWT_ISSUER`, `V8_JWT_AUDIENCE`). Requests carry `Authorization: Bearer <token>`; the token's `sub`/`org` claims are resolved against active memberships. Tokens for staging/smoke tests can be issued with:
+
+```bash
+python scripts/issue_token.py --user-id <UUID> --organization-id <UUID>
+```
+
+2. **Development headers** — only when `V8_ALLOW_DEV_IDENTITY=1` (refused outright in production): `X-User-ID` and `X-Organization-ID`.
+
+Production mode refuses to start with dev identity enabled, and returns 503 if no JWT secret is configured. This prevents a temporary development mechanism from silently becoming production authentication.
+
+## Key rotation
+
+Ciphertexts embed the key ID that encrypted them. To rotate:
+
+1. Generate a new Fernet key and prepend it: `V8_FIELD_ENCRYPTION_KEYS=k2:NEW_KEY,k1:OLD_KEY`.
+2. New writes use `k2`; existing `k1` ciphertexts stay readable.
+3. Re-encrypt at leisure (the codec exposes `needs_rotation`), then drop `k1`.
 
 ## Apply to the existing repository
 
@@ -86,16 +110,21 @@ docker compose up --build
 |---|---|---|
 | GET | `/api/v8/health` | Health and DB check |
 | POST | `/api/v8/operations` | Create operation |
-| GET | `/api/v8/operations` | List tenant operations |
+| GET | `/api/v8/operations` | List tenant operations (paginated) |
 | PATCH | `/api/v8/operations/{id}` | Versioned update/state transition |
 | POST | `/api/v8/operations/{id}/passengers` | Create passenger |
-| GET | `/api/v8/operations/{id}/passengers` | List passengers |
+| GET | `/api/v8/operations/{id}/passengers` | List passengers (paginated, masked passports) |
 | PATCH | `/api/v8/passengers/{id}` | Versioned passenger update |
 | DELETE | `/api/v8/passengers/{id}?version=N` | Soft delete |
-| POST | `/api/v8/operations/{id}/imports` | Stage an Excel/CSV import |
+| POST | `/api/v8/passengers/{id}/passport/reveal` | Audited full-passport reveal (role-gated, rate-limited) |
+| POST | `/api/v8/passengers/{id}/photo` | Upload passenger photo (JPEG/PNG/WebP) |
+| GET | `/api/v8/passengers/{id}/photo` | Download passenger photo |
+| DELETE | `/api/v8/passengers/{id}/photo` | Remove passenger photo |
+| POST | `/api/v8/operations/{id}/imports` | Stage an Excel/CSV import (rate-limited) |
 | GET | `/api/v8/imports/{batch_id}` | Review staged rows |
 | POST | `/api/v8/imports/{batch_id}/commit` | Atomically commit valid rows |
 | GET | `/api/v8/audit` | Read tenant audit chain |
+| GET | `/api/v8/audit/verify` | Incrementally verify the hash chain |
 
 ## V7 backup migration
 
@@ -117,7 +146,16 @@ The migration:
 - encrypts passport numbers,
 - skips duplicate passports,
 - reports undated and passportless records,
-- records a migration audit event.
+- records a migration audit event,
+- verifies the result against the source backup (counts, HMAC matches and
+  decrypt round-trips) and fails loudly on any mismatch.
+
+An existing migration can be re-checked without writing anything:
+
+```bash
+python scripts/migrate_v7_backup.py --input backup.json \
+  --organization-id <UUID> --actor-id <UUID> --verify-only
+```
 
 V7 photo blobs are intentionally not copied by this first migration. They should be exported to object storage with checksum verification in the next migration phase.
 
@@ -130,9 +168,10 @@ ruff check app tests scripts
 
 ## Next production increments
 
-1. OIDC provider and HttpOnly secure sessions
-2. S3/R2 storage adapter with short-lived signed URLs
+1. Full OIDC provider (JWT bearer support is in place; connect an external IdP and HttpOnly secure sessions)
+2. Short-lived signed URLs for photo downloads
 3. Background jobs for large import, photo processing and package generation
 4. V7 photo migration with SHA-256 verification
 5. PostgreSQL backup/restore drill and load testing
 6. Next.js UI migration to `/api/v8`
+7. Redis-backed rate limiting when scaling beyond one API instance

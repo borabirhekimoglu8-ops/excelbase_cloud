@@ -28,8 +28,14 @@ services:
       V8_FIELD_ENCRYPTION_KEY: ${V8_FIELD_ENCRYPTION_KEY:?set V8_FIELD_ENCRYPTION_KEY}
       V8_PASSPORT_HMAC_KEY: ${V8_PASSPORT_HMAC_KEY:?set V8_PASSPORT_HMAC_KEY}
       V8_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8080
+      V8_JWT_SECRET: ${V8_JWT_SECRET:-}
+      V8_STORAGE_BACKEND: local
+      V8_STORAGE_LOCAL_ROOT: /data/objects
+    volumes:
+      - excelbase_v8_objects:/data/objects
     ports:
       - "8080:8080"
 
 volumes:
   excelbase_v8_pg:
+  excelbase_v8_objects:

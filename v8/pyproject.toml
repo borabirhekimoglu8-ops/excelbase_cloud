@@ -16,6 +16,7 @@ dependencies = [
   "odfpy==1.4.1",
   "xlrd==2.0.1",
   "pydantic==2.13.4",
+  "PyJWT>=2.10,<3",
   "python-multipart==0.0.29",
   "SQLAlchemy==2.0.50",
   "uvicorn[standard]==0.48.0",
@@ -23,6 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["pg8000>=1.31,<2"]
+s3 = ["boto3>=1.35,<2"]
 dev = [
   "httpx==0.28.1",
   "pytest==9.0.2",
