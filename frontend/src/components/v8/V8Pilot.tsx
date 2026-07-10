@@ -9,9 +9,11 @@ import {
   commitV8Import,
   createV8Operation,
   createV8Passenger,
+  getV8ApiUrl,
   listV8Operations,
   listV8Passengers,
   revealV8Passport,
+  setV8ApiUrl,
   stageV8Import,
   uploadV8PassengerPhoto,
 } from "@/lib/api-v8";
@@ -30,10 +32,12 @@ export function V8Pilot() {
   const [preview, setPreview] = useState<V8ImportPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("V8 pilot bağlantısı bekleniyor.");
+  const [apiUrl, setApiUrl] = useState("");
 
   const hasIdentity = Boolean(identity.token || (identity.userId && identity.organizationId));
 
   useEffect(() => {
+    setApiUrl(getV8ApiUrl());
     const saved = window.localStorage.getItem("excelbase-v8-identity");
     if (saved) {
       try {
@@ -82,6 +86,8 @@ export function V8Pilot() {
 
   function saveIdentity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setV8ApiUrl(apiUrl);
+    setApiUrl(getV8ApiUrl());
     window.localStorage.setItem("excelbase-v8-identity", JSON.stringify(identity));
     setMessage(identity.token ? "JWT kimliği kaydedildi." : "Geliştirme kimliği kaydedildi.");
     void refreshOperations();
@@ -211,6 +217,12 @@ export function V8Pilot() {
         <h2>Kimlik</h2>
         <p>JWT girildiğinde Bearer doğrulaması kullanılır; boşsa geliştirme başlıkları gönderilir.</p>
         <form className={styles.stack} onSubmit={saveIdentity}>
+          <input
+            aria-label="API adresi"
+            placeholder="API adresi (örn. https://excelbase-v8.onrender.com)"
+            value={apiUrl}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setApiUrl(event.target.value)}
+          />
           <input
             aria-label="JWT"
             placeholder="JWT (production)"

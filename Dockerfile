@@ -1,5 +1,9 @@
 FROM node:22-bookworm-slim AS frontend-build
 
+# Render passes service env vars as Docker build args when declared with ARG.
+ARG NEXT_PUBLIC_V8_API_URL
+ENV NEXT_PUBLIC_V8_API_URL=${NEXT_PUBLIC_V8_API_URL}
+
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
