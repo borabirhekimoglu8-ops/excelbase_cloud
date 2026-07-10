@@ -119,6 +119,30 @@ def require_roles(*allowed: Role):
     return dependency
 
 
+def issue_jwt(user_id: uuid.UUID, organization_id: uuid.UUID, ttl_days: int = 90) -> str:
+    from datetime import UTC, datetime, timedelta
+
+    settings = get_settings()
+    if not settings.jwt_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT doğrulaması yapılandırılmadı (V8_JWT_SECRET eksik).",
+        )
+    now = datetime.now(UTC)
+    return jwt.encode(
+        {
+            "sub": str(user_id),
+            "org": str(organization_id),
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
+            "iat": now,
+            "exp": now + timedelta(days=ttl_days),
+        },
+        settings.jwt_secret,
+        algorithm="HS256",
+    )
+
+
 READ_ROLES = tuple(Role)
 WRITE_ROLES = (Role.OWNER, Role.MANAGER, Role.OPERATOR)
 REVIEW_ROLES = (Role.OWNER, Role.MANAGER, Role.REVIEWER)

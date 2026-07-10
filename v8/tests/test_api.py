@@ -32,6 +32,23 @@ def passenger_payload(passport: str = "U12345678") -> dict:
     }
 
 
+def test_first_run_setup_creates_owner_and_login_token(client):
+    assert client.get("/api/v8/setup").json()["setup_required"] is True
+
+    created = client.post(
+        "/api/v8/setup", json={"email": "bora@ornek.com", "display_name": "Bora"}
+    )
+    assert created.status_code == 201
+    token = created.json()["token"]
+
+    listed = client.get("/api/v8/operations", headers={"Authorization": f"Bearer {token}"})
+    assert listed.status_code == 200
+
+    again = client.post("/api/v8/setup", json={"email": "baska@ornek.com", "display_name": "Başkası"})
+    assert again.status_code == 409
+    assert client.get("/api/v8/setup").json()["setup_required"] is False
+
+
 def test_health(client):
     response = client.get("/api/v8/health")
     assert response.status_code == 200

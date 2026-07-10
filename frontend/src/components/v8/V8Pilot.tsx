@@ -10,9 +10,11 @@ import {
   createV8Operation,
   createV8Passenger,
   getV8ApiUrl,
+  getV8SetupStatus,
   listV8Operations,
   listV8Passengers,
   revealV8Passport,
+  runV8Setup,
   setV8ApiUrl,
   stageV8Import,
   uploadV8PassengerPhoto,
@@ -33,6 +35,7 @@ export function V8Pilot() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("V8 pilot bağlantısı bekleniyor.");
   const [apiUrl, setApiUrl] = useState("");
+  const [setupNeeded, setSetupNeeded] = useState(false);
 
   const hasIdentity = Boolean(identity.token || (identity.userId && identity.organizationId));
 
@@ -46,7 +49,36 @@ export function V8Pilot() {
         window.localStorage.removeItem("excelbase-v8-identity");
       }
     }
+    getV8SetupStatus()
+      .then((status) => setSetupNeeded(status.setup_required))
+      .catch(() => setSetupNeeded(false));
   }, []);
+
+  async function completeSetup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    setBusy(true);
+    try {
+      const result = await runV8Setup({
+        email: String(form.get("setupEmail") ?? ""),
+        display_name: String(form.get("setupName") ?? ""),
+      });
+      const nextIdentity: V8Identity = {
+        userId: result.user_id,
+        organizationId: result.organization_id,
+        token: result.token,
+      };
+      setIdentity(nextIdentity);
+      window.localStorage.setItem("excelbase-v8-identity", JSON.stringify(nextIdentity));
+      setSetupNeeded(false);
+      setMessage("Kurulum tamamlandı; hoş geldiniz!");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Kurulum tamamlanamadı.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const refreshOperations = useCallback(async () => {
     if (!hasIdentity) return;
@@ -212,6 +244,18 @@ export function V8Pilot() {
         </div>
         <span className={styles.status}>{busy ? "İşleniyor" : message}</span>
       </header>
+
+      {setupNeeded && (
+        <section className={styles.card}>
+          <h2>Hoş geldiniz — ilk kurulum</h2>
+          <p>Adınızı ve e-postanızı girin; hesabınız oluşturulsun ve otomatik giriş yapılsın.</p>
+          <form className={styles.stack} onSubmit={completeSetup}>
+            <input name="setupName" placeholder="Adınız" required />
+            <input name="setupEmail" type="email" placeholder="E-posta adresiniz" required />
+            <button disabled={busy} type="submit">Kurulumu tamamla</button>
+          </form>
+        </section>
+      )}
 
       <section className={styles.card}>
         <h2>Kimlik</h2>
