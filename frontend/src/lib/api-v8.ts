@@ -183,6 +183,32 @@ export async function runV8Setup(payload: {
   return (await response.json()) as { token: string; organization_id: string; user_id: string };
 }
 
+export type V7MigrationPhotoLink = {
+  passenger_id: string;
+  photo_ref: string;
+  passenger_name: string;
+};
+
+export type V7MigrationResult = {
+  created_operations: number;
+  created_passengers: number;
+  duplicate_passengers: number;
+  skipped_without_passport: number;
+  invalid_passports: number;
+  photo_links: V7MigrationPhotoLink[];
+};
+
+export function migrateV7ToV8(
+  identity: V8Identity,
+  payload: { passengers: Array<Record<string, unknown>>; origin?: string; destination?: string },
+): Promise<V7MigrationResult> {
+  return v8Request<V7MigrationResult>("/api/v8/migrations/v7", identity, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function listV8Operations(
   identity: V8Identity,
   options: { limit?: number; offset?: number } = {},

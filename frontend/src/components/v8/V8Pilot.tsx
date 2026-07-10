@@ -17,8 +17,10 @@ import {
   runV8Setup,
   setV8ApiUrl,
   stageV8Import,
+  migrateV7ToV8,
   uploadV8PassengerPhoto,
 } from "@/lib/api-v8";
+import { downloadUrl } from "@/lib/api";
 import styles from "./V8Pilot.module.css";
 
 const EMPTY_IDENTITY: V8Identity = { userId: "", organizationId: "", token: "" };
@@ -36,6 +38,7 @@ export function V8Pilot() {
   const [message, setMessage] = useState("V8 pilot bağlantısı bekleniyor.");
   const [apiUrl, setApiUrl] = useState("");
   const [setupNeeded, setSetupNeeded] = useState(false);
+  const [migrationSummary, setMigrationSummary] = useState<string[]>([]);
 
   const hasIdentity = Boolean(identity.token || (identity.userId && identity.organizationId));
 
@@ -75,6 +78,71 @@ export function V8Pilot() {
       setMessage("Kurulum tamamlandı; hoş geldiniz!");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Kurulum tamamlanamadı.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function migrateFromV7() {
+    setBusy(true);
+    setMigrationSummary([]);
+    try {
+      setMessage("V7 verileri okunuyor…");
+      const backupResponse = await fetch(downloadUrl("/api/backup"), { cache: "no-store" });
+      if (!backupResponse.ok) {
+        throw new Error(`V7 yedeği alınamadı (${backupResponse.status}).`);
+      }
+      const backup = (await backupResponse.json()) as { passengers?: Array<Record<string, unknown>> };
+      const records = backup.passengers ?? [];
+      if (records.length === 0) {
+        setMessage("V7 tarafında taşınacak yolcu bulunamadı.");
+        return;
+      }
+      setMessage(`${records.length} V7 kaydı V8'e taşınıyor…`);
+      const report = await migrateV7ToV8(identity, { passengers: records });
+
+      let photosMoved = 0;
+      let photosFailed = 0;
+      for (const link of report.photo_links) {
+        try {
+          const photoResponse = await fetch(
+            downloadUrl(`/api/photo/${encodeURIComponent(link.photo_ref)}`),
+            { cache: "no-store" },
+          );
+          if (!photoResponse.ok) {
+            photosFailed += 1;
+            continue;
+          }
+          const blob = await photoResponse.blob();
+          const file = new File([blob], link.photo_ref, { type: blob.type || "image/jpeg" });
+          await uploadV8PassengerPhoto(identity, link.passenger_id, file);
+          photosMoved += 1;
+          setMessage(`Fotoğraflar taşınıyor: ${photosMoved}/${report.photo_links.length}`);
+        } catch {
+          photosFailed += 1;
+        }
+      }
+
+      const lines = [
+        `${report.created_operations} yeni operasyon oluşturuldu.`,
+        `${report.created_passengers} yolcu taşındı; ${report.duplicate_passengers} kayıt zaten V8'de olduğu için atlandı.`,
+      ];
+      if (report.skipped_without_passport > 0) {
+        lines.push(`${report.skipped_without_passport} kayıt pasaport numarası olmadığı için taşınamadı.`);
+      }
+      if (report.invalid_passports > 0) {
+        lines.push(`${report.invalid_passports} kayıt geçersiz pasaport numarası nedeniyle taşınamadı.`);
+      }
+      if (report.photo_links.length > 0) {
+        lines.push(
+          `${photosMoved} fotoğraf taşındı${photosFailed > 0 ? `, ${photosFailed} fotoğraf taşınamadı` : ""}.`,
+        );
+      }
+      setMigrationSummary(lines);
+      setMessage("V7 taşıması tamamlandı.");
+      await refreshOperations();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "V7 taşıması başarısız.");
     } finally {
       setBusy(false);
     }
@@ -290,6 +358,27 @@ export function V8Pilot() {
           <button type="submit">Kimliği kaydet</button>
         </form>
       </section>
+
+      {hasIdentity && (
+        <section className={styles.card}>
+          <h2>V7 verilerini taşı</h2>
+          <p>
+            Eski (V7) uygulamadaki tüm yolcu listeleri ve fotoğraflar tek tuşla V8&apos;e kopyalanır.
+            Tarihlere göre V7-… kodlu operasyonlar oluşturulur; işlem güvenle tekrar çalıştırılabilir,
+            var olan kayıtlar atlanır. V7 tarafındaki verilere dokunulmaz.
+          </p>
+          <button disabled={busy} onClick={() => void migrateFromV7()} type="button">
+            V7 verilerini V8&apos;e taşı
+          </button>
+          {migrationSummary.length > 0 && (
+            <ul>
+              {migrationSummary.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section className={styles.columns}>
         <div className={styles.card}>

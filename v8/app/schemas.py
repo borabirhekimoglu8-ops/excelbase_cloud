@@ -210,6 +210,29 @@ class SetupRead(StrictModel):
     user_id: uuid.UUID
 
 
+class V7MigrationCreate(StrictModel):
+    """A V7 backup's `passengers` list with the original Turkish column names."""
+
+    passengers: list[dict] = Field(default_factory=list, max_length=50000)
+    origin: str = Field(default="Kuşadası", min_length=2, max_length=120)
+    destination: str = Field(default="Samos", min_length=2, max_length=120)
+
+
+class V7MigrationPhotoLink(StrictModel):
+    passenger_id: uuid.UUID
+    photo_ref: str
+    passenger_name: str
+
+
+class V7MigrationRead(StrictModel):
+    created_operations: int
+    created_passengers: int
+    duplicate_passengers: int
+    skipped_without_passport: int
+    invalid_passports: int
+    photo_links: list[V7MigrationPhotoLink]
+
+
 class ImportBatchRead(StrictModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID

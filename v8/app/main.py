@@ -41,8 +41,10 @@ from .schemas import (
     SetupCreate,
     SetupRead,
     SetupStatusRead,
+    V7MigrationCreate,
+    V7MigrationRead,
 )
-from . import services
+from . import migration, services
 
 logger = configure_logging()
 
@@ -333,6 +335,18 @@ def commit_import(
     identity: WriteIdentity,
 ) -> ImportCommitRead:
     return services.commit_import(db, identity, batch_id, request.state.request_id)
+
+
+@app.post("/api/v8/migrations/v7", response_model=V7MigrationRead, status_code=status.HTTP_201_CREATED)
+def migrate_v7(
+    request: Request,
+    payload: V7MigrationCreate,
+    db: DbSession,
+    identity: WriteIdentity,
+) -> V7MigrationRead:
+    if settings.rate_limit_enabled:
+        import_limiter.check(_rate_limit_key(request, identity))
+    return migration.migrate_v7_records(db, identity, payload, request.state.request_id)
 
 
 @app.get("/api/v8/audit/verify", response_model=AuditVerifyRead)
