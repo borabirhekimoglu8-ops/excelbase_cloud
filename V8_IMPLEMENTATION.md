@@ -1,5 +1,20 @@
 # Excelbase V8 Implementation Record
 
+## Hardening increment (2026-07-10)
+
+| Area | Change |
+|---|---|
+| Authentication | JWT bearer support (`V8_JWT_SECRET`); dev headers stay opt-in and are refused in production |
+| Encryption | Key-ID envelope ciphertexts (`v8:<key_id>:<token>`) with rotation via `V8_FIELD_ENCRYPTION_KEYS` |
+| Passport exposure | List/detail responses return masked passports; full value via audited, rate-limited reveal endpoint |
+| Photos | Upload/download/delete endpoints, `stored_objects` metadata, local + S3 adapters |
+| Concurrency | `StaleDataError` → 409, `SELECT FOR UPDATE` on import commit, partial unique index on active passports |
+| Audit | `audit_checkpoints` table; verification replays only events after the last checkpoint |
+| API ergonomics | Pagination envelopes, per-identity rate limiting, structured JSON request logs |
+| Migration | V7 backup migration now emits and enforces a verification report (`--verify-only` supported) |
+| Deploy | `render.yaml` V8 service + managed Postgres; secrets stay in Render dashboard |
+| CI | SQLite + PostgreSQL matrix, up/down/up migration smoke, Playwright e2e smoke job |
+
 ## Purpose
 
 This package establishes a production-oriented V8 foundation without modifying the working V7 application.
