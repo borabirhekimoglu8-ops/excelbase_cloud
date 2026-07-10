@@ -339,6 +339,10 @@ def serve_frontend(path: str = ""):
     requested = (FRONTEND_OUT / path).resolve()
     if requested.is_file() and FRONTEND_OUT in requested.parents:
         return FileResponse(str(requested))
+    # Next static export "/v8" rotasını v8/index.html değil v8.html olarak yazar.
+    page_file = (FRONTEND_OUT / f"{path.rstrip('/')}.html").resolve() if path else None
+    if page_file and page_file.is_file() and FRONTEND_OUT in page_file.parents:
+        return FileResponse(str(page_file))
     html_file = (FRONTEND_OUT / path / "index.html").resolve()
     if html_file.is_file() and FRONTEND_OUT in html_file.parents:
         return FileResponse(str(html_file))
