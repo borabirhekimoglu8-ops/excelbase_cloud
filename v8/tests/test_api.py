@@ -49,6 +49,85 @@ def test_first_run_setup_creates_owner_and_login_token(client):
     assert client.get("/api/v8/setup").json()["setup_required"] is False
 
 
+def test_v7_migration_moves_passengers_and_reports_photos(client, seeded):
+    records = [
+        {
+            "Ad": "Bora",
+            "Soyad": "Birhekimoğlu",
+            "Pasaport No": "U11111111",
+            "Gidiş Tarihi": "10.07.2026",
+            "Varış Tarihi": "17.07.2026",
+            "Voucher": "VCH-100",
+            "Vize Ücreti Yetişkin": "60,00",
+            "Foto": "abc123.jpg",
+        },
+        {
+            "Yolcu Adı Soyadı": "Ayşe Yılmaz",
+            "Pasaport No": "U22222222",
+            "Gidiş Tarihi": "10.07.2026",
+        },
+        # Tarihi okunamayan kayıt V7-TARIHSIZ operasyonuna gider.
+        {"Ad": "Ali", "Soyad": "Veli", "Pasaport No": "U33333333", "Gidiş Tarihi": "??"},
+        # Pasaportsuz kayıt taşınamaz.
+        {"Ad": "Eksik", "Soyad": "Pasaport"},
+    ]
+
+    response = client.post(
+        "/api/v8/migrations/v7",
+        headers=seeded["headers_a"],
+        json={"passengers": records},
+    )
+    assert response.status_code == 201
+    report = response.json()
+    assert report["created_operations"] == 2
+    assert report["created_passengers"] == 3
+    assert report["skipped_without_passport"] == 1
+    assert [link["photo_ref"] for link in report["photo_links"]] == ["abc123.jpg"]
+
+    codes = {
+        item["code"]
+        for item in client.get("/api/v8/operations", headers=seeded["headers_a"]).json()["items"]
+    }
+    assert {"V7-20260710", "V7-TARIHSIZ"} <= codes
+
+    # Yeniden çalıştırma idempotent: her şey duplicate sayılır, foto eşleşmesi
+    # fotoğrafı hâlâ olmayan yolcu için tekrar raporlanır.
+    rerun = client.post(
+        "/api/v8/migrations/v7",
+        headers=seeded["headers_a"],
+        json={"passengers": records},
+    ).json()
+    assert rerun["created_operations"] == 0
+    assert rerun["created_passengers"] == 0
+    assert rerun["duplicate_passengers"] == 3
+    assert [link["photo_ref"] for link in rerun["photo_links"]] == ["abc123.jpg"]
+
+    # Rapor edilen yolcuya fotoğraf yüklenebilir.
+    photo_link = report["photo_links"][0]
+    upload = client.post(
+        f"/api/v8/passengers/{photo_link['passenger_id']}/photo",
+        headers=seeded["headers_a"],
+        files={"file": ("abc123.jpg", b"\xff\xd8\xff\xdbJPEGDATA", "image/jpeg")},
+    )
+    assert upload.status_code == 201
+
+    third_run = client.post(
+        "/api/v8/migrations/v7",
+        headers=seeded["headers_a"],
+        json={"passengers": records},
+    ).json()
+    assert third_run["photo_links"] == []
+
+
+def test_v7_migration_requires_write_role(client, seeded):
+    response = client.post(
+        "/api/v8/migrations/v7",
+        headers=seeded["headers_viewer"],
+        json={"passengers": [{"Pasaport No": "U9", "Ad": "A", "Soyad": "B"}]},
+    )
+    assert response.status_code == 403
+
+
 def test_health(client):
     response = client.get("/api/v8/health")
     assert response.status_code == 200
