@@ -9,6 +9,14 @@ export const metadata: Metadata = {
     title: "Gate Visa",
     statusBarStyle: "black-translucent",
   },
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    // iOS Safari yalnızca PNG apple-touch-icon kabul eder.
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
