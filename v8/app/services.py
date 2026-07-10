@@ -834,6 +834,41 @@ def commit_import(
 
 
 
+def setup_required(db: Session) -> bool:
+    from .models import Organization
+
+    return db.scalar(select(Organization.id).limit(1)) is None
+
+
+def first_run_setup(db: Session, organization_name: str, email: str, display_name: str) -> tuple:
+    """Creates the first organization and owner. Only allowed while the
+    database has no organizations, so it cannot be abused after go-live."""
+    from .models import Membership, Organization, Role, User
+
+    if not setup_required(db):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Kurulum zaten tamamlanmış.",
+        )
+    organization = Organization(name=organization_name, slug="excelbase")
+    user = User(email=email, display_name=display_name)
+    db.add_all([organization, user])
+    try:
+        db.flush()
+        db.add(
+            Membership(
+                organization_id=organization.id,
+                user_id=user.id,
+                role=Role.OWNER.value,
+            )
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Kurulum zaten tamamlanmış.") from exc
+    return organization.id, user.id
+
+
 _VERIFY_BATCH_SIZE = 5000
 
 

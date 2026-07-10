@@ -38,6 +38,9 @@ from .schemas import (
     PassengerRead,
     PassengerUpdate,
     PassportRevealRead,
+    SetupCreate,
+    SetupRead,
+    SetupStatusRead,
 )
 from . import services
 
@@ -122,6 +125,27 @@ def root() -> dict:
 def health(db: DbSession) -> HealthRead:
     db.execute(text("SELECT 1"))
     return HealthRead(status="ok", version="8.0.0-alpha.2", database="ok")
+
+
+@app.get("/api/v8/setup", response_model=SetupStatusRead)
+def setup_status(db: DbSession) -> SetupStatusRead:
+    return SetupStatusRead(setup_required=services.setup_required(db))
+
+
+@app.post("/api/v8/setup", response_model=SetupRead, status_code=status.HTTP_201_CREATED)
+def first_run_setup(payload: SetupCreate, db: DbSession) -> SetupRead:
+    """One-time setup: creates the first organization + owner and returns a
+    login JWT. Rejected with 409 once any organization exists."""
+    from .auth import issue_jwt
+
+    organization_id, user_id = services.first_run_setup(
+        db, payload.organization, payload.email, payload.display_name
+    )
+    return SetupRead(
+        token=issue_jwt(user_id, organization_id),
+        organization_id=organization_id,
+        user_id=user_id,
+    )
 
 
 @app.post("/api/v8/operations", response_model=OperationRead, status_code=status.HTTP_201_CREATED)

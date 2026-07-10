@@ -186,6 +186,30 @@ class HealthRead(StrictModel):
     database: str
 
 
+class SetupStatusRead(StrictModel):
+    setup_required: bool
+
+
+class SetupCreate(StrictModel):
+    organization: str = Field(default="Excelbase", min_length=2, max_length=160)
+    email: str = Field(min_length=3, max_length=320)
+    display_name: str = Field(min_length=2, max_length=160)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        value = value.casefold()
+        if "@" not in value:
+            raise ValueError("Geçerli bir e-posta adresi girilmelidir.")
+        return value
+
+
+class SetupRead(StrictModel):
+    token: str
+    organization_id: uuid.UUID
+    user_id: uuid.UUID
+
+
 class ImportBatchRead(StrictModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID

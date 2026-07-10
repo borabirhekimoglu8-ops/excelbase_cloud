@@ -153,6 +153,36 @@ async function v8Request<T>(
   return (await response.json()) as T;
 }
 
+export async function getV8SetupStatus(): Promise<{ setup_required: boolean }> {
+  const response = await fetch(`${v8ApiBase()}/api/v8/setup`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Kurulum durumu alınamadı (${response.status}).`);
+  return (await response.json()) as { setup_required: boolean };
+}
+
+export async function runV8Setup(payload: {
+  organization?: string;
+  email: string;
+  display_name: string;
+}): Promise<{ token: string; organization_id: string; user_id: string }> {
+  const response = await fetch(`${v8ApiBase()}/api/v8/setup`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    let detail = `${response.status}`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      detail = body.detail ?? detail;
+    } catch {
+      /* yanıt gövdesi yoksa durum kodu yeterli */
+    }
+    throw new Error(detail);
+  }
+  return (await response.json()) as { token: string; organization_id: string; user_id: string };
+}
+
 export function listV8Operations(
   identity: V8Identity,
   options: { limit?: number; offset?: number } = {},
