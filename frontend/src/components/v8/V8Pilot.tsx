@@ -11,26 +11,33 @@ import {
   createV8Passenger,
   listV8Operations,
   listV8Passengers,
+  revealV8Passport,
   stageV8Import,
+  uploadV8PassengerPhoto,
 } from "@/lib/api-v8";
 import styles from "./V8Pilot.module.css";
 
-const EMPTY_IDENTITY: V8Identity = { userId: "", organizationId: "" };
+const EMPTY_IDENTITY: V8Identity = { userId: "", organizationId: "", token: "" };
 
 export function V8Pilot() {
   const [identity, setIdentity] = useState<V8Identity>(EMPTY_IDENTITY);
   const [operations, setOperations] = useState<V8Operation[]>([]);
+  const [operationTotal, setOperationTotal] = useState(0);
   const [selected, setSelected] = useState<V8Operation | null>(null);
   const [passengers, setPassengers] = useState<V8Passenger[]>([]);
+  const [passengerTotal, setPassengerTotal] = useState(0);
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<V8ImportPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("V8 pilot bağlantısı bekleniyor.");
+
+  const hasIdentity = Boolean(identity.token || (identity.userId && identity.organizationId));
 
   useEffect(() => {
     const saved = window.localStorage.getItem("excelbase-v8-identity");
     if (saved) {
       try {
-        setIdentity(JSON.parse(saved) as V8Identity);
+        setIdentity({ ...EMPTY_IDENTITY, ...(JSON.parse(saved) as V8Identity) });
       } catch {
         window.localStorage.removeItem("excelbase-v8-identity");
       }
@@ -38,18 +45,19 @@ export function V8Pilot() {
   }, []);
 
   const refreshOperations = useCallback(async () => {
-    if (!identity.userId || !identity.organizationId) return;
+    if (!hasIdentity) return;
     setBusy(true);
     try {
-      const data = await listV8Operations(identity);
-      setOperations(data);
-      setMessage(`${data.length} V8 operasyonu yüklendi.`);
+      const page = await listV8Operations(identity);
+      setOperations(page.items);
+      setOperationTotal(page.total);
+      setMessage(`${page.total} V8 operasyonundan ${page.items.length} tanesi yüklendi.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Operasyonlar yüklenemedi.");
     } finally {
       setBusy(false);
     }
-  }, [identity]);
+  }, [identity, hasIdentity]);
 
   useEffect(() => {
     void refreshOperations();
@@ -58,11 +66,13 @@ export function V8Pilot() {
   async function selectOperation(operation: V8Operation) {
     setSelected(operation);
     setPreview(null);
+    setRevealed({});
     setBusy(true);
     try {
-      const data = await listV8Passengers(identity, operation.id);
-      setPassengers(data);
-      setMessage(`${operation.code}: ${data.length} yolcu.`);
+      const page = await listV8Passengers(identity, operation.id);
+      setPassengers(page.items);
+      setPassengerTotal(page.total);
+      setMessage(`${operation.code}: ${page.total} yolcu.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Yolcular yüklenemedi.");
     } finally {
@@ -73,13 +83,15 @@ export function V8Pilot() {
   function saveIdentity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     window.localStorage.setItem("excelbase-v8-identity", JSON.stringify(identity));
-    setMessage("Geliştirme kimliği kaydedildi.");
+    setMessage(identity.token ? "JWT kimliği kaydedildi." : "Geliştirme kimliği kaydedildi.");
     void refreshOperations();
   }
 
   async function addOperation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    // event.currentTarget is nulled once the handler yields, so capture it first.
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setBusy(true);
     try {
       await createV8Operation(identity, {
@@ -89,7 +101,7 @@ export function V8Pilot() {
         departure_date: String(form.get("departure") ?? ""),
         vessel_name: String(form.get("vessel") ?? ""),
       });
-      event.currentTarget.reset();
+      formElement.reset();
       await refreshOperations();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Operasyon oluşturulamadı.");
@@ -101,7 +113,8 @@ export function V8Pilot() {
   async function addPassenger(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selected) return;
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setBusy(true);
     try {
       await createV8Passenger(identity, selected.id, {
@@ -109,14 +122,43 @@ export function V8Pilot() {
         last_name: String(form.get("lastName") ?? ""),
         passport_no: String(form.get("passport") ?? ""),
         voucher: String(form.get("voucher") ?? ""),
-        adult_fee: String(form.get("adultFee") ?? "0.00"),
-        child_fee: String(form.get("childFee") ?? "0.00"),
+        adult_fee: String(form.get("adultFee") || "0.00"),
+        child_fee: String(form.get("childFee") || "0.00"),
         currency: "EUR",
       });
-      event.currentTarget.reset();
+      formElement.reset();
       await selectOperation(selected);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Yolcu oluşturulamadı.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revealPassport(passenger: V8Passenger) {
+    setBusy(true);
+    try {
+      const result = await revealV8Passport(identity, passenger.id);
+      setRevealed((current) => ({ ...current, [passenger.id]: result.passport_no }));
+      setMessage("Pasaport görüntüleme audit kaydına işlendi.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Pasaport gösterilemedi.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function uploadPhoto(passenger: V8Passenger, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !selected) return;
+    setBusy(true);
+    try {
+      await uploadV8PassengerPhoto(identity, passenger.id, file);
+      await selectOperation(selected);
+      setMessage(`${passenger.full_name} için fotoğraf yüklendi.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Fotoğraf yüklenemedi.");
     } finally {
       setBusy(false);
     }
@@ -166,28 +208,36 @@ export function V8Pilot() {
       </header>
 
       <section className={styles.card}>
-        <h2>Geliştirme kimliği</h2>
-        <p>Production’da bu alan OIDC oturumuyla değiştirilecektir.</p>
-        <form className={styles.grid} onSubmit={saveIdentity}>
+        <h2>Kimlik</h2>
+        <p>JWT girildiğinde Bearer doğrulaması kullanılır; boşsa geliştirme başlıkları gönderilir.</p>
+        <form className={styles.stack} onSubmit={saveIdentity}>
           <input
-            aria-label="Organization ID"
-            placeholder="Organization UUID"
-            value={identity.organizationId}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setIdentity({ ...identity, organizationId: event.target.value })}
+            aria-label="JWT"
+            placeholder="JWT (production)"
+            value={identity.token ?? ""}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setIdentity({ ...identity, token: event.target.value })}
           />
-          <input
-            aria-label="User ID"
-            placeholder="User UUID"
-            value={identity.userId}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setIdentity({ ...identity, userId: event.target.value })}
-          />
+          <div className={styles.grid}>
+            <input
+              aria-label="Organization ID"
+              placeholder="Organization UUID (dev)"
+              value={identity.organizationId}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setIdentity({ ...identity, organizationId: event.target.value })}
+            />
+            <input
+              aria-label="User ID"
+              placeholder="User UUID (dev)"
+              value={identity.userId}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setIdentity({ ...identity, userId: event.target.value })}
+            />
+          </div>
           <button type="submit">Kimliği kaydet</button>
         </form>
       </section>
 
       <section className={styles.columns}>
         <div className={styles.card}>
-          <h2>Operasyonlar</h2>
+          <h2>Operasyonlar {operationTotal > 0 ? `(${operationTotal})` : ""}</h2>
           <form className={styles.stack} onSubmit={addOperation}>
             <input name="code" placeholder="KUS-SAM-20260710" required />
             <div className={styles.grid}>
@@ -217,7 +267,7 @@ export function V8Pilot() {
         </div>
 
         <div className={styles.card}>
-          <h2>{selected ? selected.code : "Operasyon seçin"}</h2>
+          <h2>{selected ? `${selected.code} (${passengerTotal})` : "Operasyon seçin"}</h2>
           {selected && (
             <>
               <form className={styles.stack} onSubmit={addPassenger}>
@@ -255,8 +305,29 @@ export function V8Pilot() {
                 {passengers.map((passenger) => (
                   <div className={styles.passenger} key={passenger.id}>
                     <strong>{passenger.full_name}</strong>
-                    <span>{passenger.passport_no} · {passenger.voucher || "Voucher yok"}</span>
-                    <small>{passenger.adult_fee} {passenger.currency} · v{passenger.version}</small>
+                    <span>
+                      {revealed[passenger.id] ?? passenger.passport_masked} · {passenger.voucher || "Voucher yok"}
+                    </span>
+                    <small>
+                      {passenger.adult_fee} {passenger.currency} · v{passenger.version}
+                      {passenger.photo_object_key ? " · fotoğraf var" : ""}
+                    </small>
+                    <div className={styles.grid}>
+                      {!revealed[passenger.id] && (
+                        <button disabled={busy} onClick={() => void revealPassport(passenger)} type="button">
+                          Pasaportu göster
+                        </button>
+                      )}
+                      <label className={styles.listItem}>
+                        Fotoğraf yükle
+                        <input
+                          accept="image/jpeg,image/png,image/webp"
+                          hidden
+                          onChange={(event) => void uploadPhoto(passenger, event)}
+                          type="file"
+                        />
+                      </label>
+                    </div>
                   </div>
                 ))}
               </div>

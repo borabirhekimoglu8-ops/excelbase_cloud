@@ -1,6 +1,16 @@
 export type V8Identity = {
   userId: string;
   organizationId: string;
+  /** JWT for production; when set it takes precedence over the dev headers. */
+  token?: string;
+};
+
+export type V8Page<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+  next_offset: number | null;
 };
 
 export type V8Operation = {
@@ -25,7 +35,7 @@ export type V8Passenger = {
   first_name: string;
   last_name: string;
   full_name: string;
-  passport_no: string;
+  passport_masked: string;
   voucher: string;
   arrival_date: string | null;
   adult_fee: string;
@@ -37,6 +47,20 @@ export type V8Passenger = {
   version: number;
   created_at: string;
   updated_at: string;
+};
+
+export type V8PassportReveal = {
+  passenger_id: string;
+  passport_no: string;
+};
+
+export type V8PassengerPhoto = {
+  passenger_id: string;
+  object_key: string;
+  sha256: string;
+  size_bytes: number;
+  mime_type: string;
+  version: number;
 };
 
 export type V8ImportPreview = {
@@ -69,15 +93,23 @@ export type V8ImportCommit = {
 
 const V8_API_BASE = process.env.NEXT_PUBLIC_V8_API_URL ?? "http://localhost:8080";
 
+function identityHeaders(identity: V8Identity, headers: Headers): void {
+  if (identity.token) {
+    headers.set("Authorization", `Bearer ${identity.token}`);
+    return;
+  }
+  // Dev headers are accepted only when the backend explicitly enables development identity.
+  if (identity.userId) headers.set("X-User-ID", identity.userId);
+  if (identity.organizationId) headers.set("X-Organization-ID", identity.organizationId);
+}
+
 async function v8Request<T>(
   path: string,
   identity: V8Identity,
   init: RequestInit = {},
 ): Promise<T> {
   const headers = new Headers(init.headers);
-  // These headers are accepted only when the backend explicitly enables development identity.
-  if (identity.userId) headers.set("X-User-ID", identity.userId);
-  if (identity.organizationId) headers.set("X-Organization-ID", identity.organizationId);
+  identityHeaders(identity, headers);
   const response = await fetch(`${V8_API_BASE}${path}`, {
     ...init,
     headers,
@@ -98,8 +130,15 @@ async function v8Request<T>(
   return (await response.json()) as T;
 }
 
-export function listV8Operations(identity: V8Identity): Promise<V8Operation[]> {
-  return v8Request<V8Operation[]>("/api/v8/operations", identity);
+export function listV8Operations(
+  identity: V8Identity,
+  options: { limit?: number; offset?: number } = {},
+): Promise<V8Page<V8Operation>> {
+  const params = new URLSearchParams();
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.offset) params.set("offset", String(options.offset));
+  const query = params.size ? `?${params.toString()}` : "";
+  return v8Request<V8Page<V8Operation>>(`/api/v8/operations${query}`, identity);
 }
 
 export function createV8Operation(
@@ -120,8 +159,16 @@ export function createV8Operation(
   });
 }
 
-export function listV8Passengers(identity: V8Identity, operationId: string): Promise<V8Passenger[]> {
-  return v8Request<V8Passenger[]>(`/api/v8/operations/${operationId}/passengers`, identity);
+export function listV8Passengers(
+  identity: V8Identity,
+  operationId: string,
+  options: { limit?: number; offset?: number } = {},
+): Promise<V8Page<V8Passenger>> {
+  const params = new URLSearchParams();
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.offset) params.set("offset", String(options.offset));
+  const query = params.size ? `?${params.toString()}` : "";
+  return v8Request<V8Page<V8Passenger>>(`/api/v8/operations/${operationId}/passengers${query}`, identity);
 }
 
 export function createV8Passenger(
@@ -143,6 +190,44 @@ export function createV8Passenger(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export function revealV8Passport(identity: V8Identity, passengerId: string): Promise<V8PassportReveal> {
+  return v8Request<V8PassportReveal>(`/api/v8/passengers/${passengerId}/passport/reveal`, identity, {
+    method: "POST",
+  });
+}
+
+export async function uploadV8PassengerPhoto(
+  identity: V8Identity,
+  passengerId: string,
+  file: File,
+): Promise<V8PassengerPhoto> {
+  const body = new FormData();
+  body.append("file", file);
+  return v8Request<V8PassengerPhoto>(`/api/v8/passengers/${passengerId}/photo`, identity, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function fetchV8PassengerPhoto(
+  identity: V8Identity,
+  passengerId: string,
+): Promise<Blob> {
+  const headers = new Headers();
+  identityHeaders(identity, headers);
+  const response = await fetch(`${V8_API_BASE}/api/v8/passengers/${passengerId}/photo`, {
+    headers,
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`Fotoğraf alınamadı (${response.status}).`);
+  return response.blob();
+}
+
+export function deleteV8PassengerPhoto(identity: V8Identity, passengerId: string): Promise<void> {
+  return v8Request<void>(`/api/v8/passengers/${passengerId}/photo`, identity, { method: "DELETE" });
 }
 
 export async function stageV8Import(
