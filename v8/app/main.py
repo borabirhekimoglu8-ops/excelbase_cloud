@@ -108,6 +108,16 @@ async def request_context(request: Request, call_next):
     return response
 
 
+@app.get("/", include_in_schema=False)
+def root() -> dict:
+    return {
+        "service": "Excelbase V8 API",
+        "message": "Bu adres yalnızca API sunucusudur. Uygulama arayüzü için excelbase servisinin /v8 sayfasını açın.",
+        "docs": "/api/v8/docs",
+        "health": "/api/v8/health",
+    }
+
+
 @app.get("/api/v8/health", response_model=HealthRead)
 def health(db: DbSession) -> HealthRead:
     db.execute(text("SELECT 1"))
