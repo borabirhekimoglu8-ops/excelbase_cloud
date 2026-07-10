@@ -1,0 +1,226 @@
+from __future__ import annotations
+
+import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from . import models  # noqa: F401
+from .auth import (
+    AUDIT_ROLES,
+    READ_ROLES,
+    WRITE_ROLES,
+    IdentityContext,
+    require_roles,
+)
+from .config import get_settings
+from .database import Base, get_db, get_engine
+from .schemas import (
+    AuditEventRead,
+    AuditVerifyRead,
+    ImportCommitRead,
+    ImportPreviewRead,
+    HealthRead,
+    OperationCreate,
+    OperationRead,
+    OperationUpdate,
+    PassengerCreate,
+    PassengerRead,
+    PassengerUpdate,
+)
+from . import services
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
+    if settings.auto_create_schema:
+        Base.metadata.create_all(bind=get_engine())
+    yield
+
+
+settings = get_settings()
+app = FastAPI(
+    title="Excelbase V8 API",
+    version="8.0.0-alpha.1",
+    docs_url="/api/v8/docs",
+    openapi_url="/api/v8/openapi.json",
+    lifespan=lifespan,
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(settings.allowed_origins),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["authorization", "content-type", "x-user-id", "x-organization-id", "x-request-id"],
+)
+
+DbSession = Annotated[Session, Depends(get_db)]
+ReadIdentity = Annotated[IdentityContext, Depends(require_roles(*READ_ROLES))]
+WriteIdentity = Annotated[IdentityContext, Depends(require_roles(*WRITE_ROLES))]
+AuditIdentity = Annotated[IdentityContext, Depends(require_roles(*AUDIT_ROLES))]
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if request.url.path.startswith("/api/v8"):
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@app.get("/api/v8/health", response_model=HealthRead)
+def health(db: DbSession) -> HealthRead:
+    db.execute(text("SELECT 1"))
+    return HealthRead(status="ok", version="8.0.0-alpha.1", database="ok")
+
+
+@app.post("/api/v8/operations", response_model=OperationRead, status_code=status.HTTP_201_CREATED)
+def create_operation(
+    request: Request,
+    payload: OperationCreate,
+    db: DbSession,
+    identity: WriteIdentity,
+) -> OperationRead:
+    return services.create_operation(db, identity, payload, request.state.request_id)
+
+
+@app.get("/api/v8/operations", response_model=list[OperationRead])
+def list_operations(
+    db: DbSession,
+    identity: ReadIdentity,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[OperationRead]:
+    return services.list_operations(db, identity, limit, offset)
+
+
+@app.get("/api/v8/operations/{operation_id}", response_model=OperationRead)
+def get_operation(operation_id: uuid.UUID, db: DbSession, identity: ReadIdentity) -> OperationRead:
+    return services.get_operation(db, identity, operation_id)
+
+
+@app.patch("/api/v8/operations/{operation_id}", response_model=OperationRead)
+def update_operation(
+    operation_id: uuid.UUID,
+    request: Request,
+    payload: OperationUpdate,
+    db: DbSession,
+    identity: WriteIdentity,
+) -> OperationRead:
+    return services.update_operation(db, identity, operation_id, payload, request.state.request_id)
+
+
+@app.post(
+    "/api/v8/operations/{operation_id}/passengers",
+    response_model=PassengerRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_passenger(
+    operation_id: uuid.UUID,
+    request: Request,
+    payload: PassengerCreate,
+    db: DbSession,
+    identity: WriteIdentity,
+) -> PassengerRead:
+    return services.create_passenger(db, identity, operation_id, payload, request.state.request_id)
+
+
+@app.get("/api/v8/operations/{operation_id}/passengers", response_model=list[PassengerRead])
+def list_passengers(
+    operation_id: uuid.UUID,
+    db: DbSession,
+    identity: ReadIdentity,
+    limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[PassengerRead]:
+    return services.list_passengers(db, identity, operation_id, limit, offset)
+
+
+@app.get("/api/v8/passengers/{passenger_id}", response_model=PassengerRead)
+def get_passenger(passenger_id: uuid.UUID, db: DbSession, identity: ReadIdentity) -> PassengerRead:
+    return services.get_passenger(db, identity, passenger_id)
+
+
+@app.patch("/api/v8/passengers/{passenger_id}", response_model=PassengerRead)
+def update_passenger(
+    passenger_id: uuid.UUID,
+    request: Request,
+    payload: PassengerUpdate,
+    db: DbSession,
+    identity: WriteIdentity,
+) -> PassengerRead:
+    return services.update_passenger(db, identity, passenger_id, payload, request.state.request_id)
+
+
+@app.delete("/api/v8/passengers/{passenger_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_passenger(
+    passenger_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    identity: WriteIdentity,
+    version: int = Query(ge=1),
+) -> Response:
+    services.delete_passenger(db, identity, passenger_id, version, request.state.request_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post(
+    "/api/v8/operations/{operation_id}/imports",
+    response_model=ImportPreviewRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def stage_import(
+    operation_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    identity: WriteIdentity,
+    file: UploadFile = File(...),
+) -> ImportPreviewRead:
+    filename = file.filename or "gate-visa.xlsx"
+    extension = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    if extension not in {"xlsx", "xls", "xlsm", "ods", "csv"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Desteklenmeyen import dosya türü.")
+    data = await file.read(settings.max_import_bytes + 1)
+    if len(data) > settings.max_import_bytes:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Import dosyası boyut limitini aşıyor.")
+    return services.stage_import(db, identity, operation_id, filename, data, request.state.request_id)
+
+
+@app.get("/api/v8/imports/{batch_id}", response_model=ImportPreviewRead)
+def import_preview(batch_id: uuid.UUID, db: DbSession, identity: ReadIdentity) -> ImportPreviewRead:
+    return services.get_import_preview(db, identity, batch_id)
+
+
+@app.post("/api/v8/imports/{batch_id}/commit", response_model=ImportCommitRead)
+def commit_import(
+    batch_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    identity: WriteIdentity,
+) -> ImportCommitRead:
+    return services.commit_import(db, identity, batch_id, request.state.request_id)
+
+
+@app.get("/api/v8/audit/verify", response_model=AuditVerifyRead)
+def verify_audit(db: DbSession, identity: AuditIdentity) -> AuditVerifyRead:
+    return services.verify_audit_chain(db, identity)
+
+
+@app.get("/api/v8/audit", response_model=list[AuditEventRead])
+def list_audit(
+    db: DbSession,
+    identity: AuditIdentity,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[AuditEventRead]:
+    return [AuditEventRead.model_validate(item) for item in services.list_audit_events(db, identity, limit)]

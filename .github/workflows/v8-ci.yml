@@ -1,0 +1,70 @@
+name: Excelbase V8 CI
+
+on:
+  push:
+    paths:
+      - "v8/**"
+      - ".github/workflows/v8-ci.yml"
+      - "frontend/src/lib/api-v8.ts"
+      - "frontend/src/app/v8/**"
+      - "frontend/src/components/v8/**"
+  pull_request:
+    paths:
+      - "v8/**"
+      - ".github/workflows/v8-ci.yml"
+      - "frontend/src/lib/api-v8.ts"
+      - "frontend/src/app/v8/**"
+      - "frontend/src/components/v8/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: v8
+    env:
+      V8_APP_ENV: test
+      V8_DATABASE_URL: sqlite:///./ci-v8.db
+      V8_ALLOW_DEV_IDENTITY: "1"
+      V8_AUTO_CREATE_SCHEMA: "0"
+      V8_FIELD_ENCRYPTION_KEY: VnnOE-2sAytxd3h6MM9KWtX32DCXJRkJx_uzoIyWnzY=
+      V8_PASSPORT_HMAC_KEY: ci-passport-hmac-key-that-is-definitely-longer-than-32-bytes
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: v8/pyproject.toml
+      - name: Install
+        run: python -m pip install -e '.[dev]'
+      - name: Lint
+        run: ruff check app tests scripts
+      - name: Migration smoke test
+        run: alembic upgrade head
+      - name: Test
+        run: python -m pytest
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Build V8 pilot
+        env:
+          NEXT_PUBLIC_V8_API_URL: http://localhost:8080
+        run: npm run build

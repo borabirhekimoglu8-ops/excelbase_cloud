@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "excelbase-v8"
+version = "8.0.0a1"
+description = "Relational, multi-tenant foundation for Excelbase Gate Visa PAX"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "alembic==1.18.4",
+  "cryptography==46.0.4",
+  "fastapi==0.128.2",
+  "pandas==2.2.3",
+  "openpyxl==3.1.5",
+  "odfpy==1.4.1",
+  "xlrd==2.0.1",
+  "pydantic==2.13.4",
+  "python-multipart==0.0.29",
+  "SQLAlchemy==2.0.50",
+  "uvicorn[standard]==0.48.0",
+]
+
+[project.optional-dependencies]
+postgres = ["pg8000>=1.31,<2"]
+dev = [
+  "httpx==0.28.1",
+  "pytest==9.0.2",
+  "pytest-cov>=6,<8",
+  "ruff>=0.12,<1",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --disable-warnings --maxfail=1"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["F"]

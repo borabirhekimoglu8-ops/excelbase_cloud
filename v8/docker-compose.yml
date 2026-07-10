@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: excelbase_v8
+      POSTGRES_USER: excelbase
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - excelbase_v8_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U excelbase -d excelbase_v8"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: ..
+      dockerfile: v8/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      V8_APP_ENV: development
+      V8_DATABASE_URL: postgresql+pg8000://excelbase:${POSTGRES_PASSWORD}@db:5432/excelbase_v8
+      V8_ALLOW_DEV_IDENTITY: "1"
+      V8_AUTO_CREATE_SCHEMA: "0"
+      V8_FIELD_ENCRYPTION_KEY: ${V8_FIELD_ENCRYPTION_KEY:?set V8_FIELD_ENCRYPTION_KEY}
+      V8_PASSPORT_HMAC_KEY: ${V8_PASSPORT_HMAC_KEY:?set V8_PASSPORT_HMAC_KEY}
+      V8_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8080
+    ports:
+      - "8080:8080"
+
+volumes:
+  excelbase_v8_pg:
