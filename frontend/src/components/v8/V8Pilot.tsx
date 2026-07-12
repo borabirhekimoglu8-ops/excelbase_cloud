@@ -8,7 +8,6 @@ import {
   V8Passenger,
   autoImportV8Excel,
   commitV8Import,
-  createV8Operation,
   createV8Passenger,
   deleteV8Passenger,
   deleteV8PassengerPhoto,
@@ -77,8 +76,18 @@ export function V8Pilot() {
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [operationNotes, setOperationNotes] = useState("");
+  const [operationDateFrom, setOperationDateFrom] = useState("");
+  const [operationDateTo, setOperationDateTo] = useState("");
 
   const hasIdentity = Boolean(identity.token || (identity.userId && identity.organizationId));
+  const operationFilterActive = Boolean(operationDateFrom || operationDateTo);
+  const filteredOperations = operations.filter((operation) => {
+    const departureDate = operation.departure_date.slice(0, 10);
+    return (
+      (!operationDateFrom || departureDate >= operationDateFrom) &&
+      (!operationDateTo || departureDate <= operationDateTo)
+    );
+  });
 
   useEffect(() => {
     setApiUrl(getV8ApiUrl());
@@ -267,7 +276,7 @@ export function V8Pilot() {
     if (!hasIdentity) return;
     setBusy(true);
     try {
-      const page = await listV8Operations(identity);
+      const page = await listV8Operations(identity, { limit: 500 });
       setOperations(page.items);
       setOperationTotal(page.total);
       setMessage(`${page.total} V8 operasyonundan ${page.items.length} tanesi yüklendi.`);
@@ -479,29 +488,6 @@ export function V8Pilot() {
     window.localStorage.setItem("excelbase-v8-identity", JSON.stringify(identity));
     setMessage(identity.token ? "JWT kimliği kaydedildi." : "Geliştirme kimliği kaydedildi.");
     void refreshOperations();
-  }
-
-  async function addOperation(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    // event.currentTarget is nulled once the handler yields, so capture it first.
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    setBusy(true);
-    try {
-      await createV8Operation(identity, {
-        code: String(form.get("code") ?? ""),
-        route_origin: String(form.get("origin") ?? ""),
-        route_destination: String(form.get("destination") ?? ""),
-        departure_date: String(form.get("departure") ?? ""),
-        vessel_name: String(form.get("vessel") ?? ""),
-      });
-      formElement.reset();
-      await refreshOperations();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Operasyon oluşturulamadı.");
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function addPassenger(event: FormEvent<HTMLFormElement>) {
@@ -727,32 +713,68 @@ export function V8Pilot() {
 
       <section className={styles.columns}>
         <div className={styles.card}>
-          <h2>Operasyonlar {operationTotal > 0 ? `(${operationTotal})` : ""}</h2>
-          <form className={styles.stack} onSubmit={addOperation}>
-            <input name="code" placeholder="KUS-SAM-20260710" required />
+          <h2>
+            Operasyonlar{" "}
+            {operationTotal > 0
+              ? `(${operationFilterActive ? `${filteredOperations.length}/` : ""}${operationTotal})`
+              : ""}
+          </h2>
+          <p>Operasyonlar Excel yüklediğinizde gidiş tarihine göre otomatik oluşur.</p>
+          <div className={styles.stack}>
             <div className={styles.grid}>
-              <input name="origin" placeholder="Kuşadası" required />
-              <input name="destination" placeholder="Samos Vathy" required />
+              <label className={styles.filterField}>
+                <span>Başlangıç tarihi</span>
+                <input
+                  aria-label="Operasyon başlangıç tarihi"
+                  max={operationDateTo || undefined}
+                  onChange={(event) => setOperationDateFrom(event.target.value)}
+                  type="date"
+                  value={operationDateFrom}
+                />
+              </label>
+              <label className={styles.filterField}>
+                <span>Bitiş tarihi</span>
+                <input
+                  aria-label="Operasyon bitiş tarihi"
+                  min={operationDateFrom || undefined}
+                  onChange={(event) => setOperationDateTo(event.target.value)}
+                  type="date"
+                  value={operationDateTo}
+                />
+              </label>
             </div>
-            <div className={styles.grid}>
-              <input name="departure" type="date" required />
-              <input name="vessel" placeholder="Gemi" />
-            </div>
-            <button disabled={busy} type="submit">Operasyon oluştur</button>
-          </form>
-          <div className={styles.list}>
-            {operations.map((operation) => (
+            {operationFilterActive && (
               <button
-                key={operation.id}
-                className={selected?.id === operation.id ? styles.selected : styles.listItem}
-                onClick={() => void selectOperation(operation)}
+                disabled={busy}
+                onClick={() => {
+                  setOperationDateFrom("");
+                  setOperationDateTo("");
+                }}
                 type="button"
               >
-                <strong>{operation.code}</strong>
-                <span>{operation.route_origin} → {operation.route_destination}</span>
-                <small>{operation.departure_date} · {operation.status} · v{operation.version}</small>
+                Tarih filtresini temizle
               </button>
-            ))}
+            )}
+          </div>
+          <div className={styles.list}>
+            {filteredOperations.length === 0 ? (
+              <p>Bu tarih aralığında operasyon bulunamadı.</p>
+            ) : (
+              filteredOperations.map((operation) => (
+                <button
+                  key={operation.id}
+                  className={selected?.id === operation.id ? styles.selected : styles.listItem}
+                  onClick={() => void selectOperation(operation)}
+                  type="button"
+                >
+                  <strong>{operation.code}</strong>
+                  <span>{operation.route_origin} → {operation.route_destination}</span>
+                  <small>
+                    {operation.departure_date} · {STATUS_LABELS[operation.status] ?? operation.status}
+                  </small>
+                </button>
+              ))
+            )}
           </div>
         </div>
 
