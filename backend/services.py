@@ -232,6 +232,18 @@ def _parse_import_files(files: Iterable[tuple[str, bytes]]) -> tuple[pd.DataFram
         loaded_names.append(filename)
         all_results.extend(read_gate_visa_file_bytes(filename, data))
     imported_df = gate_visa_results_to_passengers(all_results)
+    if imported_df.empty:
+        errors: list[str] = []
+        for result in all_results:
+            if "Hata" not in result.dataframe.columns:
+                continue
+            errors.extend(
+                str(value).strip()
+                for value in result.dataframe["Hata"].tolist()
+                if str(value).strip()
+            )
+        detail = errors[0] if errors else "Dosyada aktarılabilir yolcu satırı bulunamadı."
+        raise ValueError(detail)
     return imported_df, loaded_names, validate_passenger_rows(imported_df)
 
 

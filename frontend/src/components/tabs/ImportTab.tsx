@@ -46,23 +46,21 @@ export function ImportTab() {
     setPassengers(rows);
   }, []);
 
-  async function checkItem(item: QueueItem) {
+  async function checkItem(item: QueueItem): Promise<QueueItem | null> {
     try {
       const preview = await previewPassengerFile(item.file);
+      const readyItem: QueueItem = {
+        ...item,
+        status: "ready",
+        rows: preview.rows,
+        duplicates: preview.duplicate_count,
+        invalid: preview.invalid_count,
+        message: preview.warnings.join(" "),
+      };
       setQueue((current) =>
-        current.map((row) =>
-          row.id === item.id
-            ? {
-                ...row,
-                status: "ready",
-                rows: preview.rows,
-                duplicates: preview.duplicate_count,
-                invalid: preview.invalid_count,
-                message: preview.warnings.join(" "),
-              }
-            : row,
-        ),
+        current.map((row) => row.id === item.id ? readyItem : row),
       );
+      return readyItem;
     } catch (err) {
       setQueue((current) =>
         current.map((row) =>
@@ -71,11 +69,12 @@ export function ImportTab() {
             : row,
         ),
       );
+      return null;
     }
   }
 
   useEffect(() => {
-    void loadQueueFiles().then((stored) => {
+    void loadQueueFiles().then(async (stored) => {
       const restored = stored.map<QueueItem>((item) => ({
         id: item.id,
         file: item.file,
@@ -87,7 +86,14 @@ export function ImportTab() {
       }));
       if (restored.length) {
         setQueue(restored);
-        restored.forEach((item) => void checkItem(item));
+        setBusy(true);
+        const ready: QueueItem[] = [];
+        for (const item of restored) {
+          const checked = await checkItem(item);
+          if (checked) ready.push(checked);
+        }
+        if (ready.length) await startImport(ready);
+        else setBusy(false);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,14 +122,19 @@ export function ImportTab() {
       message: "Ön kontrol yapılıyor…",
     }));
     setQueue((current) => [...current.filter((row) => row.status !== "success"), ...items]);
+    setBusy(true);
+    const ready: QueueItem[] = [];
     for (const item of items) {
       await persistQueueFile({ id: item.id, file: item.file, createdAt: Date.now() });
-      await checkItem(item);
+      const checked = await checkItem(item);
+      if (checked) ready.push(checked);
     }
+    if (ready.length) await startImport(ready);
+    else setBusy(false);
   }
 
-  async function startImport() {
-    const pending = queue.filter((item) => item.status === "ready");
+  async function startImport(explicitItems?: QueueItem[]) {
+    const pending = explicitItems ?? queue.filter((item) => item.status === "ready");
     if (!pending.length) return;
     setBusy(true);
     const batchId = crypto.randomUUID();
@@ -223,7 +234,10 @@ export function ImportTab() {
 
   async function retryItem(item: QueueItem) {
     setQueue((current) => current.map((row) => row.id === item.id ? { ...row, status: "checking", message: "Yeniden kontrol ediliyor…" } : row));
-    await checkItem(item);
+    setBusy(true);
+    const checked = await checkItem(item);
+    if (checked) await startImport([checked]);
+    else setBusy(false);
   }
 
   async function discardItem(item: QueueItem) {
@@ -242,7 +256,7 @@ export function ImportTab() {
         <div>
           <p className="overline">VERİ AKTARIMI</p>
           <h2>Toplu liste merkezi</h2>
-          <p>Dosya adedi sınırı olmadan, kontrollü ve sıralı aktarım.</p>
+          <p>Dosya adedi sınırı olmadan; seçilen listeler kontrol edilir ve otomatik aktarılır.</p>
         </div>
         {summary.can_undo && (
           <button className="text-btn danger-text" onClick={() => void handleUndo()} type="button">
@@ -260,7 +274,7 @@ export function ImportTab() {
           </div>
           <label className="primary-btn compact-btn">
             Dosya seç
-            <input type="file" accept=".xlsx,.xls,.xlsm,.ods,.csv" multiple onChange={handleExcel} />
+            <input type="file" accept=".xlsx,.xls,.xlsm,.ods,.csv" multiple onChange={handleExcel} disabled={busy} />
           </label>
         </div>
 
@@ -309,7 +323,7 @@ export function ImportTab() {
           )}
         </div>
         <button className="primary-btn wide" disabled={!canStart} onClick={() => void startImport()} type="button">
-          {busy ? "İşlem sürüyor…" : "Kontrol edilen dosyaları aktar"}
+          {busy ? "Otomatik aktarım sürüyor…" : "Hazır dosyaları yeniden aktar"}
         </button>
       </section>
 
