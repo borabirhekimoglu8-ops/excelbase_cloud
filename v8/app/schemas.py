@@ -233,6 +233,19 @@ class V7MigrationRead(StrictModel):
     photo_links: list[V7MigrationPhotoLink]
 
 
+class OperationSummaryRead(StrictModel):
+    passenger_count: int
+    with_photo: int
+    missing_photo: int
+    missing_voucher: int
+    missing_fee: int
+    ready: int
+    readiness_percent: int
+    adult_total: Decimal
+    child_total: Decimal
+    total_fee: Decimal
+
+
 class PhotoMatchItem(StrictModel):
     passenger_id: uuid.UUID
     passenger_name: str

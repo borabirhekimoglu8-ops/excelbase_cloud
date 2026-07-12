@@ -263,6 +263,102 @@ def test_passenger_search_and_status_filters(client, seeded):
     assert set(fetch("sort=recent")) == {"Ada", "Alan"}
 
 
+def test_summary_export_manifest_package_and_template(client, seeded):
+    import zipfile as zipfile_module
+    from io import BytesIO
+
+    operation = client.post(
+        "/api/v8/operations", headers=seeded["headers_a"], json=operation_payload("EXPORT-OP")
+    ).json()
+    ada = client.post(
+        f"/api/v8/operations/{operation['id']}/passengers",
+        headers=seeded["headers_a"],
+        json={**passenger_payload("U44444444"), "first_name": "Ada", "last_name": "Lovelace"},
+    ).json()
+    client.post(
+        f"/api/v8/passengers/{ada['id']}/photo",
+        headers=seeded["headers_a"],
+        files={"file": ("ada.jpg", _tiny_jpeg(), "image/jpeg")},
+    )
+
+    summary = client.get(
+        f"/api/v8/operations/{operation['id']}/summary", headers=seeded["headers_a"]
+    ).json()
+    assert summary["passenger_count"] == 1
+    assert summary["with_photo"] == 1
+    assert summary["readiness_percent"] == 100
+    assert summary["total_fee"] == "60.00"
+
+    csv_export = client.get(
+        f"/api/v8/operations/{operation['id']}/export?kind=csv", headers=seeded["headers_a"]
+    )
+    assert csv_export.status_code == 200
+    assert "U44444444" in csv_export.text
+
+    excel_export = client.get(
+        f"/api/v8/operations/{operation['id']}/export?kind=excel", headers=seeded["headers_a"]
+    )
+    assert excel_export.status_code == 200
+    assert excel_export.content[:4] == b"PK\x03\x04"
+
+    manifest = client.get(
+        f"/api/v8/operations/{operation['id']}/manifest", headers=seeded["headers_a"]
+    )
+    assert manifest.status_code == 200
+    assert "U44444444" in manifest.text
+    assert "data:image/jpeg;base64," in manifest.text
+
+    package = client.get(
+        f"/api/v8/operations/{operation['id']}/package", headers=seeded["headers_a"]
+    )
+    assert package.status_code == 200
+    names = zipfile_module.ZipFile(BytesIO(package.content)).namelist()
+    assert "EXPORT-OP.xlsx" in names
+    assert any(name.startswith("fotograflar/") for name in names)
+
+    template = client.get("/api/v8/template", headers=seeded["headers_a"])
+    assert template.status_code == 200
+    assert template.content[:4] == b"PK\x03\x04"
+
+    # Pasaport ifşa eden uçlar viewer rolüne kapalıdır ve audit'e işlenir.
+    for path in ("export?kind=csv", "manifest", "package"):
+        denied = client.get(
+            f"/api/v8/operations/{operation['id']}/{path}", headers=seeded["headers_viewer"]
+        )
+        assert denied.status_code == 403
+
+    db = get_session_factory()()
+    actions = {event.action for event in db.scalars(select(AuditEvent)).all()}
+    db.close()
+    assert {"operation.exported", "operation.manifest_viewed", "operation.package_downloaded"} <= actions
+
+
+def test_heic_like_photo_is_converted_to_jpeg(client, seeded):
+    operation = client.post(
+        "/api/v8/operations", headers=seeded["headers_a"], json=operation_payload("HEIC-OP")
+    ).json()
+    passenger = client.post(
+        f"/api/v8/operations/{operation['id']}/passengers",
+        headers=seeded["headers_a"],
+        json=passenger_payload("U99999990"),
+    ).json()
+    # Bilinmeyen mime ile gönderilen geçerli görüntü JPEG'e çevrilir.
+    upload = client.post(
+        f"/api/v8/passengers/{passenger['id']}/photo",
+        headers=seeded["headers_a"],
+        files={"file": ("foto.heic", _tiny_jpeg(), "application/octet-stream")},
+    )
+    assert upload.status_code == 201
+    assert upload.json()["mime_type"] == "image/jpeg"
+
+    broken = client.post(
+        f"/api/v8/passengers/{passenger['id']}/photo",
+        headers=seeded["headers_a"],
+        files={"file": ("bozuk.heic", b"not-an-image", "application/octet-stream")},
+    )
+    assert broken.status_code == 400
+
+
 def test_v7_migration_requires_write_role(client, seeded):
     response = client.post(
         "/api/v8/migrations/v7",
