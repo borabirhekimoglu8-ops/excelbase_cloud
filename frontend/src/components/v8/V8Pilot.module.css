@@ -51,6 +51,7 @@
 .photo { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; border: 1px solid #2b4a67; }
 .noPhoto { width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px dashed #2b4a67; color: #83a0ba; font-size: 11px; text-align: center; flex-shrink: 0; }
 .block { display: block; }
+.filterField { display: grid; gap: 6px; color: #9cb2c8; font-size: 13px; }
 
 @media (max-width: 760px) {
   .page { padding: 14px; }
