@@ -481,14 +481,18 @@ def upload_passenger_photo(
     passenger = PassengerRepository.get(db, identity.organization_id, passenger_id)
     if passenger is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Yolcu bulunamadı.")
-    suffix = _ALLOWED_PHOTO_TYPES.get(mime_type)
-    if suffix is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Fotoğraf yalnızca JPEG, PNG veya WebP olabilir.",
-        )
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fotoğraf dosyası boş.")
+    suffix = _ALLOWED_PHOTO_TYPES.get(mime_type)
+    if suffix is None:
+        # iPhone HEIC gibi formatlar tarayıcı dostu JPEG'e çevrilerek kabul edilir.
+        converted = _photo_to_jpeg(data)
+        if converted is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Fotoğraf okunamadı; JPEG, PNG, WebP veya HEIC yükleyin.",
+            )
+        data, mime_type, suffix = converted, "image/jpeg", ".jpg"
     storage = get_storage()
     name = filename if filename.lower().endswith(suffix) else f"photo{suffix}"
     blob = storage.put(organization_id=identity.organization_id, name=name, data=data, mime_type=mime_type)

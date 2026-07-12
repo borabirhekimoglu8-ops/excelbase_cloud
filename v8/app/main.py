@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -39,6 +39,7 @@ from .schemas import (
     PassengerRead,
     PassengerUpdate,
     PassportRevealRead,
+    OperationSummaryRead,
     PhotoMatchRead,
     SetupCreate,
     SetupRead,
@@ -46,7 +47,7 @@ from .schemas import (
     V7MigrationCreate,
     V7MigrationRead,
 )
-from . import migration, services
+from . import exports, migration, services
 
 logger = configure_logging()
 
@@ -189,6 +190,63 @@ def update_operation(
     identity: WriteIdentity,
 ) -> OperationRead:
     return services.update_operation(db, identity, operation_id, payload, request.state.request_id)
+
+
+@app.get("/api/v8/operations/{operation_id}/summary", response_model=OperationSummaryRead)
+def operation_summary(operation_id: uuid.UUID, db: DbSession, identity: ReadIdentity) -> OperationSummaryRead:
+    return exports.operation_summary(db, identity, operation_id)
+
+
+@app.get("/api/v8/operations/{operation_id}/export")
+def export_operation(
+    operation_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    identity: RevealIdentity,
+    kind: str = Query(default="excel", max_length=10),
+) -> Response:
+    """Pasaportlar açık halde dışa aktarılır; bu yüzden reveal rolü ister ve
+    audit zincirine işlenir."""
+    data, filename, mime = exports.export_operation(db, identity, operation_id, kind, request.state.request_id)
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/v8/operations/{operation_id}/manifest", response_class=HTMLResponse)
+def operation_manifest(
+    operation_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    identity: RevealIdentity,
+) -> HTMLResponse:
+    return HTMLResponse(content=exports.build_manifest_html(db, identity, operation_id, request.state.request_id))
+
+
+@app.get("/api/v8/operations/{operation_id}/package")
+def operation_package(
+    operation_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    identity: RevealIdentity,
+) -> Response:
+    data, filename = exports.build_package_zip(db, identity, operation_id, request.state.request_id)
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/v8/template")
+def template(identity: ReadIdentity) -> Response:
+    return Response(
+        content=exports.template_xlsx(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="gate-visa-pax-sablonu.xlsx"'},
+    )
 
 
 @app.post(

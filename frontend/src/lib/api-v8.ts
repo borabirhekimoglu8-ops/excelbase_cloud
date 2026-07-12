@@ -284,6 +284,119 @@ export function listV8Passengers(
   return v8Request<V8Page<V8Passenger>>(`/api/v8/operations/${operationId}/passengers${query}`, identity);
 }
 
+export type V8OperationSummary = {
+  passenger_count: number;
+  with_photo: number;
+  missing_photo: number;
+  missing_voucher: number;
+  missing_fee: number;
+  ready: number;
+  readiness_percent: number;
+  adult_total: string;
+  child_total: string;
+  total_fee: string;
+};
+
+export function getV8OperationSummary(
+  identity: V8Identity,
+  operationId: string,
+): Promise<V8OperationSummary> {
+  return v8Request<V8OperationSummary>(`/api/v8/operations/${operationId}/summary`, identity);
+}
+
+export function updateV8Operation(
+  identity: V8Identity,
+  operationId: string,
+  payload: { version: number; status?: string; vessel_name?: string; notes?: string },
+): Promise<V8Operation> {
+  return v8Request<V8Operation>(`/api/v8/operations/${operationId}`, identity, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateV8Passenger(
+  identity: V8Identity,
+  passengerId: string,
+  payload: {
+    version: number;
+    first_name?: string;
+    last_name?: string;
+    passport_no?: string;
+    voucher?: string;
+    arrival_date?: string | null;
+    adult_fee?: string;
+    child_fee?: string;
+  },
+): Promise<V8Passenger> {
+  return v8Request<V8Passenger>(`/api/v8/passengers/${passengerId}`, identity, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteV8Passenger(
+  identity: V8Identity,
+  passengerId: string,
+  version: number,
+): Promise<void> {
+  return v8Request<void>(`/api/v8/passengers/${passengerId}?version=${version}`, identity, {
+    method: "DELETE",
+  });
+}
+
+async function v8Download(identity: V8Identity, path: string): Promise<{ blob: Blob; filename: string }> {
+  const headers = new Headers();
+  identityHeaders(identity, headers);
+  const response = await fetch(`${v8ApiBase()}${path}`, { headers, cache: "no-store" });
+  if (!response.ok) {
+    let detail = `${response.status}`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      detail = body.detail ?? detail;
+    } catch {
+      /* durum kodu yeterli */
+    }
+    throw new Error(detail);
+  }
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  return { blob: await response.blob(), filename: match?.[1] ?? "indirilen-dosya" };
+}
+
+/** kind: excel | csv | json */
+export function exportV8Operation(
+  identity: V8Identity,
+  operationId: string,
+  kind: string,
+): Promise<{ blob: Blob; filename: string }> {
+  return v8Download(identity, `/api/v8/operations/${operationId}/export?kind=${encodeURIComponent(kind)}`);
+}
+
+export function downloadV8Package(
+  identity: V8Identity,
+  operationId: string,
+): Promise<{ blob: Blob; filename: string }> {
+  return v8Download(identity, `/api/v8/operations/${operationId}/package`);
+}
+
+export function downloadV8Template(identity: V8Identity): Promise<{ blob: Blob; filename: string }> {
+  return v8Download(identity, "/api/v8/template");
+}
+
+export async function fetchV8Manifest(identity: V8Identity, operationId: string): Promise<string> {
+  const headers = new Headers();
+  identityHeaders(identity, headers);
+  const response = await fetch(`${v8ApiBase()}/api/v8/operations/${operationId}/manifest`, {
+    headers,
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`Manifest alınamadı (${response.status}).`);
+  return response.text();
+}
+
 export function createV8Passenger(
   identity: V8Identity,
   operationId: string,

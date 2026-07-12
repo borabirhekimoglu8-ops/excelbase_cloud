@@ -43,6 +43,14 @@
 .passenger { display: grid; gap: 4px; padding: 13px; border: 1px solid #1f3b55; border-radius: 12px; background: #081522; }
 .importBox, .preview { display: grid; gap: 10px; margin-top: 18px; padding: 14px; border: 1px dashed #3d6a8f; border-radius: 14px; }
 .preview { background: #0c2236; }
+.summary { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; padding: 12px; border: 1px solid #1f3b55; border-radius: 12px; background: #0c2236; color: #c6d6e5; font-size: 14px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.actions button, .uploadBtn { min-height: 38px; padding: 6px 12px; font-size: 13px; }
+.uploadBtn { display: inline-flex; align-items: center; border: 1px solid #2b4a67; border-radius: 12px; background: #12395a; cursor: pointer; }
+.passengerRow { display: flex; gap: 12px; align-items: center; }
+.photo { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; border: 1px solid #2b4a67; }
+.noPhoto { width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px dashed #2b4a67; color: #83a0ba; font-size: 11px; text-align: center; flex-shrink: 0; }
+.block { display: block; }
 
 @media (max-width: 760px) {
   .page { padding: 14px; }

@@ -4,12 +4,21 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from
 import {
   V8Identity,
   V8Operation,
+  V8OperationSummary,
   V8Passenger,
   autoImportV8Excel,
   commitV8Import,
   createV8Operation,
   createV8Passenger,
+  deleteV8Passenger,
+  deleteV8PassengerPhoto,
+  downloadV8Package,
+  downloadV8Template,
+  exportV8Operation,
+  fetchV8Manifest,
+  fetchV8PassengerPhoto,
   getV8ApiUrl,
+  getV8OperationSummary,
   getV8SetupStatus,
   listV8Operations,
   listV8Passengers,
@@ -19,12 +28,34 @@ import {
   setV8ApiUrl,
   stageV8Import,
   migrateV7ToV8,
+  updateV8Operation,
+  updateV8Passenger,
   uploadV8PassengerPhoto,
 } from "@/lib/api-v8";
 import { downloadUrl } from "@/lib/api";
 import styles from "./V8Pilot.module.css";
 
 const EMPTY_IDENTITY: V8Identity = { userId: "", organizationId: "", token: "" };
+
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Taslak",
+  DOCUMENT_COLLECTION: "Evrak toplama",
+  PHYSICAL_CONTROL: "Fiziki kontrol",
+  READY_FOR_SUBMISSION: "Teslime hazır",
+  SUBMITTED: "Teslim edildi",
+  APPROVED: "Onaylandı",
+  COMPLETED: "Tamamlandı",
+  ARCHIVED: "Arşiv",
+};
+
+function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 export function V8Pilot() {
   const [identity, setIdentity] = useState<V8Identity>(EMPTY_IDENTITY);
@@ -42,6 +73,10 @@ export function V8Pilot() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [sortOrder, setSortOrder] = useState("");
+  const [summary, setSummary] = useState<V8OperationSummary | null>(null);
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [operationNotes, setOperationNotes] = useState("");
 
   const hasIdentity = Boolean(identity.token || (identity.userId && identity.organizationId));
 
@@ -219,7 +254,8 @@ export function V8Pilot() {
       }
       setMigrationSummary(lines);
       setMessage("Fotoğraf yükleme tamamlandı.");
-      if (selected) await selectOperation(selected);
+      setPhotoUrls({});
+      if (selected) await loadPassengers(selected);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Fotoğraflar yüklenemedi.");
     } finally {
@@ -250,13 +286,17 @@ export function V8Pilot() {
     async (operation: V8Operation) => {
       setBusy(true);
       try {
-        const page = await listV8Passengers(identity, operation.id, {
-          search: search.trim() || undefined,
-          status: statusFilter || undefined,
-          sort: sortOrder || undefined,
-        });
+        const [page, summaryData] = await Promise.all([
+          listV8Passengers(identity, operation.id, {
+            search: search.trim() || undefined,
+            status: statusFilter || undefined,
+            sort: sortOrder || undefined,
+          }),
+          getV8OperationSummary(identity, operation.id),
+        ]);
         setPassengers(page.items);
         setPassengerTotal(page.total);
+        setSummary(summaryData);
         setMessage(`${operation.code}: ${page.total} yolcu.`);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Yolcular yüklenemedi.");
@@ -270,7 +310,158 @@ export function V8Pilot() {
   async function selectOperation(operation: V8Operation) {
     setSelected(operation);
     setRevealed({});
+    setEditingId(null);
+    setOperationNotes(operation.notes ?? "");
     await loadPassengers(operation);
+  }
+
+  // Fotoğraflar korumalı uçtan geldiği için yetkili istekle indirilip
+  // tarayıcıda geçici URL olarak gösterilir.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const passenger of passengers) {
+        if (!passenger.photo_object_key || photoUrls[passenger.id]) continue;
+        try {
+          const blob = await fetchV8PassengerPhoto(identity, passenger.id);
+          if (cancelled) return;
+          setPhotoUrls((current) => ({ ...current, [passenger.id]: URL.createObjectURL(blob) }));
+        } catch {
+          /* foto yüklenemezse kart fotosuz gösterilir */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [passengers]);
+
+  async function changeOperationStatus(nextStatus: string) {
+    if (!selected || nextStatus === selected.status) return;
+    setBusy(true);
+    try {
+      const updated = await updateV8Operation(identity, selected.id, {
+        version: selected.version,
+        status: nextStatus,
+      });
+      setSelected(updated);
+      setMessage(`Durum güncellendi: ${STATUS_LABELS[updated.status] ?? updated.status}.`);
+      await refreshOperations();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Durum güncellenemedi.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveOperationNotes() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const updated = await updateV8Operation(identity, selected.id, {
+        version: selected.version,
+        notes: operationNotes,
+      });
+      setSelected(updated);
+      setMessage("Operasyon notu kaydedildi.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Not kaydedilemedi.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function download(kindOrAction: "excel" | "csv" | "package" | "template" | "manifest") {
+    setBusy(true);
+    try {
+      if (kindOrAction === "manifest") {
+        if (!selected) return;
+        const html = await fetchV8Manifest(identity, selected.id);
+        const win = window.open("", "_blank");
+        if (win) {
+          win.document.write(html);
+          win.document.close();
+        }
+        setMessage("Manifest yeni sekmede açıldı.");
+        return;
+      }
+      if (kindOrAction === "template") {
+        const result = await downloadV8Template(identity);
+        saveBlob(result.blob, result.filename);
+        setMessage("Şablon indirildi.");
+        return;
+      }
+      if (!selected) return;
+      const result =
+        kindOrAction === "package"
+          ? await downloadV8Package(identity, selected.id)
+          : await exportV8Operation(identity, selected.id, kindOrAction);
+      saveBlob(result.blob, result.filename);
+      setMessage(`${result.filename} indirildi.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "İndirme başarısız.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePassengerEdit(passenger: V8Passenger, event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    try {
+      const passportInput = String(form.get("editPassport") ?? "").trim();
+      await updateV8Passenger(identity, passenger.id, {
+        version: passenger.version,
+        first_name: String(form.get("editFirstName") ?? "").trim(),
+        last_name: String(form.get("editLastName") ?? "").trim(),
+        // Maskeli değer değiştirilmediyse pasaporta dokunma.
+        ...(passportInput && !passportInput.includes("*") ? { passport_no: passportInput } : {}),
+        voucher: String(form.get("editVoucher") ?? "").trim(),
+        adult_fee: String(form.get("editAdultFee") || "0.00"),
+        child_fee: String(form.get("editChildFee") || "0.00"),
+      });
+      setEditingId(null);
+      if (selected) await loadPassengers(selected);
+      setMessage(`${passenger.full_name} güncellendi.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Yolcu güncellenemedi.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removePassenger(passenger: V8Passenger) {
+    if (!window.confirm(`${passenger.full_name} silinsin mi?`)) return;
+    setBusy(true);
+    try {
+      await deleteV8Passenger(identity, passenger.id, passenger.version);
+      if (selected) await loadPassengers(selected);
+      setMessage(`${passenger.full_name} silindi.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Yolcu silinemedi.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removePhoto(passenger: V8Passenger) {
+    setBusy(true);
+    try {
+      await deleteV8PassengerPhoto(identity, passenger.id);
+      setPhotoUrls((current) => {
+        const next = { ...current };
+        delete next[passenger.id];
+        return next;
+      });
+      if (selected) await loadPassengers(selected);
+      setMessage(`${passenger.full_name} fotoğrafı silindi.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Fotoğraf silinemedi.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Arama/filtre değiştikçe liste kısa bir gecikmeyle kendiliğinden yenilenir.
@@ -358,7 +549,12 @@ export function V8Pilot() {
     setBusy(true);
     try {
       await uploadV8PassengerPhoto(identity, passenger.id, file);
-      await selectOperation(selected);
+      setPhotoUrls((current) => {
+        const next = { ...current };
+        delete next[passenger.id];
+        return next;
+      });
+      await loadPassengers(selected);
       setMessage(`${passenger.full_name} için fotoğraf yüklendi.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Fotoğraf yüklenemedi.");
@@ -531,6 +727,45 @@ export function V8Pilot() {
           <h2>{selected ? `${selected.code} (${passengerTotal})` : "Operasyon seçin"}</h2>
           {selected && (
             <>
+              {summary && (
+                <div className={styles.summary}>
+                  <span>👥 {summary.passenger_count} yolcu</span>
+                  <span>✅ %{summary.readiness_percent} hazır</span>
+                  <span>📷 {summary.with_photo} fotoğraflı</span>
+                  <span>🎫 {summary.missing_voucher} voucher eksik</span>
+                  <span>💶 {summary.total_fee} EUR toplam</span>
+                </div>
+              )}
+
+              <div className={styles.grid}>
+                <select
+                  aria-label="Operasyon durumu"
+                  value={selected.status}
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) => void changeOperationStatus(event.target.value)}
+                >
+                  {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+                <button disabled={busy} onClick={() => void saveOperationNotes()} type="button">
+                  Notu kaydet
+                </button>
+              </div>
+              <input
+                aria-label="Operasyon notu"
+                placeholder="Operasyon notu / görevli"
+                value={operationNotes}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setOperationNotes(event.target.value)}
+              />
+
+              <div className={styles.actions}>
+                <button disabled={busy} onClick={() => void download("excel")} type="button">Excel indir</button>
+                <button disabled={busy} onClick={() => void download("csv")} type="button">CSV indir</button>
+                <button disabled={busy} onClick={() => void download("manifest")} type="button">Manifest</button>
+                <button disabled={busy} onClick={() => void download("package")} type="button">Paket (ZIP)</button>
+                <button disabled={busy} onClick={() => void download("template")} type="button">Şablon</button>
+              </div>
+
               <form className={styles.stack} onSubmit={addPassenger}>
                 <div className={styles.grid}>
                   <input name="firstName" placeholder="Ad" required />
@@ -593,30 +828,77 @@ export function V8Pilot() {
               <div className={styles.list}>
                 {passengers.map((passenger) => (
                   <div className={styles.passenger} key={passenger.id}>
-                    <strong>{passenger.full_name}</strong>
-                    <span>
-                      {revealed[passenger.id] ?? passenger.passport_masked} · {passenger.voucher || "Voucher yok"}
-                    </span>
-                    <small>
-                      {passenger.adult_fee} {passenger.currency} · v{passenger.version}
-                      {passenger.photo_object_key ? " · fotoğraf var" : ""}
-                    </small>
-                    <div className={styles.grid}>
-                      {!revealed[passenger.id] && (
-                        <button disabled={busy} onClick={() => void revealPassport(passenger)} type="button">
-                          Pasaportu göster
-                        </button>
+                    <div className={styles.passengerRow}>
+                      {photoUrls[passenger.id] ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img alt={passenger.full_name} className={styles.photo} src={photoUrls[passenger.id]} />
+                      ) : (
+                        <div className={styles.noPhoto}>Foto yok</div>
                       )}
-                      <label className={styles.listItem}>
-                        Fotoğraf yükle
-                        <input
-                          accept="image/jpeg,image/png,image/webp"
-                          hidden
-                          onChange={(event) => void uploadPhoto(passenger, event)}
-                          type="file"
-                        />
-                      </label>
+                      <div>
+                        <strong>{passenger.full_name}</strong>
+                        <span className={styles.block}>
+                          {revealed[passenger.id] ?? passenger.passport_masked} · {passenger.voucher || "Voucher yok"}
+                        </span>
+                        <small className={styles.block}>
+                          {passenger.adult_fee} {passenger.currency}
+                          {passenger.arrival_date ? ` · varış ${passenger.arrival_date}` : ""}
+                        </small>
+                      </div>
                     </div>
+
+                    {editingId === passenger.id ? (
+                      <form className={styles.stack} onSubmit={(event) => void savePassengerEdit(passenger, event)}>
+                        <div className={styles.grid}>
+                          <input defaultValue={passenger.first_name} name="editFirstName" placeholder="Ad" required />
+                          <input defaultValue={passenger.last_name} name="editLastName" placeholder="Soyad" required />
+                        </div>
+                        <div className={styles.grid}>
+                          <input
+                            defaultValue={revealed[passenger.id] ?? passenger.passport_masked}
+                            name="editPassport"
+                            placeholder="Pasaport"
+                          />
+                          <input defaultValue={passenger.voucher} name="editVoucher" placeholder="Voucher" />
+                        </div>
+                        <div className={styles.grid}>
+                          <input defaultValue={passenger.adult_fee} inputMode="decimal" name="editAdultFee" placeholder="Yetişkin ücret" />
+                          <input defaultValue={passenger.child_fee} inputMode="decimal" name="editChildFee" placeholder="Çocuk ücret" />
+                        </div>
+                        <div className={styles.grid}>
+                          <button disabled={busy} type="submit">Kaydet</button>
+                          <button disabled={busy} onClick={() => setEditingId(null)} type="button">Vazgeç</button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className={styles.actions}>
+                        {!revealed[passenger.id] && (
+                          <button disabled={busy} onClick={() => void revealPassport(passenger)} type="button">
+                            Pasaportu göster
+                          </button>
+                        )}
+                        <button disabled={busy} onClick={() => setEditingId(passenger.id)} type="button">
+                          Düzenle
+                        </button>
+                        <label className={styles.uploadBtn}>
+                          Fotoğraf yükle
+                          <input
+                            accept="image/*,.heic,.heif"
+                            hidden
+                            onChange={(event) => void uploadPhoto(passenger, event)}
+                            type="file"
+                          />
+                        </label>
+                        {passenger.photo_object_key && (
+                          <button disabled={busy} onClick={() => void removePhoto(passenger)} type="button">
+                            Fotoğrafı sil
+                          </button>
+                        )}
+                        <button disabled={busy} onClick={() => void removePassenger(passenger)} type="button">
+                          Sil
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
