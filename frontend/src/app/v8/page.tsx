@@ -1,5 +1,5 @@
-import { V8Pilot } from "@/components/v8/V8Pilot";
+import { OperationApp } from "@/components/OperationApp";
 
 export default function V8Page() {
-  return <V8Pilot />;
+  return <OperationApp />;
 }
