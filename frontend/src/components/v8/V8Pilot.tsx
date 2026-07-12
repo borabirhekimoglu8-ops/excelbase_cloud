@@ -1,11 +1,11 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   V8Identity,
-  V8ImportPreview,
   V8Operation,
   V8Passenger,
+  autoImportV8Excel,
   commitV8Import,
   createV8Operation,
   createV8Passenger,
@@ -13,6 +13,7 @@ import {
   getV8SetupStatus,
   listV8Operations,
   listV8Passengers,
+  matchV8Photos,
   revealV8Passport,
   runV8Setup,
   setV8ApiUrl,
@@ -33,7 +34,6 @@ export function V8Pilot() {
   const [passengers, setPassengers] = useState<V8Passenger[]>([]);
   const [passengerTotal, setPassengerTotal] = useState(0);
   const [revealed, setRevealed] = useState<Record<string, string>>({});
-  const [preview, setPreview] = useState<V8ImportPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("V8 pilot bağlantısı bekleniyor.");
   const [apiUrl, setApiUrl] = useState("");
@@ -83,11 +83,14 @@ export function V8Pilot() {
     }
   }
 
-  async function migrateFromV7() {
-    setBusy(true);
-    setMigrationSummary([]);
+  async function migrateFromV7(options: { silent?: boolean } = {}) {
+    const { silent = false } = options;
+    if (!silent) {
+      setBusy(true);
+      setMigrationSummary([]);
+    }
     try {
-      setMessage("V7 verileri okunuyor…");
+      if (!silent) setMessage("V7 verileri okunuyor…");
       const backupResponse = await fetch(downloadUrl("/api/backup"), { cache: "no-store" });
       if (!backupResponse.ok) {
         throw new Error(`V7 yedeği alınamadı (${backupResponse.status}).`);
@@ -95,7 +98,7 @@ export function V8Pilot() {
       const backup = (await backupResponse.json()) as { passengers?: Array<Record<string, unknown>> };
       const records = backup.passengers ?? [];
       if (records.length === 0) {
-        setMessage("V7 tarafında taşınacak yolcu bulunamadı.");
+        if (!silent) setMessage("V7 tarafında taşınacak yolcu bulunamadı.");
         return;
       }
       setMessage(`${records.length} V7 kaydı V8'e taşınıyor…`);
@@ -142,7 +145,80 @@ export function V8Pilot() {
       setMessage("V7 taşıması tamamlandı.");
       await refreshOperations();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "V7 taşıması başarısız.");
+      if (!silent) setMessage(error instanceof Error ? error.message : "V7 taşıması başarısız.");
+    } finally {
+      if (!silent) setBusy(false);
+    }
+  }
+
+  // Sayfa açıldığında V7 tarafında veri varsa kullanıcıdan tuş beklemeden
+  // V8'e taşınır; işlem idempotent olduğundan her açılışta güvenle denenir.
+  const autoSyncStarted = useRef(false);
+  useEffect(() => {
+    if (!hasIdentity || setupNeeded || autoSyncStarted.current) return;
+    autoSyncStarted.current = true;
+    void migrateFromV7({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasIdentity, setupNeeded]);
+
+  async function importExcelFiles(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    setBusy(true);
+    setMigrationSummary([]);
+    try {
+      let operationsCreated = 0;
+      let passengersCreated = 0;
+      let duplicates = 0;
+      const problems: string[] = [];
+      for (const [index, file] of files.entries()) {
+        setMessage(`Excel işleniyor (${index + 1}/${files.length}): ${file.name}`);
+        try {
+          const report = await autoImportV8Excel(identity, file);
+          operationsCreated += report.created_operations;
+          passengersCreated += report.created_passengers;
+          duplicates += report.duplicate_passengers;
+          if (report.skipped_without_passport > 0 || report.invalid_passports > 0) {
+            problems.push(
+              `${file.name}: ${report.skipped_without_passport + report.invalid_passports} satır pasaport sorunu nedeniyle atlandı.`,
+            );
+          }
+        } catch (error) {
+          problems.push(`${file.name}: ${error instanceof Error ? error.message : "işlenemedi"}`);
+        }
+      }
+      const lines = [
+        `${passengersCreated} yolcu eklendi, ${operationsCreated} operasyon oluşturuldu.`,
+      ];
+      if (duplicates > 0) lines.push(`${duplicates} kayıt zaten var olduğu için atlandı.`);
+      lines.push(...problems);
+      setMigrationSummary(lines);
+      setMessage("Excel içe aktarma tamamlandı.");
+      await refreshOperations();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function bulkUploadPhotos(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    setBusy(true);
+    setMigrationSummary([]);
+    try {
+      setMessage(`${files.length} fotoğraf eşleştiriliyor…`);
+      const report = await matchV8Photos(identity, files);
+      const lines = [`${report.matched} fotoğraf yolcularla eşleşti ve kaydedildi.`];
+      if (report.unmatched.length > 0) {
+        lines.push(`Eşleşmeyenler: ${report.unmatched.join(", ")}`);
+      }
+      setMigrationSummary(lines);
+      setMessage("Fotoğraf yükleme tamamlandı.");
+      if (selected) await selectOperation(selected);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Fotoğraflar yüklenemedi.");
     } finally {
       setBusy(false);
     }
@@ -169,7 +245,6 @@ export function V8Pilot() {
 
   async function selectOperation(operation: V8Operation) {
     setSelected(operation);
-    setPreview(null);
     setRevealed({});
     setBusy(true);
     try {
@@ -270,34 +345,30 @@ export function V8Pilot() {
     }
   }
 
-  async function stageImport(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selected) return;
-    const form = new FormData(event.currentTarget);
-    const file = form.get("file");
-    if (!(file instanceof File) || !file.size) return;
+  // Tek adımlı import: dosya seçilir seçilmez doğrulanır ve geçerli satırlar
+  // otomatik commit edilir; kullanıcıdan ek onay istenmez.
+  async function importIntoSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !selected) return;
     setBusy(true);
     try {
-      const result = await stageV8Import(identity, selected.id, file);
-      setPreview(result);
-      setMessage(`${result.batch.valid_rows} geçerli, ${result.batch.invalid_rows} hatalı satır.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Import staging başarısız.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function commitImport() {
-    if (!selected || !preview) return;
-    setBusy(true);
-    try {
-      const result = await commitV8Import(identity, preview.batch.id);
-      setPreview(null);
+      setMessage(`${file.name} işleniyor…`);
+      const staged = await stageV8Import(identity, selected.id, file);
+      if (staged.batch.valid_rows === 0) {
+        setMessage(`${file.name}: geçerli satır bulunamadı (${staged.batch.invalid_rows} hatalı satır).`);
+        return;
+      }
+      const result = await commitV8Import(identity, staged.batch.id);
       await selectOperation(selected);
-      setMessage(`${result.created} yolcu commit edildi; ${result.skipped_duplicates} duplicate atlandı.`);
+      setMessage(
+        `${result.created} yolcu eklendi` +
+          (result.skipped_duplicates > 0 ? `, ${result.skipped_duplicates} kayıt zaten vardı` : "") +
+          (result.invalid_rows > 0 ? `, ${result.invalid_rows} hatalı satır atlandı` : "") +
+          ".",
+      );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Import commit başarısız.");
+      setMessage(error instanceof Error ? error.message : "Import başarısız.");
     } finally {
       setBusy(false);
     }
@@ -361,14 +432,37 @@ export function V8Pilot() {
 
       {hasIdentity && (
         <section className={styles.card}>
-          <h2>V7 verilerini taşı</h2>
+          <h2>Excel ve fotoğraf yükle — gerisi otomatik</h2>
           <p>
-            Eski (V7) uygulamadaki tüm yolcu listeleri ve fotoğraflar tek tuşla V8&apos;e kopyalanır.
-            Tarihlere göre V7-… kodlu operasyonlar oluşturulur; işlem güvenle tekrar çalıştırılabilir,
-            var olan kayıtlar atlanır. V7 tarafındaki verilere dokunulmaz.
+            Excel dosyalarını seçmeniz yeterli: operasyonlar gidiş tarihlerine göre kendiliğinden
+            oluşturulur, yolcular yerleştirilir, tekrar eden kayıtlar atlanır. Fotoğraflarda ise dosya
+            adındaki pasaport numarası veya ad-soyad ile doğru yolcu otomatik bulunur (ZIP de olur).
+            V7 tarafında veri varsa sayfa açılışında kendiliğinden V8&apos;e taşınır.
           </p>
+          <div className={styles.grid}>
+            <label className={styles.listItem}>
+              Excel yükle (çoklu seçilebilir)
+              <input
+                accept=".xlsx,.xls,.xlsm,.ods,.csv"
+                hidden
+                multiple
+                onChange={(event) => void importExcelFiles(event)}
+                type="file"
+              />
+            </label>
+            <label className={styles.listItem}>
+              Fotoğraf yükle (çoklu / ZIP)
+              <input
+                accept="image/*,.zip,.heic,.heif"
+                hidden
+                multiple
+                onChange={(event) => void bulkUploadPhotos(event)}
+                type="file"
+              />
+            </label>
+          </div>
           <button disabled={busy} onClick={() => void migrateFromV7()} type="button">
-            V7 verilerini V8&apos;e taşı
+            V7 verilerini V8&apos;e taşı (elle tetikle)
           </button>
           {migrationSummary.length > 0 && (
             <ul>
@@ -431,20 +525,15 @@ export function V8Pilot() {
                 <button disabled={busy} type="submit">Yolcu ekle</button>
               </form>
 
-              <form className={styles.importBox} onSubmit={stageImport}>
-                <input name="file" type="file" accept=".xlsx,.xls,.xlsm,.ods,.csv" required />
-                <button disabled={busy} type="submit">Import önizle</button>
-              </form>
-
-              {preview && (
-                <div className={styles.preview}>
-                  <strong>{preview.batch.filename}</strong>
-                  <span>{preview.batch.valid_rows} geçerli · {preview.batch.invalid_rows} hatalı</span>
-                  <button disabled={busy || preview.batch.valid_rows === 0} onClick={() => void commitImport()} type="button">
-                    Geçerli satırları commit et
-                  </button>
-                </div>
-              )}
+              <label className={styles.importBox}>
+                Bu operasyona Excel yükle — otomatik işlenir
+                <input
+                  accept=".xlsx,.xls,.xlsm,.ods,.csv"
+                  hidden
+                  onChange={(event) => void importIntoSelected(event)}
+                  type="file"
+                />
+              </label>
 
               <div className={styles.list}>
                 {passengers.map((passenger) => (

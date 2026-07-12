@@ -38,6 +38,7 @@ from .schemas import (
     PassengerRead,
     PassengerUpdate,
     PassportRevealRead,
+    PhotoMatchRead,
     SetupCreate,
     SetupRead,
     SetupStatusRead,
@@ -346,7 +347,60 @@ def migrate_v7(
 ) -> V7MigrationRead:
     if settings.rate_limit_enabled:
         import_limiter.check(_rate_limit_key(request, identity))
-    return migration.migrate_v7_records(db, identity, payload, request.state.request_id)
+    return migration.migrate_records(
+        db,
+        identity,
+        payload.passengers,
+        request.state.request_id,
+        origin=payload.origin,
+        destination=payload.destination,
+    )
+
+
+@app.post("/api/v8/imports/auto", response_model=V7MigrationRead, status_code=status.HTTP_201_CREATED)
+async def auto_import_excel(
+    request: Request,
+    db: DbSession,
+    identity: WriteIdentity,
+    file: UploadFile = File(...),
+) -> V7MigrationRead:
+    """Tek adımlı Excel içe aktarma: onay adımı olmadan gidiş tarihlerine göre
+    operasyonlar oluşturur ve yolcuları yerleştirir; tekrar yüklemek güvenlidir."""
+    if settings.rate_limit_enabled:
+        import_limiter.check(_rate_limit_key(request, identity))
+    filename = file.filename or "gate-visa.xlsx"
+    extension = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    if extension not in {"xlsx", "xls", "xlsm", "ods", "csv"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Desteklenmeyen import dosya türü.")
+    data = await file.read(settings.max_import_bytes + 1)
+    if len(data) > settings.max_import_bytes:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Import dosyası boyut limitini aşıyor.")
+    return migration.import_excel_auto(db, identity, filename, data, request.state.request_id)
+
+
+@app.post("/api/v8/photos/match", response_model=PhotoMatchRead)
+async def match_photos(
+    request: Request,
+    db: DbSession,
+    identity: WriteIdentity,
+    files: list[UploadFile] = File(...),
+) -> PhotoMatchRead:
+    """Toplu fotoğraf yükleme: dosya adındaki pasaport numarası veya ad-soyada
+    göre yolcular otomatik bulunur; ZIP arşivleri de desteklenir."""
+    if settings.rate_limit_enabled:
+        import_limiter.check(_rate_limit_key(request, identity))
+    if len(files) > 300:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="En fazla 300 dosya yüklenebilir.")
+    payload: list[tuple[str, bytes]] = []
+    for upload in files:
+        data = await upload.read(settings.max_photo_bytes + 1)
+        if len(data) > settings.max_photo_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"{upload.filename}: fotoğraf boyut limitini aşıyor.",
+            )
+        payload.append((upload.filename or "foto.jpg", data))
+    return services.match_passenger_photos(db, identity, payload, request.state.request_id)
 
 
 @app.get("/api/v8/audit/verify", response_model=AuditVerifyRead)

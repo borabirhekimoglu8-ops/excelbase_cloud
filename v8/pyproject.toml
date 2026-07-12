@@ -17,6 +17,8 @@ dependencies = [
   "xlrd==2.0.1",
   "pydantic==2.13.4",
   "PyJWT>=2.10,<3",
+  "pillow>=10,<14",
+  "pillow-heif>=0.16",
   "python-multipart==0.0.29",
   "SQLAlchemy==2.0.50",
   "uvicorn[standard]==0.48.0",

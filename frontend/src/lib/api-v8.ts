@@ -209,6 +209,26 @@ export function migrateV7ToV8(
   });
 }
 
+export type V8PhotoMatchResult = {
+  matched: number;
+  unmatched: string[];
+  attached: Array<{ passenger_id: string; passenger_name: string; filename: string }>;
+};
+
+/** Tek adımlı Excel içe aktarma: operasyonlar gidiş tarihine göre otomatik oluşturulur. */
+export function autoImportV8Excel(identity: V8Identity, file: File): Promise<V7MigrationResult> {
+  const body = new FormData();
+  body.append("file", file);
+  return v8Request<V7MigrationResult>("/api/v8/imports/auto", identity, { method: "POST", body });
+}
+
+/** Toplu fotoğraf yükleme: dosya adından pasaport/ad-soyad eşleştirmesi sunucuda yapılır. */
+export function matchV8Photos(identity: V8Identity, files: File[]): Promise<V8PhotoMatchResult> {
+  const body = new FormData();
+  for (const file of files) body.append("files", file);
+  return v8Request<V8PhotoMatchResult>("/api/v8/photos/match", identity, { method: "POST", body });
+}
+
 export function listV8Operations(
   identity: V8Identity,
   options: { limit?: number; offset?: number } = {},

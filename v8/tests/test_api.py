@@ -119,6 +119,92 @@ def test_v7_migration_moves_passengers_and_reports_photos(client, seeded):
     assert third_run["photo_links"] == []
 
 
+def test_auto_excel_import_creates_operations_without_confirmation(client, seeded, monkeypatch):
+    from app import migration
+
+    def fake_records(filename: str, data: bytes):
+        assert filename == "liste.xlsx"
+        assert data == b"excel-bytes"
+        return [
+            {"Ad": "Ada", "Soyad": "Lovelace", "Pasaport No": "P11111111", "Gidiş Tarihi": "01.08.2026"},
+            {"Ad": "Alan", "Soyad": "Turing", "Pasaport No": "P22222222", "Gidiş Tarihi": "02.08.2026"},
+        ]
+
+    monkeypatch.setattr(migration, "records_from_excel", fake_records)
+    response = client.post(
+        "/api/v8/imports/auto",
+        headers=seeded["headers_a"],
+        files={"file": ("liste.xlsx", b"excel-bytes", "application/octet-stream")},
+    )
+    assert response.status_code == 201
+    report = response.json()
+    assert report["created_operations"] == 2
+    assert report["created_passengers"] == 2
+
+    codes = {
+        item["code"]
+        for item in client.get("/api/v8/operations", headers=seeded["headers_a"]).json()["items"]
+    }
+    assert {"OP-20260801", "OP-20260802"} <= codes
+
+    # Aynı dosya tekrar yüklenirse hiçbir şey çoğalmaz.
+    rerun = client.post(
+        "/api/v8/imports/auto",
+        headers=seeded["headers_a"],
+        files={"file": ("liste.xlsx", b"excel-bytes", "application/octet-stream")},
+    ).json()
+    assert rerun["created_passengers"] == 0
+    assert rerun["duplicate_passengers"] == 2
+
+
+def _tiny_jpeg() -> bytes:
+    import io
+
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.new("RGB", (8, 8), (200, 30, 30)).save(out, format="JPEG")
+    return out.getvalue()
+
+
+def test_bulk_photo_match_by_passport_and_name(client, seeded):
+    operation = client.post(
+        "/api/v8/operations", headers=seeded["headers_a"], json=operation_payload("FOTO-OP")
+    ).json()
+    first = client.post(
+        f"/api/v8/operations/{operation['id']}/passengers",
+        headers=seeded["headers_a"],
+        json={**passenger_payload("U55555555"), "first_name": "Ada", "last_name": "Lovelace"},
+    ).json()
+    second = client.post(
+        f"/api/v8/operations/{operation['id']}/passengers",
+        headers=seeded["headers_a"],
+        json={**passenger_payload("U66666666"), "first_name": "Alan", "last_name": "Turing"},
+    ).json()
+
+    jpeg = _tiny_jpeg()
+    response = client.post(
+        "/api/v8/photos/match",
+        headers=seeded["headers_a"],
+        files=[
+            ("files", ("20260710_ADA_LOVELACE_U55555555.jpg", jpeg, "image/jpeg")),
+            ("files", ("alan-turing.png", jpeg, "image/jpeg")),
+            ("files", ("taninmayan-kisi.jpg", jpeg, "image/jpeg")),
+        ],
+    )
+    assert response.status_code == 200
+    report = response.json()
+    assert report["matched"] == 2
+    assert report["unmatched"] == ["taninmayan-kisi.jpg"]
+    matched_ids = {item["passenger_id"] for item in report["attached"]}
+    assert matched_ids == {first["id"], second["id"]}
+
+    refreshed = client.get(
+        f"/api/v8/passengers/{first['id']}", headers=seeded["headers_a"]
+    ).json()
+    assert refreshed["photo_object_key"]
+
+
 def test_v7_migration_requires_write_role(client, seeded):
     response = client.post(
         "/api/v8/migrations/v7",
