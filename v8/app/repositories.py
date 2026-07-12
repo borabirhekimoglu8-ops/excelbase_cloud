@@ -3,10 +3,66 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from .models import AuditEvent, ImportBatch, ImportRow, Operation, Passenger
+
+_NO_FEE = and_(Passenger.adult_fee == 0, Passenger.child_fee == 0)
+_NO_VOUCHER = func.trim(Passenger.voucher) == ""
+
+# V7'deki durum filtrelerinin V8 karşılıkları. Pasaport V8'de zorunlu ve
+# operasyon içinde tekil olduğundan "Pasaportsuz"/"Tekrarlı" filtrelerine
+# gerek kalmaz.
+PASSENGER_STATUS_FILTERS = {
+    "fotosuz": Passenger.photo_object_key.is_(None),
+    "fotografli": Passenger.photo_object_key.is_not(None),
+    "vouchersiz": _NO_VOUCHER,
+    "ucretsiz": _NO_FEE,
+    "eksik": or_(Passenger.photo_object_key.is_(None), _NO_VOUCHER, _NO_FEE),
+    "hazir": and_(
+        Passenger.photo_object_key.is_not(None),
+        func.trim(Passenger.voucher) != "",
+        or_(Passenger.adult_fee > 0, Passenger.child_fee > 0),
+    ),
+}
+
+
+def _passenger_conditions(
+    organization_id: uuid.UUID,
+    operation_id: uuid.UUID,
+    search: str = "",
+    passport_hash: str | None = None,
+    status: str = "",
+) -> list:
+    conditions = [
+        Passenger.organization_id == organization_id,
+        Passenger.operation_id == operation_id,
+        Passenger.deleted_at.is_(None),
+    ]
+    if search:
+        needle = f"%{search.casefold()}%"
+        text_match = or_(
+            func.lower(Passenger.first_name).like(needle),
+            func.lower(Passenger.last_name).like(needle),
+            func.lower(Passenger.first_name + " " + Passenger.last_name).like(needle),
+            func.lower(Passenger.voucher).like(needle),
+        )
+        if passport_hash:
+            text_match = or_(text_match, Passenger.passport_hash == passport_hash)
+        conditions.append(text_match)
+    status_condition = PASSENGER_STATUS_FILTERS.get(status)
+    if status_condition is not None:
+        conditions.append(status_condition)
+    return conditions
+
+
+def _passenger_order(sort: str) -> tuple:
+    if sort == "arrival":
+        return (Passenger.arrival_date.asc().nulls_last(), Passenger.last_name, Passenger.first_name)
+    if sort == "recent":
+        return (Passenger.created_at.desc(),)
+    return (Passenger.last_name, Passenger.first_name, Passenger.created_at)
 
 
 class OperationRepository:
@@ -55,31 +111,38 @@ class PassengerRepository:
 
     @staticmethod
     def list_for_operation(
-        db: Session, organization_id: uuid.UUID, operation_id: uuid.UUID, limit: int = 500, offset: int = 0
+        db: Session,
+        organization_id: uuid.UUID,
+        operation_id: uuid.UUID,
+        limit: int = 500,
+        offset: int = 0,
+        search: str = "",
+        passport_hash: str | None = None,
+        status: str = "",
+        sort: str = "",
     ) -> Sequence[Passenger]:
         return db.scalars(
             select(Passenger)
-            .where(
-                Passenger.organization_id == organization_id,
-                Passenger.operation_id == operation_id,
-                Passenger.deleted_at.is_(None),
-            )
-            .order_by(Passenger.last_name, Passenger.first_name, Passenger.created_at)
+            .where(*_passenger_conditions(organization_id, operation_id, search, passport_hash, status))
+            .order_by(*_passenger_order(sort))
             .limit(limit)
             .offset(offset)
         ).all()
 
     @staticmethod
-    def count_for_operation(db: Session, organization_id: uuid.UUID, operation_id: uuid.UUID) -> int:
+    def count_for_operation(
+        db: Session,
+        organization_id: uuid.UUID,
+        operation_id: uuid.UUID,
+        search: str = "",
+        passport_hash: str | None = None,
+        status: str = "",
+    ) -> int:
         return int(
             db.scalar(
                 select(func.count())
                 .select_from(Passenger)
-                .where(
-                    Passenger.organization_id == organization_id,
-                    Passenger.operation_id == operation_id,
-                    Passenger.deleted_at.is_(None),
-                )
+                .where(*_passenger_conditions(organization_id, operation_id, search, passport_hash, status))
             )
             or 0
         )

@@ -39,6 +39,9 @@ export function V8Pilot() {
   const [apiUrl, setApiUrl] = useState("");
   const [setupNeeded, setSetupNeeded] = useState(false);
   const [migrationSummary, setMigrationSummary] = useState<string[]>([]);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sortOrder, setSortOrder] = useState("");
 
   const hasIdentity = Boolean(identity.token || (identity.userId && identity.organizationId));
 
@@ -243,21 +246,40 @@ export function V8Pilot() {
     void refreshOperations();
   }, [refreshOperations]);
 
+  const loadPassengers = useCallback(
+    async (operation: V8Operation) => {
+      setBusy(true);
+      try {
+        const page = await listV8Passengers(identity, operation.id, {
+          search: search.trim() || undefined,
+          status: statusFilter || undefined,
+          sort: sortOrder || undefined,
+        });
+        setPassengers(page.items);
+        setPassengerTotal(page.total);
+        setMessage(`${operation.code}: ${page.total} yolcu.`);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Yolcular yüklenemedi.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [identity, search, statusFilter, sortOrder],
+  );
+
   async function selectOperation(operation: V8Operation) {
     setSelected(operation);
     setRevealed({});
-    setBusy(true);
-    try {
-      const page = await listV8Passengers(identity, operation.id);
-      setPassengers(page.items);
-      setPassengerTotal(page.total);
-      setMessage(`${operation.code}: ${page.total} yolcu.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Yolcular yüklenemedi.");
-    } finally {
-      setBusy(false);
-    }
+    await loadPassengers(operation);
   }
+
+  // Arama/filtre değiştikçe liste kısa bir gecikmeyle kendiliğinden yenilenir.
+  useEffect(() => {
+    if (!selected) return;
+    const timer = setTimeout(() => void loadPassengers(selected), 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, statusFilter, sortOrder]);
 
   function saveIdentity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -534,6 +556,39 @@ export function V8Pilot() {
                   type="file"
                 />
               </label>
+
+              <div className={styles.stack}>
+                <input
+                  aria-label="Yolcu ara"
+                  placeholder="Ara: ad, soyad, voucher veya pasaport no"
+                  value={search}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)}
+                />
+                <div className={styles.grid}>
+                  <select
+                    aria-label="Durum filtresi"
+                    value={statusFilter}
+                    onChange={(event: ChangeEvent<HTMLSelectElement>) => setStatusFilter(event.target.value)}
+                  >
+                    <option value="">Tümü</option>
+                    <option value="fotosuz">Fotoğrafsız</option>
+                    <option value="fotografli">Fotoğraflı</option>
+                    <option value="vouchersiz">Voucher eksik</option>
+                    <option value="ucretsiz">Ücret girilmemiş</option>
+                    <option value="eksik">Eksikler (herhangi biri)</option>
+                    <option value="hazir">Hazır</option>
+                  </select>
+                  <select
+                    aria-label="Sıralama"
+                    value={sortOrder}
+                    onChange={(event: ChangeEvent<HTMLSelectElement>) => setSortOrder(event.target.value)}
+                  >
+                    <option value="">Soyada göre</option>
+                    <option value="arrival">Varış tarihine göre</option>
+                    <option value="recent">Son eklenen</option>
+                  </select>
+                </div>
+              </div>
 
               <div className={styles.list}>
                 {passengers.map((passenger) => (

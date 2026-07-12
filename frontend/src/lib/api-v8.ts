@@ -258,14 +258,28 @@ export function createV8Operation(
   });
 }
 
+export type V8PassengerFilter = {
+  limit?: number;
+  offset?: number;
+  /** Ad, soyad, voucher içinde arar; pasaport numarası tam yazılırsa onu da bulur. */
+  search?: string;
+  /** fotosuz | fotografli | vouchersiz | ucretsiz | eksik | hazir */
+  status?: string;
+  /** arrival | recent (varsayılan: soyada göre) */
+  sort?: string;
+};
+
 export function listV8Passengers(
   identity: V8Identity,
   operationId: string,
-  options: { limit?: number; offset?: number } = {},
+  options: V8PassengerFilter = {},
 ): Promise<V8Page<V8Passenger>> {
   const params = new URLSearchParams();
   if (options.limit) params.set("limit", String(options.limit));
   if (options.offset) params.set("offset", String(options.offset));
+  if (options.search) params.set("search", options.search);
+  if (options.status) params.set("status", options.status);
+  if (options.sort) params.set("sort", options.sort);
   const query = params.size ? `?${params.toString()}` : "";
   return v8Request<V8Page<V8Passenger>>(`/api/v8/operations/${operationId}/passengers${query}`, identity);
 }
