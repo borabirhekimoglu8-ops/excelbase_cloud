@@ -95,12 +95,20 @@ def test_apply_filters_search_and_column():
 
 def test_validate_duplicate_and_missing():
     df = make_demo_passengers()
-    df.loc[1, "Pasaport No"] = df.loc[0, "Pasaport No"]  # duplicate
+    df.loc[1, "Pasaport No"] = df.loc[0, "Pasaport No"]
+    df.loc[1, "Gidiş Tarihi"] = df.loc[0, "Gidiş Tarihi"]  # same passenger + same travel day
     df["Voucher"] = ""  # missing column
     warnings = validate_passenger_rows(df)
     text = " ".join(warnings)
-    assert "Tekrarlanan pasaport" in text
+    assert "tekrarlanan pasaport" in text.lower()
     assert "Voucher" in text
+
+
+def test_same_passport_on_another_date_is_not_duplicate():
+    df = make_demo_passengers()
+    df.loc[1, "Pasaport No"] = df.loc[0, "Pasaport No"]
+    warnings = " ".join(validate_passenger_rows(df))
+    assert "tekrarlanan pasaport" not in warnings.lower()
 
 
 def test_parse_photo_filename():

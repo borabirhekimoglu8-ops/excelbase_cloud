@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Passenger, bulkDelete, downloadUrl, fetchPassengers } from "@/lib/api";
+import { Passenger, bulkDelete, downloadUrl, fetchPassengers, scopedPath } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
 import { PassengerCard } from "@/components/PassengerCard";
 import { PassengerDetail } from "@/components/PassengerDetail";
@@ -26,7 +27,9 @@ const SORT_OPTS = [
 const PAGE_SIZE = 20;
 
 export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }) {
-  const { summary, version, notify, bump } = useStore();
+  const { summary, version, notify, bump, dateScope } = useStore();
+  const { user } = useAuth();
+  const canWrite = user.role !== "viewer";
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>(initialStatus);
   const [sort, setSort] = useState<string>("");
@@ -44,7 +47,7 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
     let active = true;
     setLoading(true);
     const timer = window.setTimeout(() => {
-      fetchPassengers({ search, status, sort })
+      fetchPassengers({ search, status, sort, scope: dateScope })
         .then((data) => {
           if (!active) return;
           setPassengers(data);
@@ -56,7 +59,7 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
       active = false;
       window.clearTimeout(timer);
     };
-  }, [search, status, sort, version]);
+  }, [search, status, sort, version, dateScope]);
 
   const pages = Math.max(1, Math.ceil(passengers.length / PAGE_SIZE));
   const current = Math.min(page, pages - 1);
@@ -104,12 +107,12 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
         <span>{passengers.length} görünür</span>
         <span>{summary.passenger_count} toplam</span>
         <span>{summary.missing_photo} fotosuz</span>
-        <a href={downloadUrl("/api/export?kind=excel")} className="chip-link">
+        <a href={downloadUrl(scopedPath("/api/export?kind=excel", dateScope))} className="chip-link">
           Excel indir
         </a>
       </div>
 
-      {selected.size > 0 && (
+      {canWrite && selected.size > 0 && (
         <div className="bulk-bar">
           <span>{selected.size} seçili</span>
           <button className="soft-btn danger" onClick={handleBulkDelete}>
@@ -129,7 +132,7 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
           <PassengerCard
             key={p.id}
             passenger={p}
-            selectable
+            selectable={canWrite}
             selected={selected.has(p.id)}
             onToggle={toggle}
             onOpen={setDetailId}
@@ -140,13 +143,13 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
       {pages > 1 && (
         <div className="pager">
           <button className="soft-btn" disabled={current === 0} onClick={() => setPage(current - 1)}>
-            ← Önceki
+            Önceki
           </button>
           <span>
             {current + 1} / {pages}
           </span>
           <button className="soft-btn" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}>
-            Sonraki →
+            Sonraki
           </button>
         </div>
       )}

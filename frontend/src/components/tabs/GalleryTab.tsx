@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Passenger, downloadUrl, fetchPassengers } from "@/lib/api";
+import { Passenger, downloadUrl, fetchPassengers, scopedPath } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { PassengerDetail } from "@/components/PassengerDetail";
 import { EmptyState } from "@/components/tabs/shared";
 
 export function GalleryTab() {
-  const { summary, version } = useStore();
+  const { summary, version, dateScope } = useStore();
   const [rows, setRows] = useState<Passenger[]>([]);
   const [loading, setLoading] = useState(true);
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -15,20 +15,19 @@ export function GalleryTab() {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    fetchPassengers()
+    fetchPassengers({ scope: dateScope })
       .then((data) => active && setRows(data.filter((p) => p.photo)))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [version]);
+  }, [version, dateScope]);
 
   if (summary.passenger_count === 0) {
     return (
       <EmptyState
-        emoji="📷"
         title="Galeri boş"
-        subtitle="Önce yolcu ekleyin, ardından Import sekmesinden foto/ZIP yükleyin."
+        subtitle="Önce yolcu ekleyin, ardından Toplu Aktarım bölümünden fotoğraf veya ZIP yükleyin."
       />
     );
   }
@@ -39,7 +38,7 @@ export function GalleryTab() {
         <span>{rows.length} eşleşmiş foto</span>
         <span>{summary.missing_photo} fotosuz</span>
         {rows.length > 0 && (
-          <a href={downloadUrl("/api/photos-zip?range=Tümü")} className="chip-link">
+          <a href={downloadUrl(scopedPath("/api/photos-zip", dateScope))} className="chip-link">
             Foto ZIP indir
           </a>
         )}
@@ -47,7 +46,7 @@ export function GalleryTab() {
 
       {loading && <p className="muted">Yükleniyor...</p>}
       {!loading && rows.length === 0 && (
-        <div className="empty-card">Henüz eşleşmiş fotoğraf yok. Import sekmesinden yükleyin.</div>
+        <div className="empty-card">Henüz eşleşmiş fotoğraf yok. Toplu Aktarım bölümünden yükleyin.</div>
       )}
 
       <div className="gallery-grid">

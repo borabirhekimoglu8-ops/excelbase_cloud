@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PassengerRecord(BaseModel):
@@ -21,7 +21,7 @@ class PassengerRecord(BaseModel):
     sheet: str
     photo: str
     photo_url: str = ""
-    issues: list[str] = []
+    issues: list[str] = Field(default_factory=list)
     duplicate: bool = False
 
 
@@ -41,6 +41,9 @@ class OperationSummary(BaseModel):
     loaded_files: list[str]
     import_history: list[dict]
     today_count: int
+    can_undo: bool = False
+    last_batch_id: str = ""
+    unmatched_photo_count: int = 0
 
 
 class ImportResponse(BaseModel):
@@ -48,6 +51,17 @@ class ImportResponse(BaseModel):
     warnings: list[str]
     loaded_files: list[str]
     passenger_count: int
+    batch_id: str = ""
+    duplicate_count: int = 0
+    invalid_count: int = 0
+
+
+class ImportPreviewResponse(BaseModel):
+    filename: str
+    rows: int
+    warnings: list[str]
+    duplicate_count: int = 0
+    invalid_count: int = 0
 
 
 class PassengerUpdate(BaseModel):
@@ -71,6 +85,7 @@ class MatchPhotosResponse(BaseModel):
     unmatched: list[str]
     passenger_count: int
     with_photo: int
+    matches: list[dict] = Field(default_factory=list)
 
 
 class OperationMetaUpdate(BaseModel):
@@ -112,3 +127,65 @@ class SimpleResult(BaseModel):
     ok: bool
     message: str = ""
     passenger_count: int = 0
+
+
+class AuthSetupRequest(BaseModel):
+    display_name: str
+    pin: str
+
+
+class AuthLoginRequest(BaseModel):
+    pin: str
+
+
+class AuthStatusResponse(BaseModel):
+    setup_required: bool
+    authenticated: bool
+    user: dict | None = None
+
+
+class UserCreateRequest(BaseModel):
+    name: str
+    pin: str
+    role: str = "operator"
+
+
+class UserView(BaseModel):
+    id: str
+    name: str
+    role: str
+    active: bool = True
+
+
+class AuditEntry(BaseModel):
+    id: str
+    time: str
+    actor: str
+    role: str
+    action: str
+    path: str
+
+
+class UnmatchedPhoto(BaseModel):
+    id: str
+    filename: str
+    photo_url: str
+    created_at: str
+
+
+class AssignPhotoRequest(BaseModel):
+    passenger_id: int
+
+
+class BackupInfo(BaseModel):
+    snapshot_date: str
+
+
+class MailImportResponse(BaseModel):
+    subject: str
+    sender: str
+    attachment_count: int
+    imported_rows: int
+    matched_photos: int
+    stored_documents: int
+    warnings: list[str] = Field(default_factory=list)
