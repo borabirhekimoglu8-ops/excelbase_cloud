@@ -23,7 +23,7 @@ from passenger_schema import (  # noqa: E402
 from persistence import load_store, save_store  # noqa: E402
 from photo_store import _norm_key  # noqa: E402
 
-APP_VERSION = "7.0.0"
+APP_VERSION = "7.1.0"
 
 
 def load_state() -> tuple[pd.DataFrame, list[str], dict]:
@@ -43,11 +43,30 @@ def save_state(df: pd.DataFrame, loaded_files: list[str], extra: dict) -> pd.Dat
     return normalized
 
 
+def passenger_identity_key(passport: object, departure_date: object) -> str:
+    """Ayni yolcuyu ayni sefer gununde tanimlayan kararlı anahtar."""
+    passport_key = _norm_key(passport)
+    if not passport_key:
+        return ""
+    parsed = parse_date_value(departure_date)
+    date_key = parsed.isoformat() if parsed else cell_text(departure_date)
+    return f"{passport_key}|{date_key}"
+
+
+def passenger_identity_keys(df: pd.DataFrame) -> pd.Series:
+    if df.empty:
+        return pd.Series(dtype="object")
+    return df.apply(
+        lambda row: passenger_identity_key(row.get("Pasaport No"), row.get("Gidiş Tarihi")),
+        axis=1,
+    )
+
+
 def duplicate_passport_keys(df: pd.DataFrame) -> set[str]:
     if df.empty or "Pasaport No" not in df.columns:
         return set()
-    norm = df["Pasaport No"].astype(str).map(_norm_key)
-    return set(norm[norm.ne("") & norm.duplicated(keep=False)])
+    identities = passenger_identity_keys(df)
+    return set(identities[identities.ne("") & identities.duplicated(keep=False)])
 
 
 def row_issues(row: pd.Series, dup_keys: set[str]) -> list[str]:
@@ -60,9 +79,18 @@ def row_issues(row: pd.Series, dup_keys: set[str]) -> list[str]:
         issues.append("Voucher yok")
     if not cell_text(row.get("Vize Ücreti Yetişkin")) and not cell_text(row.get("Vize Ücreti Çocuk")):
         issues.append("Ücret yok")
-    pp = _norm_key(row.get("Pasaport No"))
-    if pp and pp in dup_keys:
+    identity = passenger_identity_key(row.get("Pasaport No"), row.get("Gidiş Tarihi"))
+    if identity and identity in dup_keys:
         issues.append("Tekrarlı")
+    if not cell_text(row.get("Yolcu Adı Soyadı")):
+        issues.append("İsim yok")
+    departure = parse_date_value(row.get("Gidiş Tarihi"))
+    arrival = parse_date_value(row.get("Varış Tarihi"))
+    if departure and arrival and arrival < departure:
+        issues.append("Tarih hatalı")
+    passport = _norm_key(row.get("Pasaport No"))
+    if passport and len(passport) < 6:
+        issues.append("Pasaport formatı")
     return issues
 
 
@@ -84,8 +112,8 @@ def readiness_metrics(df: pd.DataFrame) -> dict:
     adult = df["Vize Ücreti Yetişkin"].astype(str).str.strip()
     child = df["Vize Ücreti Çocuk"].astype(str).str.strip()
     fee_missing = int((adult.eq("") & child.eq("")).sum())
-    passport_norm = df["Pasaport No"].astype(str).map(_norm_key)
-    duplicates = int(passport_norm[passport_norm.ne("") & passport_norm.duplicated(keep=False)].count())
+    identities = passenger_identity_keys(df)
+    duplicates = int(identities[identities.ne("") & identities.duplicated(keep=False)].count())
 
     photo_ok = total - photo_missing
     passport_ok = total - passport_missing - duplicates
@@ -105,7 +133,15 @@ def readiness_metrics(df: pd.DataFrame) -> dict:
 
 def issue_counts(df: pd.DataFrame) -> dict[str, int]:
     if df.empty:
-        return {"Fotosuz": 0, "Pasaportsuz": 0, "Voucher eksik": 0, "Ücretsiz": 0, "Tekrarlı": 0}
+        return {
+            "Fotosuz": 0,
+            "Pasaportsuz": 0,
+            "Voucher eksik": 0,
+            "Ücretsiz": 0,
+            "Tekrarlı": 0,
+            "İsim eksik": 0,
+            "Tarih hatası": 0,
+        }
     dup = duplicate_passport_keys(df)
     adult = df["Vize Ücreti Yetişkin"].astype(str).str.strip()
     child = df["Vize Ücreti Çocuk"].astype(str).str.strip()
@@ -114,7 +150,19 @@ def issue_counts(df: pd.DataFrame) -> dict[str, int]:
         "Pasaportsuz": int(df["Pasaport No"].astype(str).str.strip().eq("").sum()),
         "Voucher eksik": int(df["Voucher"].astype(str).str.strip().eq("").sum()),
         "Ücretsiz": int((adult.eq("") & child.eq("")).sum()),
-        "Tekrarlı": len(df[df["Pasaport No"].map(lambda v: _norm_key(v) in dup and bool(_norm_key(v)))]),
+        "Tekrarlı": int(passenger_identity_keys(df).isin(dup).sum()),
+        "İsim eksik": int(df["Yolcu Adı Soyadı"].astype(str).str.strip().eq("").sum()),
+        "Tarih hatası": int(
+            df.apply(
+                lambda row: bool(
+                    parse_date_value(row.get("Gidiş Tarihi"))
+                    and parse_date_value(row.get("Varış Tarihi"))
+                    and parse_date_value(row.get("Varış Tarihi"))
+                    < parse_date_value(row.get("Gidiş Tarihi"))
+                ),
+                axis=1,
+            ).sum()
+        ),
     }
 
 

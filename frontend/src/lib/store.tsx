@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { OperationSummary, fetchSummary } from "@/lib/api";
+import { DateScope, OperationSummary, fetchSummary } from "@/lib/api";
 
 const emptySummary: OperationSummary = {
   passenger_count: 0,
@@ -28,6 +28,9 @@ const emptySummary: OperationSummary = {
   loaded_files: [],
   import_history: [],
   today_count: 0,
+  can_undo: false,
+  last_batch_id: "",
+  unmatched_photo_count: 0,
 };
 
 export type Toast = { id: number; text: string; tone: "ok" | "warn" | "error" };
@@ -40,6 +43,8 @@ type StoreValue = {
   bump: () => void;
   notify: (text: string, tone?: Toast["tone"]) => void;
   toasts: Toast[];
+  dateScope: DateScope;
+  setDateScope: (scope: DateScope) => void;
 };
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -49,17 +54,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(true);
   const [version, setVersion] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [dateScope, setDateScope] = useState<DateScope>({ range: "Tümü", start: "", end: "" });
   const toastId = useRef(1);
 
   const refresh = useCallback(async () => {
     try {
-      const data = await fetchSummary();
+      const data = await fetchSummary(dateScope);
       setSummary(data);
       setConnected(true);
     } catch {
       setConnected(false);
     }
-  }, []);
+  }, [dateScope]);
 
   const bump = useCallback(() => {
     setVersion((v) => v + 1);
@@ -79,8 +85,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const value = useMemo(
-    () => ({ summary, connected, version, refresh, bump, notify, toasts }),
-    [summary, connected, version, refresh, bump, notify, toasts],
+    () => ({ summary, connected, version, refresh, bump, notify, toasts, dateScope, setDateScope }),
+    [summary, connected, version, refresh, bump, notify, toasts, dateScope],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

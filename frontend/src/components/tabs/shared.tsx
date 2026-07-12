@@ -1,73 +1,34 @@
 "use client";
 
-import { ChangeEvent, useState } from "react";
-import { downloadUrl, loadDemo, uploadPassengerFiles } from "@/lib/api";
-import { useStore } from "@/lib/store";
+import { downloadUrl } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 export function EmptyState({
   onNavigate,
-  emoji = "🛂",
   title = "Henüz operasyon yok",
-  subtitle = "Excel yükleyerek başlayın, şablon indirin veya demo veriyle deneyin.",
+  subtitle = "Toplu Aktarım bölümünden yolcu listelerini ekleyerek başlayın.",
 }: {
   onNavigate?: (tab: string) => void;
-  emoji?: string;
   title?: string;
   subtitle?: string;
 }) {
-  const { notify, bump } = useStore();
-  const [busy, setBusy] = useState(false);
-
-  async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
-    if (!event.target.files?.length) return;
-    setBusy(true);
-    try {
-      const res = await uploadPassengerFiles(event.target.files, true);
-      notify(`${res.imported} yolcu içe aktarıldı`);
-      bump();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Import başarısız", "error");
-    } finally {
-      setBusy(false);
-      event.target.value = "";
-    }
-  }
-
+  const { user } = useAuth();
   return (
     <div className="tab-body">
       <div className="empty-hero">
-        <p className="big">{emoji}</p>
+        <span className="empty-mark">GV</span>
         <h3>{title}</h3>
         <p className="muted">{subtitle}</p>
       </div>
       <div className="action-grid">
-        <label className="primary-btn as-label">
-          {busy ? "Yükleniyor..." : "Excel yükle"}
-          <input type="file" accept=".xlsx,.xls,.xlsm,.ods,.csv" multiple onChange={handleUpload} />
-        </label>
-        <button
-          className="soft-btn"
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await loadDemo();
-              notify("Demo veri yüklendi");
-              bump();
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Demo veri yükle
-        </button>
+        {onNavigate && user.role !== "viewer" && (
+          <button className="primary-btn" onClick={() => onNavigate("import")}>
+            Toplu aktarıma geç
+          </button>
+        )}
         <a className="soft-btn" href={downloadUrl("/api/template")}>
           Şablon indir
         </a>
-        {onNavigate && (
-          <button className="soft-btn" onClick={() => onNavigate("import")}>
-            Import sekmesi
-          </button>
-        )}
       </div>
     </div>
   );

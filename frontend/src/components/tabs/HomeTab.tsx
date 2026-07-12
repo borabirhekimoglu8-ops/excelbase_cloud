@@ -1,11 +1,13 @@
 "use client";
 
-import { downloadUrl, loadDemo } from "@/lib/api";
+import { downloadUrl, scopedPath } from "@/lib/api";
 import { formatAmount, useStore } from "@/lib/store";
 import { EmptyState } from "@/components/tabs/shared";
+import { useAuth } from "@/lib/auth";
 
 export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
-  const { summary, notify, bump } = useStore();
+  const { summary, dateScope } = useStore();
+  const { user } = useAuth();
 
   if (summary.passenger_count === 0) {
     return <EmptyState onNavigate={onNavigate} />;
@@ -15,13 +17,19 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
 
   return (
     <div className="tab-body">
-      <p className="section-label">Operasyon Kokpiti</p>
+      <div className="section-heading">
+        <div>
+          <p className="overline">GENEL BAKIŞ</p>
+          <h2>Operasyon özeti</h2>
+          <p>Seçili tarih aralığındaki yolcu, evrak ve hazırlık durumu.</p>
+        </div>
+      </div>
 
       {summary.today_count > 0 && (
         <div className="banner">
           <strong>Bugün {summary.today_count} yolcu</strong> için operasyon var.
           <button className="link-btn" onClick={() => onNavigate("archive")}>
-            Arşivde aç →
+            Arşivde aç
           </button>
         </div>
       )}
@@ -43,7 +51,7 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
         <Stat label="Yolcu" value={summary.passenger_count} sub="Toplam kayıt" />
         <Stat label="Toplam ücret" value={formatAmount(summary.total_fee)} sub="Yetişkin + çocuk" />
         <Stat label="Fotosuz" value={summary.missing_photo} sub="Düzeltilecek" tone="warn" />
-        <Stat label="Risk" value={risk} sub="Pasaport/duplicate" tone={risk ? "bad" : "ok"} />
+        <Stat label="Risk" value={risk} sub="Pasaport / tekrar" tone={risk ? "bad" : "ok"} />
       </div>
 
       <p className="section-label">Hızlı aksiyonlar</p>
@@ -54,12 +62,12 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
         <button className="soft-btn" onClick={() => onNavigate("passengers")}>
           Yolcu listesi
         </button>
-        <a className="soft-btn" href={downloadUrl("/api/export?kind=excel")}>
-          Tüm Excel indir
+        <a className="soft-btn" href={downloadUrl(scopedPath("/api/export?kind=excel", dateScope))}>
+          Excel indir
         </a>
-        <button className="soft-btn" onClick={() => onNavigate("import")}>
-          Import / foto
-        </button>
+        {user.role !== "viewer" && (
+          <button className="soft-btn" onClick={() => onNavigate("import")}>Toplu aktarım</button>
+        )}
       </div>
 
       {summary.import_history.length > 0 && (
@@ -74,17 +82,6 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
           </div>
         </>
       )}
-
-      <button
-        className="soft-btn wide"
-        onClick={async () => {
-          await loadDemo();
-          notify("Demo veri yeniden yüklendi");
-          bump();
-        }}
-      >
-        Demo veriyi yükle
-      </button>
     </div>
   );
 }

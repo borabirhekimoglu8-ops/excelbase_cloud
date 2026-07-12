@@ -2,12 +2,13 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Gate Visa PAX V7",
-  description: "Gate Visa PAX V7 — tek servis operasyon merkezi (Next.js PWA + FastAPI)",
+  title: "Gate Visa Operations",
+  description: "Yolcu listeleri, evrak kontrolleri ve teslim dosyaları için operasyon platformu.",
+  manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "Gate Visa",
-    statusBarStyle: "black-translucent",
+    title: "Gate Visa Ops",
+    statusBarStyle: "default",
   },
   icons: {
     icon: [
@@ -20,7 +21,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#071526",
+  themeColor: "#102a43",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",

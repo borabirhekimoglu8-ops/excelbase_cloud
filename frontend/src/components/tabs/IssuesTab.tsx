@@ -3,13 +3,16 @@
 import { ChangeEvent, useEffect, useState } from "react";
 import { Passenger, fetchPassengers, mergeDuplicates, setPassengerPhoto } from "@/lib/api";
 import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 import { PassengerDetail } from "@/components/PassengerDetail";
 import { EmptyState } from "@/components/tabs/shared";
 
-const CATEGORIES = ["Fotosuz", "Pasaportsuz", "Voucher eksik", "Ücretsiz", "Tekrarlı"];
+const CATEGORIES = ["Fotosuz", "Pasaportsuz", "İsim eksik", "Tarih hatası", "Voucher eksik", "Ücretsiz", "Tekrarlı"];
 
 export function IssuesTab() {
-  const { summary, version, notify, bump } = useStore();
+  const { summary, version, notify, bump, dateScope } = useStore();
+  const { user } = useAuth();
+  const canWrite = user.role !== "viewer";
   const [category, setCategory] = useState("Fotosuz");
   const [rows, setRows] = useState<Passenger[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,18 +22,17 @@ export function IssuesTab() {
     let active = true;
     setLoading(true);
     const status = category === "Voucher eksik" ? "Voucher eksik" : category;
-    fetchPassengers({ status })
+    fetchPassengers({ status, scope: dateScope })
       .then((data) => active && setRows(data))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [category, version]);
+  }, [category, version, dateScope]);
 
   if (summary.passenger_count === 0) {
     return (
       <EmptyState
-        emoji="🛡️"
         title="Kontrol edilecek bir şey yok"
         subtitle="Yolcu eklendiğinde eksikler burada listelenir."
       />
@@ -74,7 +76,7 @@ export function IssuesTab() {
           >
             <p className="cc-kicker">{cat}</p>
             <p className="cc-value">{summary.issue_counts[cat] ?? 0}</p>
-            <p className="cc-sub">Düzelt →</p>
+            <p className="cc-sub">İncele</p>
           </button>
         ))}
       </div>
@@ -86,7 +88,7 @@ export function IssuesTab() {
           ) : (
             <>
               <p className="muted">Aynı pasaporta sahip kayıtları en dolu satırı tutarak birleştir.</p>
-              <button className="primary-btn wide" onClick={handleMergeAll}>
+              <button className="primary-btn wide" onClick={handleMergeAll} disabled={!canWrite}>
                 Tüm tekrarları birleştir
               </button>
             </>
@@ -106,7 +108,7 @@ export function IssuesTab() {
                 <button className="soft-btn" onClick={() => setDetailId(p.id)}>
                   Detay
                 </button>
-                {category === "Fotosuz" && (
+                {canWrite && category === "Fotosuz" && (
                   <label className="soft-btn">
                     Foto ata
                     <input type="file" accept="image/*" onChange={(e) => handlePhoto(p.id, e)} />

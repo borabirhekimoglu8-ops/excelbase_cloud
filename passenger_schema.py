@@ -7,6 +7,15 @@ from excelbase_core import dataframe_to_xlsx
 
 TEMPLATE_NAME = "GATE VISA PAX LIST"
 
+
+def _parse_date_value(value: object):
+    text = str(value or "").strip()
+    if not text or text.lower() == "nan":
+        return None
+    is_iso = len(text) >= 5 and text[:4].isdigit() and text[4] in "-/"
+    parsed = pd.to_datetime(text, errors="coerce", dayfirst=not is_iso)
+    return None if pd.isna(parsed) else parsed.date()
+
 # Uygulama içi standart alanlar (Excel'den dönüştürülmüş)
 PASSENGER_FIELDS: list[str] = [
     "No",
@@ -180,19 +189,36 @@ def validate_passenger_rows(df: pd.DataFrame) -> list[str]:
 
     missing_names = df["Yolcu Adı Soyadı"].astype(str).str.strip().eq("")
     if missing_names.any():
-        warnings.append(f"⚠ {int(missing_names.sum())} satırda yolcu adı/soyadı boş.")
+        warnings.append(f"{int(missing_names.sum())} satırda yolcu adı/soyadı boş.")
 
     passport = df["Pasaport No"].astype(str).str.strip()
     missing_passport = passport.eq("")
     if missing_passport.any():
-        warnings.append(f"⚠ {int(missing_passport.sum())} satırda pasaport no boş.")
+        warnings.append(f"{int(missing_passport.sum())} satırda pasaport no boş.")
 
-    filled = passport[passport.ne("")]
+    departure = df["Gidiş Tarihi"].map(
+        lambda value: (_parse_date_value(value).isoformat() if _parse_date_value(value) else str(value or "").strip())
+    )
+    identities = passport.str.replace(r"[^A-Za-z0-9]", "", regex=True).str.upper() + "|" + departure
+    filled = identities[passport.ne("")]
     dup_mask = filled.duplicated(keep=False)
     if dup_mask.any():
-        dups = sorted(set(filled[dup_mask]))
+        dups = sorted({value.split("|", 1)[0] for value in filled[dup_mask]})
         shown = ", ".join(dups[:8]) + (" …" if len(dups) > 8 else "")
-        warnings.append(f"⚠ Tekrarlanan pasaport no ({len(dups)} adet): {shown}")
+        warnings.append(f"Aynı gidiş tarihinde tekrarlanan pasaport ({len(dups)} adet): {shown}")
+
+    invalid_passport = passport.ne("") & passport.str.replace(r"[^A-Za-z0-9]", "", regex=True).str.len().lt(6)
+    if invalid_passport.any():
+        warnings.append(f"{int(invalid_passport.sum())} satırda pasaport formatı kontrol edilmeli.")
+
+    invalid_dates = 0
+    for _, row in df.iterrows():
+        dep = _parse_date_value(row.get("Gidiş Tarihi"))
+        arr = _parse_date_value(row.get("Varış Tarihi"))
+        if dep and arr and arr < dep:
+            invalid_dates += 1
+    if invalid_dates:
+        warnings.append(f"{invalid_dates} satırda varış tarihi gidiş tarihinden önce.")
 
     # Tüm satırlarda boş kalan beklenen sütunlar = Excel'de o sütun eksik olabilir
     optional_checks = ["Voucher", "Gidiş Tarihi", "Varış Tarihi", "Vize Ücreti Yetişkin"]
@@ -202,7 +228,7 @@ def validate_passenger_rows(df: pd.DataFrame) -> list[str]:
     ]
     if empty_cols:
         warnings.append(
-            "⚠ Şu bilgiler tüm satırlarda boş (Excel'de sütun eksik olabilir): "
+            "Şu bilgiler tüm satırlarda boş (Excel'de sütun eksik olabilir): "
             + ", ".join(empty_cols)
         )
 

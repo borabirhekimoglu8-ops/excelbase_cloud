@@ -66,6 +66,9 @@ PHOTO_DIR = os.environ.get(
 )
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic", ".heif"}
+MAX_ZIP_IMAGE_BYTES = 25 * 1024 * 1024
+MAX_ZIP_TOTAL_BYTES = 250 * 1024 * 1024
+MAX_ZIP_IMAGES = 2000
 
 
 def _norm_key(value: object) -> str:
@@ -84,7 +87,10 @@ def extract_images_from_zip(data: bytes) -> list[tuple[str, bytes]]:
     out: list[tuple[str, bytes]] = []
     try:
         with zipfile.ZipFile(BytesIO(data)) as zf:
+            total_bytes = 0
             for info in zf.infolist():
+                if len(out) >= MAX_ZIP_IMAGES:
+                    break
                 if info.is_dir():
                     continue
                 name = info.filename
@@ -93,12 +99,15 @@ def extract_images_from_zip(data: bytes) -> list[tuple[str, bytes]]:
                 base = os.path.basename(name)
                 if not base or base.startswith("._") or base.startswith("."):
                     continue
+                if info.file_size > MAX_ZIP_IMAGE_BYTES or total_bytes + info.file_size > MAX_ZIP_TOTAL_BYTES:
+                    continue
                 try:
                     content = zf.read(info)
                 except Exception:
                     continue
                 if looks_like_image(base, content):
                     out.append((base, content))
+                    total_bytes += len(content)
     except Exception:
         pass
     return out
@@ -238,49 +247,13 @@ def match_photos_to_dataframe(
     if "Foto" not in out.columns:
         out["Foto"] = ""
 
-    # Yolcu anahtarlarını önceden hesapla
-    rows = []
-    for idx, row in out.iterrows():
-        rows.append(
-            {
-                "idx": idx,
-                "passport": _norm_key(row.get("Pasaport No")),
-                "full_name": _norm_key(str(row.get("Ad", "")) + str(row.get("Soyad", ""))),
-                "name": _norm_key(row.get("Ad", "")),
-                "surname": _norm_key(row.get("Soyad", "")),
-            }
-        )
-
     matched = 0
     unmatched: list[str] = []
     for filename, data in uploaded:
-        base, ext = os.path.splitext(filename)
-        full = _norm_key(base)
+        target, _, _ = find_photo_target(out, filename)
+        _, ext = os.path.splitext(filename)
         info = parse_photo_filename(filename)
         ext = info["ext"] or ext
-        target: int | None = None
-
-        # 1) Pasaport numarası dosya adının herhangi bir yerinde geçiyorsa (en uzun eşleşme)
-        best_len = 0
-        for r in rows:
-            pp = r["passport"]
-            if pp and len(pp) >= 4 and pp in full and len(pp) > best_len:
-                target = r["idx"]
-                best_len = len(pp)
-
-        # 2) Ad+Soyad bitişik geçiyorsa
-        if target is None:
-            for r in rows:
-                if r["full_name"] and len(r["full_name"]) >= 4 and r["full_name"] in full:
-                    target = r["idx"]
-                    break
-
-        # 3) Ad ve Soyad ayrı ayrı geçiyorsa
-        if target is None:
-            for r in rows:
-                if r["name"] and r["surname"] and r["name"] in full and r["surname"] in full:
-                    target = r["idx"]
-                    break
 
         if target is None:
             unmatched.append(filename)
@@ -293,3 +266,70 @@ def match_photos_to_dataframe(
         matched += 1
 
     return out, matched, unmatched
+
+
+def find_photo_target(df: pd.DataFrame, filename: str) -> tuple[int | None, str, int]:
+    """Dosya adi icin en guvenli yolcu eslesmesini ve guven puanini dondurur."""
+    if df.empty:
+        return None, "", 0
+    base, _ = os.path.splitext(filename)
+    full = _norm_key(base)
+    rows = []
+    for idx, row in df.iterrows():
+        rows.append(
+            {
+                "idx": int(idx),
+                "passport": _norm_key(row.get("Pasaport No")),
+                "full_name": _norm_key(str(row.get("Ad", "")) + str(row.get("Soyad", ""))),
+                "name": _norm_key(row.get("Ad", "")),
+                "surname": _norm_key(row.get("Soyad", "")),
+            }
+        )
+
+    target: int | None = None
+    best_len = 0
+    for row in rows:
+        passport = row["passport"]
+        if passport and len(passport) >= 4 and passport in full and len(passport) > best_len:
+            target = row["idx"]
+            best_len = len(passport)
+    if target is not None:
+        return target, "passport", 100
+
+    for row in rows:
+        if row["full_name"] and len(row["full_name"]) >= 4 and row["full_name"] in full:
+            return row["idx"], "full_name", 90
+
+    for row in rows:
+        if row["name"] and row["surname"] and row["name"] in full and row["surname"] in full:
+            return row["idx"], "name_parts", 75
+    return None, "", 0
+
+
+def match_photos_with_details(
+    df: pd.DataFrame,
+    uploaded: list[tuple[str, bytes]],
+) -> tuple[pd.DataFrame, list[dict], list[tuple[str, bytes]]]:
+    out = df.copy()
+    matches: list[dict] = []
+    unmatched: list[tuple[str, bytes]] = []
+    for filename, data in uploaded:
+        target, method, confidence = find_photo_target(out, filename)
+        if target is None:
+            unmatched.append((filename, data))
+            continue
+        processed, new_ext = _process_image(data)
+        _, original_ext = os.path.splitext(filename)
+        key = _norm_key(out.at[target, "Pasaport No"]) or f"row{target}"
+        stored = save_photo_bytes(key, new_ext or original_ext, processed)
+        out.at[target, "Foto"] = stored
+        matches.append(
+            {
+                "filename": filename,
+                "passenger_id": int(target),
+                "passenger_name": str(out.at[target, "Yolcu Adı Soyadı"] or "Yolcu"),
+                "method": method,
+                "confidence": confidence,
+            }
+        )
+    return out, matches, unmatched

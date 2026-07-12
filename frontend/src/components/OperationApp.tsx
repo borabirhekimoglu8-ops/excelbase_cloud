@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { AuthGate, useAuth } from "@/lib/auth";
 import { StoreProvider, useStore } from "@/lib/store";
+import { DateScopeBar } from "@/components/DateScopeBar";
 import { HomeTab } from "@/components/tabs/HomeTab";
 import { PassengersTab } from "@/components/tabs/PassengersTab";
 import { IssuesTab } from "@/components/tabs/IssuesTab";
@@ -9,23 +11,37 @@ import { GalleryTab } from "@/components/tabs/GalleryTab";
 import { ArchiveTab } from "@/components/tabs/ArchiveTab";
 import { ImportTab } from "@/components/tabs/ImportTab";
 import { PackageTab } from "@/components/tabs/PackageTab";
+import { ManagementTab } from "@/components/tabs/ManagementTab";
 
-type TabKey = "home" | "passengers" | "issues" | "gallery" | "archive" | "import" | "package";
+type TabKey = "home" | "passengers" | "issues" | "gallery" | "archive" | "import" | "package" | "management";
 
-const TABS: { key: TabKey; label: string; icon: string }[] = [
-  { key: "home", label: "Ana", icon: "◎" },
-  { key: "passengers", label: "Yolcular", icon: "☰" },
-  { key: "issues", label: "Eksikler", icon: "!" },
-  { key: "gallery", label: "Galeri", icon: "▦" },
-  { key: "archive", label: "Arşiv", icon: "🗂" },
-  { key: "import", label: "Import", icon: "↑" },
-  { key: "package", label: "Paket", icon: "⬢" },
+const TABS: Array<{ key: TabKey; label: string; code: string; roles?: string[] }> = [
+  { key: "home", label: "Genel", code: "01" },
+  { key: "passengers", label: "Yolcular", code: "02" },
+  { key: "issues", label: "Kontrol", code: "03" },
+  { key: "gallery", label: "Galeri", code: "04" },
+  { key: "archive", label: "Arşiv", code: "05" },
+  { key: "import", label: "Aktarım", code: "06", roles: ["admin", "operator"] },
+  { key: "package", label: "Teslim", code: "07" },
+  { key: "management", label: "Yönetim", code: "08", roles: ["admin"] },
 ];
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Yönetici",
+  operator: "Operasyon",
+  viewer: "Görüntüleme",
+};
 
 function Shell() {
   const { summary, connected, toasts } = useStore();
+  const { user, signOut } = useAuth();
   const [tab, setTab] = useState<TabKey>("home");
   const [passengerStatus, setPassengerStatus] = useState("");
+
+  const tabs = useMemo(
+    () => TABS.filter((item) => !item.roles || item.roles.includes(user.role)),
+    [user.role],
+  );
 
   function navigate(target: string) {
     if (target === "passengers-fotosuz") {
@@ -33,6 +49,7 @@ function Shell() {
       setTab("passengers");
       return;
     }
+    if (!tabs.some((item) => item.key === target)) return;
     setPassengerStatus("");
     setTab(target as TabKey);
   }
@@ -41,23 +58,33 @@ function Shell() {
 
   return (
     <div className="app-shell">
-      <header className="hero-card">
-        <div className="brand-mark" aria-hidden="true">
-          <span>⛴</span>
+      <header className="app-header">
+        <div className="brand-lockup">
+          <span className="brand-symbol">GV</span>
+          <div>
+            <strong>Gate Visa Operations</strong>
+            <small>Passenger Operations Platform</small>
+          </div>
         </div>
-        <div className="hero-text">
-          <p className="eyebrow">GATE VISA PAX · V7</p>
-          <h1>Operasyon Merkezi</h1>
-          <p className="hero-copy">
-            {summary.passenger_count} yolcu · %{summary.readiness_percent} hazır
-            {!connected && " · çevrimdışı"}
-          </p>
+        <div className="header-account">
+          <div className="account-copy">
+            <strong>{user.name}</strong>
+            <small>{ROLE_LABELS[user.role] ?? user.role}</small>
+          </div>
+          <button className="account-action" onClick={() => void signOut()} type="button">Çıkış</button>
         </div>
       </header>
 
-      {!connected && (
-        <div className="error-card">API bağlantısı kurulamadı. Sunucunun çalıştığından emin olun.</div>
-      )}
+      <div className="status-strip">
+        <span className={connected ? "system-dot online" : "system-dot offline"} />
+        <span>{connected ? "Sistem çevrimiçi" : "Sunucu bağlantısı yok"}</span>
+        <span className="status-divider" />
+        <span>{summary.passenger_count} yolcu</span>
+        <span className="status-divider" />
+        <span>%{summary.readiness_percent} hazır</span>
+      </div>
+
+      <DateScopeBar />
 
       <main className="tab-content">
         {tab === "home" && <HomeTab onNavigate={navigate} />}
@@ -67,29 +94,27 @@ function Shell() {
         {tab === "archive" && <ArchiveTab />}
         {tab === "import" && <ImportTab />}
         {tab === "package" && <PackageTab />}
+        {tab === "management" && <ManagementTab />}
       </main>
 
       <nav className="tab-bar" aria-label="Ana gezinme">
-        {TABS.map((t) => (
+        {tabs.map((item) => (
           <button
-            key={t.key}
-            className={t.key === tab ? "tab active" : "tab"}
-            onClick={() => navigate(t.key)}
+            key={item.key}
+            className={item.key === tab ? "tab active" : "tab"}
+            onClick={() => navigate(item.key)}
+            type="button"
           >
-            <span className="tab-icon" aria-hidden="true">
-              {t.icon}
-            </span>
-            <span className="tab-label">{t.label}</span>
-            {t.key === "issues" && issueTotal > 0 && <span className="tab-badge">{issueTotal}</span>}
+            <span className="tab-code">{item.code}</span>
+            <span className="tab-label">{item.label}</span>
+            {item.key === "issues" && issueTotal > 0 && <span className="tab-badge">{issueTotal}</span>}
           </button>
         ))}
       </nav>
 
       <div className="toast-stack" aria-live="polite">
         {toasts.map((toast) => (
-          <div key={toast.id} className={`toast ${toast.tone}`}>
-            {toast.text}
-          </div>
+          <div key={toast.id} className={`toast ${toast.tone}`}>{toast.text}</div>
         ))}
       </div>
     </div>
@@ -98,8 +123,10 @@ function Shell() {
 
 export function OperationApp() {
   return (
-    <StoreProvider>
-      <Shell />
-    </StoreProvider>
+    <AuthGate>
+      <StoreProvider>
+        <Shell />
+      </StoreProvider>
+    </AuthGate>
   );
 }

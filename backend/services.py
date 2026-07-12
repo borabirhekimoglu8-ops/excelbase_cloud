@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import sys
+import uuid
 import zipfile
 from datetime import datetime
 from io import BytesIO
@@ -14,6 +15,8 @@ import pandas as pd
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
+
+import db  # noqa: E402
 
 from excelbase_core import dataframe_to_csv, dataframe_to_xlsx  # noqa: E402
 from gate_visa_reader import read_gate_visa_file_bytes  # noqa: E402
@@ -37,7 +40,7 @@ from photo_store import (  # noqa: E402
     extract_images_from_zip,
     is_zip,
     looks_like_image,
-    match_photos_to_dataframe,
+    match_photos_with_details,
     photo_data_uri,
     photo_raw_bytes,
     save_photo_bytes,
@@ -55,12 +58,16 @@ from .state import (
     duplicate_passport_keys,
     issue_counts,
     load_state,
+    passenger_identity_key,
+    passenger_identity_keys,
     quick_range_bounds,
     readiness_metrics,
     row_issues,
     save_state,
     today_departures,
 )
+from .config import MAX_AUDIT_EVENTS, MAX_IMPORT_SNAPSHOTS
+from .mail_ingest import parse_eml
 
 _UPDATE_FIELDS = {
     "no": "No",
@@ -131,7 +138,18 @@ def _status_mask(df: pd.DataFrame, status: str) -> pd.Series:
         child = df["Vize Ücreti Çocuk"].astype(str).str.strip()
         return adult.eq("") & child.eq("")
     if status == "Tekrarlı":
-        return df["Pasaport No"].map(lambda v: bool(_norm_key(v)) and _norm_key(v) in dup)
+        return passenger_identity_keys(df).isin(dup)
+    if status == "İsim eksik":
+        return df["Yolcu Adı Soyadı"].astype(str).str.strip().eq("")
+    if status == "Tarih hatası":
+        return df.apply(
+            lambda row: bool(
+                parse_date_value(row.get("Gidiş Tarihi"))
+                and parse_date_value(row.get("Varış Tarihi"))
+                and parse_date_value(row.get("Varış Tarihi")) < parse_date_value(row.get("Gidiş Tarihi"))
+            ),
+            axis=1,
+        )
     if status == "Eksik":
         dup_keys = dup
         return df.apply(lambda r: bool(row_issues(r, dup_keys)), axis=1)
@@ -162,10 +180,14 @@ def get_passengers(
     status: str = "",
     sort: str = "",
     with_key: str = "",
+    range_choice: str = "Tümü",
+    start: str = "",
+    end: str = "",
 ) -> list[PassengerRecord]:
     df, _, _ = load_state()
     if df.empty:
         return []
+    df = _scoped_df(df, range_choice, start, end)
     if search:
         df = apply_filters(df, search, {})
     if status:
@@ -174,10 +196,13 @@ def get_passengers(
     return dataframe_to_records(df, with_key)
 
 
-def get_summary() -> OperationSummary:
+def get_summary(range_choice: str = "Tümü", start: str = "", end: str = "") -> OperationSummary:
     df, loaded_files, extra = load_state()
+    df = _scoped_df(df, range_choice, start, end)
     summary = summarize_group(df)
     metrics = readiness_metrics(df)
+    active_batches = [b for b in extra.get("import_batches", []) if b.get("status") == "active"]
+    last_batch = active_batches[0] if active_batches else None
     return OperationSummary(
         passenger_count=int(summary["count"]),
         adult_total=float(summary["adult_total"]),
@@ -194,38 +219,156 @@ def get_summary() -> OperationSummary:
         loaded_files=list(loaded_files),
         import_history=list(extra.get("import_history", []))[:12],
         today_count=today_departures(df),
+        can_undo=bool(last_batch),
+        last_batch_id=str(last_batch.get("id", "")) if last_batch else "",
+        unmatched_photo_count=len(extra.get("unmatched_photos", [])),
     )
+
+
+def _parse_import_files(files: Iterable[tuple[str, bytes]]) -> tuple[pd.DataFrame, list[str], list[str]]:
+    all_results = []
+    loaded_names: list[str] = []
+    for filename, data in files:
+        loaded_names.append(filename)
+        all_results.extend(read_gate_visa_file_bytes(filename, data))
+    imported_df = gate_visa_results_to_passengers(all_results)
+    return imported_df, loaded_names, validate_passenger_rows(imported_df)
+
+
+def _critical_import_count(df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+    count = 0
+    for _, row in df.iterrows():
+        passport = _norm_key(row.get("Pasaport No"))
+        departure = parse_date_value(row.get("Gidiş Tarihi"))
+        arrival = parse_date_value(row.get("Varış Tarihi"))
+        if (
+            not cell_text(row.get("Yolcu Adı Soyadı"))
+            or not passport
+            or len(passport) < 6
+            or (departure and arrival and arrival < departure)
+        ):
+            count += 1
+    return count
+
+
+def preview_gate_visa_files(files: Iterable[tuple[str, bytes]]) -> tuple[str, int, list[str], int, int]:
+    imported_df, loaded_names, warnings = _parse_import_files(files)
+    current_df, _, _ = load_state()
+    existing = set(passenger_identity_keys(current_df)) - {""}
+    imported_keys = passenger_identity_keys(imported_df)
+    seen = set(existing)
+    duplicate_count = 0
+    for key in imported_keys:
+        if key and key in seen:
+            duplicate_count += 1
+        elif key:
+            seen.add(key)
+    return (
+        loaded_names[0] if loaded_names else "dosya",
+        len(imported_df),
+        warnings,
+        duplicate_count,
+        _critical_import_count(imported_df),
+    )
+
+
+def _ensure_import_batch(
+    extra: dict,
+    batch_id: str,
+    current_df: pd.DataFrame,
+    current_loaded: list[str],
+    mode: str,
+) -> dict:
+    batches = list(extra.get("import_batches", []))
+    for batch in batches:
+        if batch.get("id") == batch_id and batch.get("status") == "active":
+            return batch
+    safe = current_df.fillna("").astype(str) if not current_df.empty else pd.DataFrame(columns=ALL_COLUMNS)
+    batch = {
+        "id": batch_id,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "status": "active",
+        "mode": mode,
+        "files": [],
+        "rows": 0,
+        "before_passengers": safe.to_dict(orient="records"),
+        "before_loaded_files": list(current_loaded),
+        "before_date_meta": dict(extra.get("date_meta", {})),
+    }
+    batches.insert(0, batch)
+    extra["import_batches"] = batches[:MAX_IMPORT_SNAPSHOTS]
+    return batch
+
+
+def _update_import_history(extra: dict, batch: dict) -> None:
+    history = list(extra.get("import_history", []))
+    item = next((entry for entry in history if entry.get("batch_id") == batch["id"]), None)
+    filenames = list(batch.get("files", []))
+    files_text = ", ".join(filenames[:3])
+    if len(filenames) > 3:
+        files_text += f" +{len(filenames) - 3} dosya"
+    payload = {
+        "batch_id": batch["id"],
+        "time": datetime.now().strftime("%d.%m.%Y %H:%M"),
+        "files": files_text or "—",
+        "file_count": len(filenames),
+        "rows": int(batch.get("rows", 0)),
+        "mode": batch.get("mode", "Ekle"),
+        "undone": False,
+    }
+    if item is None:
+        history.insert(0, payload)
+    else:
+        item.update(payload)
+    extra["import_history"] = history[:50]
 
 
 def import_gate_visa_files(
     files: Iterable[tuple[str, bytes]],
     replace: bool = False,
     dup_strategy: str = "add",
-) -> tuple[int, list[str], list[str], int]:
-    all_results = []
-    loaded_names: list[str] = []
-    for filename, data in files:
-        loaded_names.append(filename)
-        all_results.extend(read_gate_visa_file_bytes(filename, data))
-
-    imported_df = gate_visa_results_to_passengers(all_results)
-    warnings = validate_passenger_rows(imported_df)
+    batch_id: str = "",
+) -> tuple[int, list[str], list[str], int, str, int, int]:
+    imported_df, loaded_names, warnings = _parse_import_files(files)
     current_df, current_loaded, extra = load_state()
+    batch_id = batch_id.strip() or str(uuid.uuid4())
+    mode = "Değiştir" if (replace or current_df.empty) else f"Ekle ({dup_strategy})"
+    batch = _ensure_import_batch(extra, batch_id, current_df, current_loaded, mode)
+    existing_keys = set(passenger_identity_keys(current_df)) - {""}
+    imported_keys = passenger_identity_keys(imported_df)
+    seen_for_count = set(existing_keys)
+    duplicate_count = 0
+    for key in imported_keys:
+        if key and key in seen_for_count:
+            duplicate_count += 1
+        elif key:
+            seen_for_count.add(key)
+    invalid_count = _critical_import_count(imported_df)
+    accepted_count = len(imported_df)
 
     if replace or current_df.empty:
         next_df = imported_df
         next_loaded = loaded_names
     elif dup_strategy == "skip":
-        existing_keys = set(current_df["Pasaport No"].astype(str).map(_norm_key)) - {""}
-        keep = [not (_norm_key(pp) and _norm_key(pp) in existing_keys) for pp in imported_df["Pasaport No"].astype(str)]
+        seen = set(existing_keys)
+        keep: list[bool] = []
+        for key in imported_keys:
+            accepted = not (key and key in seen)
+            keep.append(accepted)
+            if accepted and key:
+                seen.add(key)
         next_df = normalize_passenger_dataframe(pd.concat([current_df, imported_df[keep]], ignore_index=True))
         next_loaded = list(dict.fromkeys([*current_loaded, *loaded_names]))
+        accepted_count = int(sum(keep))
     elif dup_strategy == "overwrite":
         result = current_df.copy().reset_index(drop=True)
-        ex = {_norm_key(v): i for i, v in enumerate(result["Pasaport No"].astype(str)) if _norm_key(v)}
-        new_rows = []
+        ex = {key: i for i, key in enumerate(passenger_identity_keys(result)) if key}
+        new_rows_by_key: dict[str, pd.Series] = {}
+        unkeyed_rows: list[pd.Series] = []
         for _, row in imported_df.iterrows():
-            key = _norm_key(str(row.get("Pasaport No", "")))
+            key = passenger_identity_key(row.get("Pasaport No"), row.get("Gidiş Tarihi"))
             if key and key in ex:
                 tgt = ex[key]
                 for col in ALL_COLUMNS:
@@ -233,8 +376,11 @@ def import_gate_visa_files(
                     if col == "Foto" and not val:
                         continue
                     result.at[tgt, col] = val
+            elif key:
+                new_rows_by_key[key] = row
             else:
-                new_rows.append(row)
+                unkeyed_rows.append(row)
+        new_rows = [*new_rows_by_key.values(), *unkeyed_rows]
         if new_rows:
             result = pd.concat([result, pd.DataFrame(new_rows)], ignore_index=True).fillna("")
         next_df = normalize_passenger_dataframe(result)
@@ -243,17 +389,64 @@ def import_gate_visa_files(
         next_df = normalize_passenger_dataframe(pd.concat([current_df, imported_df], ignore_index=True))
         next_loaded = list(dict.fromkeys([*current_loaded, *loaded_names]))
 
-    history = list(extra.get("import_history", []))
-    history.insert(0, {
-        "time": datetime.now().strftime("%d.%m.%Y %H:%M"),
-        "files": ", ".join(loaded_names) or "—",
-        "rows": int(len(imported_df)),
-        "mode": "Değiştir" if (replace or current_df.empty) else f"Ekle ({dup_strategy})",
-    })
-    extra["import_history"] = history[:30]
+    batch["files"] = list(dict.fromkeys([*batch.get("files", []), *loaded_names]))
+    batch["rows"] = int(batch.get("rows", 0)) + int(accepted_count)
+    _update_import_history(extra, batch)
 
     saved = save_state(next_df, next_loaded, extra)
-    return len(imported_df), warnings, list(next_loaded), len(saved)
+    return (
+        int(accepted_count),
+        warnings,
+        list(next_loaded),
+        len(saved),
+        batch_id,
+        duplicate_count,
+        invalid_count,
+    )
+
+
+def undo_import(batch_id: str = "") -> tuple[bool, str, int]:
+    df, loaded_files, extra = load_state()
+    active = [batch for batch in extra.get("import_batches", []) if batch.get("status") == "active"]
+    if not active:
+        return False, "Geri alinabilecek bir aktarim yok.", len(df)
+    batch = active[0]
+    if batch_id and batch.get("id") != batch_id:
+        return False, "Yalnizca son aktarim geri alinabilir.", len(df)
+    restored = pd.DataFrame(batch.get("before_passengers", []))
+    restored = normalize_passenger_dataframe(restored) if not restored.empty else pd.DataFrame(columns=ALL_COLUMNS)
+    batch["status"] = "undone"
+    batch["undone_at"] = datetime.now().isoformat(timespec="seconds")
+    extra["date_meta"] = dict(batch.get("before_date_meta", {}))
+    for item in extra.get("import_history", []):
+        if item.get("batch_id") == batch.get("id"):
+            item["undone"] = True
+            item["mode"] = f"{item.get('mode', 'Aktarim')} · geri alindi"
+    saved = save_state(restored, list(batch.get("before_loaded_files", [])), extra)
+    return True, "Son toplu aktarim geri alindi.", len(saved)
+
+
+def record_audit(actor_name: str, role: str, action: str, path: str) -> None:
+    df, loaded_files, extra = load_state()
+    events = list(extra.get("audit_log", []))
+    events.insert(
+        0,
+        {
+            "id": str(uuid.uuid4()),
+            "time": datetime.now().isoformat(timespec="seconds"),
+            "actor": actor_name,
+            "role": role,
+            "action": action,
+            "path": path,
+        },
+    )
+    extra["audit_log"] = events[:MAX_AUDIT_EVENTS]
+    save_state(df, loaded_files, extra)
+
+
+def get_audit(limit: int = 100) -> list[dict]:
+    _, _, extra = load_state()
+    return list(extra.get("audit_log", []))[: max(1, min(limit, 500))]
 
 
 def update_passenger(passenger_id: int, updates: dict[str, str | None]) -> bool:
@@ -332,10 +525,10 @@ def remove_passenger_photo(passenger_id: int) -> bool:
     return True
 
 
-def match_photos(files: Iterable[tuple[str, bytes]]) -> tuple[int, list[str], int, int]:
+def match_photos(files: Iterable[tuple[str, bytes]]) -> tuple[int, list[str], int, int, list[dict]]:
     df, loaded_files, extra = load_state()
     if df.empty:
-        return 0, [name for name, _ in files], 0, 0
+        return 0, [name for name, _ in files], 0, 0, []
     uploaded: list[tuple[str, bytes]] = []
     skipped: list[str] = []
     for filename, data in files:
@@ -349,25 +542,87 @@ def match_photos(files: Iterable[tuple[str, bytes]]) -> tuple[int, list[str], in
             uploaded.append((filename, data))
         else:
             skipped.append(filename)
-    updated, matched, unmatched = match_photos_to_dataframe(df, uploaded)
+    updated, matches, unmatched_payload = match_photos_with_details(df, uploaded)
+    unmatched_items = list(extra.get("unmatched_photos", []))
+    unmatched_names: list[str] = []
+    for filename, data in unmatched_payload:
+        item_id = str(uuid.uuid4())
+        processed, new_ext = _process_image(data)
+        _, original_ext = os.path.splitext(filename)
+        ref = save_photo_bytes(f"unmatched_{item_id}", new_ext or original_ext, processed)
+        unmatched_items.insert(
+            0,
+            {
+                "id": item_id,
+                "filename": filename,
+                "ref": ref,
+                "created_at": datetime.now().isoformat(timespec="seconds"),
+            },
+        )
+        unmatched_names.append(filename)
+    extra["unmatched_photos"] = unmatched_items[:500]
     saved = save_state(updated, loaded_files, extra)
     with_photo = int(saved["Foto"].astype(str).str.strip().ne("").sum()) if not saved.empty else 0
-    return matched, [*unmatched, *skipped], len(saved), with_photo
+    return len(matches), [*unmatched_names, *skipped], len(saved), with_photo, matches
+
+
+def get_unmatched_photos(with_key: str = "") -> list[dict]:
+    _, _, extra = load_state()
+    items = []
+    for item in extra.get("unmatched_photos", []):
+        path = f"/api/photo/{item.get('ref', '')}"
+        if with_key:
+            path += f"?k={with_key}"
+        items.append(
+            {
+                "id": str(item.get("id", "")),
+                "filename": str(item.get("filename", "")),
+                "photo_url": path,
+                "created_at": str(item.get("created_at", "")),
+            }
+        )
+    return items
+
+
+def assign_unmatched_photo(item_id: str, passenger_id: int) -> tuple[bool, str]:
+    df, loaded_files, extra = load_state()
+    if passenger_id < 0 or passenger_id >= len(df):
+        return False, "Yolcu bulunamadi."
+    items = list(extra.get("unmatched_photos", []))
+    item = next((entry for entry in items if str(entry.get("id")) == item_id), None)
+    if item is None:
+        return False, "Fotograf bulunamadi."
+    idx = df.index[passenger_id]
+    df.at[idx, "Foto"] = str(item.get("ref", ""))
+    extra["unmatched_photos"] = [entry for entry in items if str(entry.get("id")) != item_id]
+    save_state(df, loaded_files, extra)
+    return True, "Fotograf yolcuya atandi."
+
+
+def delete_unmatched_photo(item_id: str) -> bool:
+    df, loaded_files, extra = load_state()
+    items = list(extra.get("unmatched_photos", []))
+    remaining = [entry for entry in items if str(entry.get("id")) != item_id]
+    if len(remaining) == len(items):
+        return False
+    extra["unmatched_photos"] = remaining
+    save_state(df, loaded_files, extra)
+    return True
 
 
 def merge_duplicates(passport_key: str | None = None) -> tuple[int, int]:
     df, loaded_files, extra = load_state()
     if df.empty:
         return 0, 0
-    norm = df["Pasaport No"].astype(str).map(_norm_key)
-    dup_keys = sorted(set(norm[norm.ne("") & norm.duplicated(keep=False)]))
-    targets = [passport_key] if passport_key else dup_keys
+    identities = passenger_identity_keys(df)
+    dup_keys = sorted(set(identities[identities.ne("") & identities.duplicated(keep=False)]))
+    targets = [key for key in dup_keys if not passport_key or key.startswith(f"{passport_key}|")]
     removed = 0
     for key in targets:
         if not key:
             continue
-        norm = df["Pasaport No"].astype(str).map(_norm_key)
-        group_idx = list(df[norm == key].index)
+        identities = passenger_identity_keys(df)
+        group_idx = list(df[identities == key].index)
         if len(group_idx) < 2:
             continue
         merged: dict[str, str] = {}
@@ -463,9 +718,16 @@ def _subset_by_ids(df: pd.DataFrame, ids: list[int] | None) -> pd.DataFrame:
     return df.loc[labels]
 
 
-def export_bytes(kind: str, ids: list[int] | None = None) -> tuple[bytes, str, str]:
+def export_bytes(
+    kind: str,
+    ids: list[int] | None = None,
+    range_choice: str = "Tümü",
+    start: str = "",
+    end: str = "",
+) -> tuple[bytes, str, str]:
     df, _, _ = load_state()
-    sub = _subset_by_ids(df, ids)
+    sub = _scoped_df(df, range_choice, start, end)
+    sub = _subset_by_ids(sub, ids)
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     if kind == "csv":
         return dataframe_to_csv(sub), f"yolcular-{stamp}.csv", "text/csv"
@@ -503,8 +765,15 @@ def build_date_photo_zip(df: pd.DataFrame) -> bytes | None:
     return buf.getvalue()
 
 
-def build_operation_package() -> tuple[bytes, str]:
+def build_operation_package(
+    range_choice: str = "Tümü",
+    start: str = "",
+    end: str = "",
+    ids: list[int] | None = None,
+) -> tuple[bytes, str]:
     df, loaded_files, extra = load_state()
+    df = _scoped_df(df, range_choice, start, end)
+    df = _subset_by_ids(df, ids)
     report = {
         "version": APP_VERSION,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -522,7 +791,8 @@ def build_operation_package() -> tuple[bytes, str]:
         if photo_zip:
             zf.writestr("fotograflar.zip", photo_zip)
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
-    return buf.getvalue(), f"gatevisa-operation-package-{stamp}.zip"
+    label = "secili" if ids else ("tum" if range_choice == "Tümü" else (start or range_choice).replace(" ", "-").lower())
+    return buf.getvalue(), f"gatevisa-{label}-{stamp}.zip"
 
 
 def date_photo_zip_by_range(range_choice: str, start: str, end: str) -> tuple[bytes | None, str]:
@@ -569,8 +839,9 @@ def get_photo(ref: str) -> tuple[str, bytes] | None:
     return photo_raw_bytes(ref)
 
 
-def build_manifest_html() -> str:
+def build_manifest_html(range_choice: str = "Tümü", start: str = "", end: str = "") -> str:
     df, _, _ = load_state()
+    df = _scoped_df(df, range_choice, start, end)
     import html as _html
 
     rows_html = "".join(
@@ -586,7 +857,7 @@ def build_manifest_html() -> str:
     return f"""<!DOCTYPE html>
 <html lang="tr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Gate Visa PAX — Manifest</title>
+<title>Gate Visa Operations — Manifest</title>
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 24px; color: #0f172a; }}
   h3 {{ margin: 0 0 4px; }}
@@ -594,11 +865,11 @@ def build_manifest_html() -> str:
   table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
   th, td {{ border: 1px solid #cbd5e1; padding: 7px 9px; text-align: left; }}
   th {{ background: #f1f5f9; }}
-  .print-btn {{ margin-top: 16px; padding: 10px 16px; border: 0; border-radius: 10px;
-    background: #0ea5e9; color: #fff; font-weight: 700; cursor: pointer; }}
+  .print-btn {{ margin-top: 16px; padding: 10px 16px; border: 0; border-radius: 8px;
+    background: #102a43; color: #fff; font-weight: 700; cursor: pointer; }}
   @media print {{ .print-btn {{ display: none; }} }}
 </style></head><body>
-<h3>Gate Visa PAX — Manifest</h3>
+<h3>Gate Visa Operations — Manifest</h3>
 <div class="sub">{now} · Toplam {len(df)} yolcu</div>
 <table><thead><tr><th>#</th><th>Ad Soyad</th><th>Pasaport</th><th>Voucher</th><th>Gidiş</th><th>Varış</th><th>Foto</th></tr></thead>
 <tbody>{rows_html}</tbody></table>
@@ -608,3 +879,93 @@ def build_manifest_html() -> str:
 
 def get_template() -> bytes:
     return passenger_template_xlsx()
+
+
+def list_daily_backups() -> list[str]:
+    return db.list_daily_backups()
+
+
+def restore_daily_backup(snapshot_date: str) -> tuple[bool, str, int]:
+    payload = db.load_daily_backup(snapshot_date)
+    if payload is None:
+        return False, "Yedek bulunamadi veya sifresi acilamadi.", 0
+    from persistence import _payload_to_state
+
+    df, loaded_files, backup_extra = _payload_to_state(payload)
+    _, _, current_extra = load_state()
+    # Erisim ayarlari ve audit kaydi mevcut sistemden korunur.
+    backup_extra["auth"] = current_extra.get("auth", {})
+    backup_extra["audit_log"] = current_extra.get("audit_log", [])
+    saved = save_state(df, loaded_files, backup_extra)
+    return True, f"{snapshot_date} tarihli yedek geri yuklendi.", len(saved)
+
+
+def ingest_eml(filename: str, data: bytes, batch_id: str = "") -> dict:
+    parsed = parse_eml(data)
+    excel_files: list[tuple[str, bytes]] = []
+    image_files: list[tuple[str, bytes]] = []
+    documents: list[dict] = []
+    for attachment in parsed["attachments"]:
+        attachment_name = str(attachment["filename"])
+        extension = os.path.splitext(attachment_name)[1].lower()
+        if extension in {".xlsx", ".xls", ".xlsm", ".ods", ".csv"}:
+            excel_files.append((attachment_name, attachment["data"]))
+        elif looks_like_image(attachment_name, attachment["data"]):
+            image_files.append((attachment_name, attachment["data"]))
+        else:
+            documents.append(attachment)
+
+    imported_rows = 0
+    matched_photos = 0
+    warnings: list[str] = []
+    if excel_files:
+        result = import_gate_visa_files(
+            excel_files,
+            replace=False,
+            dup_strategy="skip",
+            batch_id=batch_id or str(uuid.uuid4()),
+        )
+        imported_rows = result[0]
+        warnings.extend(result[1])
+    if image_files:
+        photo_result = match_photos(image_files)
+        matched_photos = photo_result[0]
+        warnings.extend([f"Eşleşmeyen fotoğraf: {name}" for name in photo_result[1]])
+
+    df, loaded_files, extra = load_state()
+    inbox = list(extra.get("mail_inbox", []))
+    stored_documents = 0
+    document_items = []
+    for attachment in documents:
+        ref = f"mail_{uuid.uuid4()}"
+        if db.save_document(ref, str(attachment["filename"]), str(attachment["mime"]), attachment["data"]):
+            stored_documents += 1
+            document_items.append(
+                {"ref": ref, "filename": str(attachment["filename"]), "mime": str(attachment["mime"])}
+            )
+    inbox.insert(
+        0,
+        {
+            "id": str(uuid.uuid4()),
+            "source_file": filename,
+            "subject": parsed["subject"],
+            "sender": parsed["sender"],
+            "received_at": parsed["date"],
+            "processed_at": datetime.now().isoformat(timespec="seconds"),
+            "attachment_count": len(parsed["attachments"]),
+            "imported_rows": imported_rows,
+            "matched_photos": matched_photos,
+            "documents": document_items,
+        },
+    )
+    extra["mail_inbox"] = inbox[:200]
+    save_state(df, loaded_files, extra)
+    return {
+        "subject": parsed["subject"],
+        "sender": parsed["sender"],
+        "attachment_count": len(parsed["attachments"]),
+        "imported_rows": imported_rows,
+        "matched_photos": matched_photos,
+        "stored_documents": stored_documents,
+        "warnings": warnings,
+    }

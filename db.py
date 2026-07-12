@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
+from datetime import date
 
 try:
     from sqlalchemy import create_engine, text
@@ -100,6 +102,19 @@ def _create_tables(engine: "Engine") -> None:
         )
         conn.execute(
             text(
+                "CREATE TABLE IF NOT EXISTS app_backups ("
+                "snapshot_date VARCHAR(10) PRIMARY KEY, data TEXT)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS documents ("
+                "ref VARCHAR(256) PRIMARY KEY, filename VARCHAR(512), "
+                "mime VARCHAR(128), data TEXT)"
+            )
+        )
+        conn.execute(
+            text(
                 "CREATE TABLE IF NOT EXISTS photos ("
                 "ref VARCHAR(256) PRIMARY KEY, mime VARCHAR(64), data TEXT)"
             )
@@ -139,6 +154,76 @@ def load_state() -> dict | None:
         return None
 
 
+def _backup_cipher():
+    secret = os.environ.get("GATEVISA_DATA_SECRET", "").strip()
+    if not secret:
+        return None
+    try:
+        from cryptography.fernet import Fernet
+
+        key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+        return Fernet(key)
+    except Exception:
+        return None
+
+
+def save_daily_backup(payload: dict) -> bool:
+    """Gunun son durumunu sifreli olarak saklar ve son 30 gunu korur."""
+    engine = get_engine()
+    cipher = _backup_cipher()
+    if engine is None or cipher is None:
+        return False
+    try:
+        snapshot_date = date.today().isoformat()
+        token = cipher.encrypt(json.dumps(payload, ensure_ascii=False).encode("utf-8")).decode("ascii")
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM app_backups WHERE snapshot_date = :d"), {"d": snapshot_date})
+            conn.execute(
+                text("INSERT INTO app_backups (snapshot_date, data) VALUES (:d, :v)"),
+                {"d": snapshot_date, "v": token},
+            )
+            rows = conn.execute(
+                text("SELECT snapshot_date FROM app_backups ORDER BY snapshot_date DESC")
+            ).fetchall()
+            for row in rows[30:]:
+                conn.execute(text("DELETE FROM app_backups WHERE snapshot_date = :d"), {"d": row[0]})
+        return True
+    except Exception:
+        return False
+
+
+def list_daily_backups() -> list[str]:
+    engine = get_engine()
+    if engine is None:
+        return []
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(
+                text("SELECT snapshot_date FROM app_backups ORDER BY snapshot_date DESC")
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+    except Exception:
+        return []
+
+
+def load_daily_backup(snapshot_date: str) -> dict | None:
+    engine = get_engine()
+    cipher = _backup_cipher()
+    if engine is None or cipher is None:
+        return None
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT data FROM app_backups WHERE snapshot_date = :d"),
+                {"d": snapshot_date},
+            ).fetchone()
+        if not row:
+            return None
+        return json.loads(cipher.decrypt(str(row[0]).encode("ascii")).decode("utf-8"))
+    except Exception:
+        return None
+
+
 def save_photo(ref: str, mime: str, data_bytes: bytes) -> bool:
     engine = get_engine()
     if engine is None:
@@ -171,3 +256,20 @@ def load_photo(ref: str) -> tuple[str, str] | None:
         return str(row[0]), str(row[1])
     except Exception:
         return None
+
+
+def save_document(ref: str, filename: str, mime: str, data_bytes: bytes) -> bool:
+    engine = get_engine()
+    if engine is None:
+        return False
+    try:
+        encoded = base64.b64encode(data_bytes).decode("ascii")
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM documents WHERE ref = :r"), {"r": ref})
+            conn.execute(
+                text("INSERT INTO documents (ref, filename, mime, data) VALUES (:r, :f, :m, :d)"),
+                {"r": ref, "f": filename, "m": mime, "d": encoded},
+            )
+        return True
+    except Exception:
+        return False

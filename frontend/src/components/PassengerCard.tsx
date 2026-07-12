@@ -36,7 +36,7 @@ export function PassengerCard({
   onToggle?: (id: number, checked: boolean) => void;
 }) {
   const issues = passenger.issues;
-  const tone = issues.length === 0 ? "ok" : issues.some((i) => i === "Pasaport yok") ? "bad" : "warn";
+  const tone = issues.length === 0 ? "ok" : issues.some((i) => ["Pasaport yok", "İsim yok", "Tarih hatalı"].includes(i)) ? "bad" : "warn";
   const toneLabel = issues.length === 0 ? "Hazır" : tone === "bad" ? "Eksik" : "Kontrol";
 
   return (
@@ -66,8 +66,8 @@ export function PassengerCard({
         <p className="passport">{passenger.passport_no || "Pasaport yok"}</p>
         <div className="passenger-tags">
           {passenger.voucher && <span>{passenger.voucher}</span>}
-          {passenger.departure_date && <span>↗ {passenger.departure_date}</span>}
-          {passenger.arrival_date && <span>↘ {passenger.arrival_date}</span>}
+          {passenger.departure_date && <span>Gidiş {passenger.departure_date}</span>}
+          {passenger.arrival_date && <span>Varış {passenger.arrival_date}</span>}
           {passenger.adult_fee && <span>Yetişkin {passenger.adult_fee}</span>}
           {passenger.child_fee && passenger.child_fee !== "0" && <span>Çocuk {passenger.child_fee}</span>}
         </div>

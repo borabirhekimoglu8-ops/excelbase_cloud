@@ -10,22 +10,25 @@ import {
   updatePassenger,
 } from "@/lib/api";
 import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 import { PassengerPhoto } from "@/components/PassengerCard";
 
-const FIELDS: { key: keyof Passenger; label: string; mono?: boolean }[] = [
+const FIELDS: { key: keyof Passenger; label: string; mono?: boolean; type?: string }[] = [
   { key: "no", label: "No" },
   { key: "first_name", label: "Ad" },
   { key: "last_name", label: "Soyad" },
   { key: "passport_no", label: "Pasaport No", mono: true },
   { key: "voucher", label: "Voucher" },
-  { key: "departure_date", label: "Gidiş Tarihi" },
-  { key: "arrival_date", label: "Varış Tarihi" },
+  { key: "departure_date", label: "Gidiş Tarihi", type: "date" },
+  { key: "arrival_date", label: "Varış Tarihi", type: "date" },
   { key: "adult_fee", label: "Vize Ücreti Yetişkin" },
   { key: "child_fee", label: "Vize Ücreti Çocuk" },
 ];
 
 export function PassengerDetail({ id, onClose }: { id: number; onClose: () => void }) {
   const { notify, bump } = useStore();
+  const { user } = useAuth();
+  const canWrite = user.role !== "viewer";
   const [passenger, setPassenger] = useState<Passenger | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -69,10 +72,10 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
 
   const passportClean = form.passport_no?.replace(/[^A-Za-z0-9]/g, "") ?? "";
   const passportHint = !form.passport_no
-    ? "⚪ Pasaport boş"
+    ? "Pasaport numarası girilmemiş"
     : passportClean.length < 6
-      ? "🔴 Çok kısa"
-      : "🟢 Format uygun";
+      ? "Pasaport numarası çok kısa"
+      : "Pasaport formatı uygun";
 
   async function handleSave() {
     setSaving(true);
@@ -140,7 +143,7 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
         <div className="sheet-handle" />
         <div className="sheet-head">
           <button className="ghost-btn" onClick={onClose}>
-            ← Kapat
+            Kapat
           </button>
           <span className="eyebrow">Yolcu detayı</span>
         </div>
@@ -153,7 +156,7 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
           </div>
         </div>
 
-        <div className="photo-actions">
+        {canWrite && <div className="photo-actions">
           <label className="soft-btn">
             {passenger.photo ? "Fotoğrafı değiştir" : "Fotoğraf ekle"}
             <input type="file" accept="image/*" onChange={handlePhoto} disabled={busy} />
@@ -163,17 +166,18 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
               Fotoğrafı sil
             </button>
           )}
-        </div>
+        </div>}
 
         <div className="detail-form">
           {FIELDS.map((field) => (
             <label key={field.key} className="field">
               <span>{field.label}</span>
               <input
-                type="text"
+                type={field.type ?? "text"}
                 className={field.mono ? "mono" : ""}
                 value={form[field.key] ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
+                disabled={!canWrite}
               />
             </label>
           ))}
@@ -184,14 +188,14 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
           </label>
         </div>
 
-        <div className="detail-actions">
+        {canWrite && <div className="detail-actions">
           <button className="primary-btn" onClick={handleSave} disabled={saving || busy}>
             {saving ? "Kaydediliyor..." : "Kaydet"}
           </button>
           <button className="soft-btn danger" onClick={handleDelete} disabled={busy}>
             Sil
           </button>
-        </div>
+        </div>}
       </div>
     </div>
   );
