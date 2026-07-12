@@ -566,27 +566,60 @@ export function V8Pilot() {
   // Tek adımlı import: dosya seçilir seçilmez doğrulanır ve geçerli satırlar
   // otomatik commit edilir; kullanıcıdan ek onay istenmez.
   async function importIntoSelected(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (!file || !selected) return;
+    if (files.length === 0 || !selected) return;
+    const operation = selected;
     setBusy(true);
+    setMigrationSummary([]);
     try {
-      setMessage(`${file.name} işleniyor…`);
-      const staged = await stageV8Import(identity, selected.id, file);
-      if (staged.batch.valid_rows === 0) {
-        setMessage(`${file.name}: geçerli satır bulunamadı (${staged.batch.invalid_rows} hatalı satır).`);
-        return;
+      let created = 0;
+      let skippedDuplicates = 0;
+      let invalidRows = 0;
+      let successfulFiles = 0;
+      const problems: string[] = [];
+
+      for (const [index, file] of files.entries()) {
+        setMessage(`Excel işleniyor (${index + 1}/${files.length}): ${file.name}`);
+        try {
+          const staged = await stageV8Import(identity, operation.id, file);
+          if (staged.batch.valid_rows === 0) {
+            invalidRows += staged.batch.invalid_rows;
+            problems.push(
+              `${file.name}: geçerli satır bulunamadı (${staged.batch.invalid_rows} hatalı satır).`,
+            );
+            continue;
+          }
+
+          const result = await commitV8Import(identity, staged.batch.id);
+          created += result.created;
+          skippedDuplicates += result.skipped_duplicates;
+          invalidRows += result.invalid_rows;
+          successfulFiles += 1;
+        } catch (error) {
+          problems.push(
+            `${file.name}: ${error instanceof Error ? error.message : "işlenemedi"}`,
+          );
+        }
       }
-      const result = await commitV8Import(identity, staged.batch.id);
-      await selectOperation(selected);
+
+      await selectOperation(operation);
+      const lines = [
+        `${files.length} dosyadan ${successfulFiles} tanesi işlendi; ${created} yolcu eklendi.`,
+      ];
+      if (skippedDuplicates > 0) {
+        lines.push(`${skippedDuplicates} kayıt zaten bulunduğu için atlandı.`);
+      }
+      if (invalidRows > 0) {
+        lines.push(`${invalidRows} hatalı satır atlandı.`);
+      }
+      lines.push(...problems);
+      setMigrationSummary(lines);
       setMessage(
-        `${result.created} yolcu eklendi` +
-          (result.skipped_duplicates > 0 ? `, ${result.skipped_duplicates} kayıt zaten vardı` : "") +
-          (result.invalid_rows > 0 ? `, ${result.invalid_rows} hatalı satır atlandı` : "") +
-          ".",
+        problems.length === 0
+          ? "Toplu Excel içe aktarma tamamlandı."
+          : "Toplu içe aktarma tamamlandı; bazı dosyalarda sorun var.",
       );
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Import başarısız.");
     } finally {
       setBusy(false);
     }
@@ -783,10 +816,11 @@ export function V8Pilot() {
               </form>
 
               <label className={styles.importBox}>
-                Bu operasyona Excel yükle — otomatik işlenir
+                Bu operasyona Excel yükle — çoklu seçilebilir
                 <input
                   accept=".xlsx,.xls,.xlsm,.ods,.csv"
                   hidden
+                  multiple
                   onChange={(event) => void importIntoSelected(event)}
                   type="file"
                 />
