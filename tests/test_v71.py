@@ -7,10 +7,13 @@ from email.message import EmailMessage
 
 import db
 import persistence
+import pytest
+import photo_store
 
 
 def _isolate_store(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(persistence, "STORE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setattr(photo_store, "PHOTO_DIR", str(tmp_path / "photos"))
     monkeypatch.setattr(db, "_engine", None)
     monkeypatch.setattr(db, "_init_failed", True)
 
@@ -36,6 +39,10 @@ def test_composite_dedup_date_scope_package_and_undo(monkeypatch, tmp_path):
     assert duplicate[5] == 1
     assert services.get_summary().passenger_count == 2
     assert services.get_summary("Aralık", "2026-07-15", "2026-07-15").passenger_count == 1
+
+    with pytest.raises(ValueError, match="yolcu|şablon|format",):
+        services.import_gate_visa_files([("invalid.csv", b"foo,bar\nx,y\n")], replace=True, batch_id="bad")
+    assert services.get_summary().passenger_count == 2
 
     package, _ = services.build_operation_package(ids=[0])
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
@@ -74,6 +81,20 @@ def test_first_run_auth_roles_and_cookie(monkeypatch, tmp_path):
         )
         assert upload.status_code == 200
         assert upload.json()["imported"] == 2
+
+        photo = client.post(
+            "/api/photos/match",
+            files=[("files", ("P111111.jpg", b"\xff\xd8\xff\xe0synthetic", "image/jpeg"))],
+        )
+        assert photo.status_code == 200
+        assert photo.json()["matched"] == 1
+        assert client.get("/api/passengers").json()[0]["photo"]
+
+        invalid_preview = client.post(
+            "/api/import/preview",
+            files={"file": ("invalid.csv", b"foo,bar\nx,y\n", "text/csv")},
+        )
+        assert invalid_preview.status_code == 400
         assert client.post("/api/import/undo?batch_id=api-batch").json()["passenger_count"] == 0
 
         viewer = client.post("/api/users", json={"name": "Viewer", "pin": "319764", "role": "viewer"})
