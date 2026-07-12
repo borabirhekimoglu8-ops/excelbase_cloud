@@ -213,8 +213,13 @@ def list_passengers(
     identity: ReadIdentity,
     limit: int = Query(default=500, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    search: str = Query(default="", max_length=160),
+    status_filter: str = Query(default="", alias="status", max_length=40),
+    sort: str = Query(default="", max_length=40),
 ) -> Page[PassengerRead]:
-    return services.list_passengers(db, identity, operation_id, limit, offset)
+    return services.list_passengers(
+        db, identity, operation_id, limit, offset, search=search, status_filter=status_filter, sort=sort
+    )
 
 
 @app.get("/api/v8/passengers/{passenger_id}", response_model=PassengerRead)

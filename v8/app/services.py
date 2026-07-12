@@ -296,16 +296,46 @@ def create_passenger(
 
 
 def list_passengers(
-    db: Session, identity: IdentityContext, operation_id: uuid.UUID, limit: int, offset: int
+    db: Session,
+    identity: IdentityContext,
+    operation_id: uuid.UUID,
+    limit: int,
+    offset: int,
+    search: str = "",
+    status_filter: str = "",
+    sort: str = "",
 ) -> Page[PassengerRead]:
     operation = OperationRepository.get(db, identity.organization_id, operation_id)
     if operation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Operasyon bulunamadı.")
+    search = search.strip()
+    # Pasaportlar şifreli saklandığından metin araması yerine, arama terimi
+    # pasaporta benziyorsa HMAC parmak iziyle tam eşleşme yapılır.
+    passport_hash = None
+    if search and len(normalize_passport(search)) >= 3:
+        passport_hash = get_codec().passport_hash(search)
     items = [
         _passenger_read(item)
-        for item in PassengerRepository.list_for_operation(db, identity.organization_id, operation_id, limit, offset)
+        for item in PassengerRepository.list_for_operation(
+            db,
+            identity.organization_id,
+            operation_id,
+            limit,
+            offset,
+            search=search,
+            passport_hash=passport_hash,
+            status=status_filter,
+            sort=sort,
+        )
     ]
-    total = PassengerRepository.count_for_operation(db, identity.organization_id, operation_id)
+    total = PassengerRepository.count_for_operation(
+        db,
+        identity.organization_id,
+        operation_id,
+        search=search,
+        passport_hash=passport_hash,
+        status=status_filter,
+    )
     return _page(items, total, limit, offset)
 
 

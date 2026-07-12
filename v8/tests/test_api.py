@@ -205,6 +205,64 @@ def test_bulk_photo_match_by_passport_and_name(client, seeded):
     assert refreshed["photo_object_key"]
 
 
+def test_passenger_search_and_status_filters(client, seeded):
+    operation = client.post(
+        "/api/v8/operations", headers=seeded["headers_a"], json=operation_payload("FILTRE-OP")
+    ).json()
+    ada = client.post(
+        f"/api/v8/operations/{operation['id']}/passengers",
+        headers=seeded["headers_a"],
+        json={
+            **passenger_payload("U77777777"),
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "voucher": "VCH-ADA",
+        },
+    ).json()
+    client.post(
+        f"/api/v8/operations/{operation['id']}/passengers",
+        headers=seeded["headers_a"],
+        json={
+            **passenger_payload("U88888888"),
+            "first_name": "Alan",
+            "last_name": "Turing",
+            "voucher": "",
+            "adult_fee": "0.00",
+            "child_fee": "0.00",
+        },
+    ).json()
+
+    def fetch(params: str) -> list[str]:
+        page = client.get(
+            f"/api/v8/operations/{operation['id']}/passengers?{params}",
+            headers=seeded["headers_a"],
+        ).json()
+        return [item["first_name"] for item in page["items"]]
+
+    assert fetch("search=lovelace") == ["Ada"]
+    assert fetch("search=VCH-ADA") == ["Ada"]
+    # Pasaport tam yazılırsa şifreli veriye rağmen HMAC ile bulunur.
+    assert fetch("search=U88888888") == ["Alan"]
+    assert fetch("search=U8888") == []
+
+    assert fetch("status=vouchersiz") == ["Alan"]
+    assert fetch("status=ucretsiz") == ["Alan"]
+    assert set(fetch("status=fotosuz")) == {"Ada", "Alan"}
+    assert fetch("status=hazir") == []
+
+    client.post(
+        f"/api/v8/passengers/{ada['id']}/photo",
+        headers=seeded["headers_a"],
+        files={"file": ("ada.jpg", _tiny_jpeg(), "image/jpeg")},
+    )
+    assert fetch("status=fotografli") == ["Ada"]
+    assert fetch("status=eksik") == ["Alan"]
+    assert fetch("status=hazir") == ["Ada"]
+    # SQLite'ta created_at saniye hassasiyetinde olduğundan aynı saniyedeki
+    # kayıtların "recent" sırası test ortamında garanti edilemez.
+    assert set(fetch("sort=recent")) == {"Ada", "Alan"}
+
+
 def test_v7_migration_requires_write_role(client, seeded):
     response = client.post(
         "/api/v8/migrations/v7",
