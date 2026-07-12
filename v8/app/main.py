@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -115,7 +116,10 @@ async def request_context(request: Request, call_next):
 
 
 @app.get("/", include_in_schema=False)
-def root() -> dict:
+def root():
+    """Tarayıcıyla API köküne gelen kullanıcı doğrudan uygulama arayüzüne gönderilir."""
+    if settings.ui_url:
+        return RedirectResponse(url=settings.ui_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     return {
         "service": "Excelbase V8 API",
         "message": "Bu adres yalnızca API sunucusudur. Uygulama arayüzü için excelbase servisinin /v8 sayfasını açın.",
