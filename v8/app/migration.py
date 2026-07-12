@@ -1,8 +1,8 @@
-"""V7 yedeğindeki yolcu kayıtlarını V8 ilişkisel şemasına taşır.
+"""V7 kayıtlarını ve Excel dosyalarını V8 ilişkisel şemasına taşır.
 
-Kayıtlar "Gidiş Tarihi" alanına göre V7-YYYYMMDD kodlu operasyonlara
-gruplanır; tarihi okunamayanlar V7-TARIHSIZ operasyonunda toplanır.
-Taşıma tekrar çalıştırılabilir: var olan operasyonlar ve pasaportlar atlanır.
+Kayıtlar "Gidiş Tarihi" alanına göre tarih kodlu operasyonlara gruplanır;
+tarihi okunamayanlar <PREFIX>-TARIHSIZ operasyonunda toplanır. Taşıma tekrar
+çalıştırılabilir: var olan operasyonlar ve pasaportlar atlanır.
 """
 
 from __future__ import annotations
@@ -19,12 +19,10 @@ from sqlalchemy.orm import Session
 
 from .audit import emit_audit_event
 from .auth import IdentityContext
-from .import_adapter import _date, _money, _text
+from .import_adapter import _date, _load_v7_parser, _money, _text
 from .models import Operation, OperationStatus, Passenger
-from .schemas import V7MigrationCreate, V7MigrationPhotoLink, V7MigrationRead
+from .schemas import V7MigrationPhotoLink, V7MigrationRead
 from .security import get_codec
-
-UNDATED_CODE = "V7-TARIHSIZ"
 
 
 def _names(record: dict[str, Any]) -> tuple[str, str]:
@@ -37,6 +35,13 @@ def _names(record: dict[str, Any]) -> tuple[str, str]:
     if len(parts) >= 2:
         return " ".join(parts[:-1]), parts[-1]
     return full or "Bilinmiyor", "Bilinmiyor"
+
+
+def records_from_excel(filename: str, data: bytes) -> list[dict[str, Any]]:
+    """Parses a Gate Visa Excel/CSV file into V7-style record dicts."""
+    reader, to_passengers, _ = _load_v7_parser()
+    frame = to_passengers(reader(filename, data))
+    return frame.to_dict(orient="records")
 
 
 def _get_or_create_operation(
@@ -63,27 +68,33 @@ def _get_or_create_operation(
         route_destination=destination,
         departure_date=departure,
         status=OperationStatus.DRAFT.value,
-        notes="V7 verilerinden otomatik taşındı.",
+        notes="Otomatik içe aktarma ile oluşturuldu.",
     )
     db.add(operation)
     db.flush()
     return operation, True
 
 
-def migrate_v7_records(
+def migrate_records(
     db: Session,
     identity: IdentityContext,
-    payload: V7MigrationCreate,
+    records: list[dict[str, Any]],
     request_id: str,
+    *,
+    origin: str = "Kuşadası",
+    destination: str = "Samos",
+    code_prefix: str = "V7",
+    action: str = "v7.migrated",
+    source_label: str = "v7-migration",
 ) -> V7MigrationRead:
-    if not payload.passengers:
+    if not records:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Taşınacak yolcu kaydı yok.",
         )
 
     grouped: dict[date | None, list[dict[str, Any]]] = defaultdict(list)
-    for record in payload.passengers:
+    for record in records:
         grouped[_date(record.get("Gidiş Tarihi"))].append(record)
 
     codec = get_codec()
@@ -97,14 +108,14 @@ def migrate_v7_records(
     try:
         for departure in sorted(grouped, key=lambda d: (d is None, d or date.min)):
             rows = grouped[departure]
-            code = f"V7-{departure:%Y%m%d}" if departure else UNDATED_CODE
+            code = f"{code_prefix}-{departure:%Y%m%d}" if departure else f"{code_prefix}-TARIHSIZ"
             operation, created = _get_or_create_operation(
                 db,
                 identity.organization_id,
                 code,
                 departure or datetime.now(UTC).date(),
-                payload.origin,
-                payload.destination,
+                origin,
+                destination,
             )
             created_operations += int(created)
 
@@ -155,7 +166,7 @@ def migrate_v7_records(
                     adult_fee=_money(record.get("Vize Ücreti Yetişkin")),
                     child_fee=_money(record.get("Vize Ücreti Çocuk")),
                     currency="EUR",
-                    source_file=_text(record.get("Kaynak Dosya")) or "v7-migration",
+                    source_file=_text(record.get("Kaynak Dosya")) or source_label,
                     source_row=row_number,
                 )
                 db.add(passenger)
@@ -178,9 +189,10 @@ def migrate_v7_records(
             request_id=request_id,
             entity_type="migration",
             entity_id=migration_id,
-            action="v7.migrated",
+            action=action,
             after={
-                "records": len(payload.passengers),
+                "source": source_label,
+                "records": len(records),
                 "created_operations": created_operations,
                 "created_passengers": created_passengers,
                 "duplicate_passengers": duplicate_passengers,
@@ -204,4 +216,38 @@ def migrate_v7_records(
         skipped_without_passport=skipped_without_passport,
         invalid_passports=invalid_passports,
         photo_links=photo_links,
+    )
+
+
+def import_excel_auto(
+    db: Session,
+    identity: IdentityContext,
+    filename: str,
+    data: bytes,
+    request_id: str,
+) -> V7MigrationRead:
+    """Excel dosyasını tek adımda içeri alır: gidiş tarihlerine göre
+    operasyonlar oluşturur ve yolcuları yerleştirir; hiçbir onay adımı yoktur."""
+    try:
+        records = records_from_excel(filename, data)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Excel dosyası okunamadı veya desteklenmeyen format.",
+        ) from exc
+    if not records:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{filename}: dosyada yolcu satırı bulunamadı.",
+        )
+    return migrate_records(
+        db,
+        identity,
+        records,
+        request_id,
+        code_prefix="OP",
+        action="import.auto",
+        source_label=filename,
     )

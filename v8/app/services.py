@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import re
 import uuid
+import zipfile
 from datetime import UTC, datetime
 from typing import Any
 
@@ -40,6 +43,8 @@ from .schemas import (
     PassengerRead,
     PassengerUpdate,
     PassportRevealRead,
+    PhotoMatchItem,
+    PhotoMatchRead,
 )
 from .security import get_codec, normalize_passport
 from .storage import get_storage
@@ -584,6 +589,146 @@ def delete_passenger_photo(
     db.commit()
     if other_reference is None:
         get_storage().delete(object_key)
+
+
+def _norm_key(value: object) -> str:
+    """Pasaport / isim eşleştirmesi için sadeleştirir (V7 ile aynı kural)."""
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def _photo_to_jpeg(data: bytes) -> bytes | None:
+    """Her formatı (HEIC dahil) tarayıcı dostu küçük JPEG'e çevirir."""
+    try:
+        from PIL import Image
+
+        try:
+            import pillow_heif
+
+            pillow_heif.register_heif_opener()
+        except Exception:
+            pass
+        image = Image.open(io.BytesIO(data))
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        image.thumbnail((960, 960))
+        out = io.BytesIO()
+        image.save(out, format="JPEG", quality=85, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return None
+
+
+def _extract_zip_images(data: bytes) -> list[tuple[str, bytes]]:
+    out: list[tuple[str, bytes]] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            for info in archive.infolist():
+                if info.is_dir() or "__MACOSX" in info.filename:
+                    continue
+                base = info.filename.rsplit("/", 1)[-1]
+                if not base or base.startswith("."):
+                    continue
+                try:
+                    out.append((base, archive.read(info)))
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return out
+
+
+def match_passenger_photos(
+    db: Session,
+    identity: IdentityContext,
+    files: list[tuple[str, bytes]],
+    request_id: str,
+) -> PhotoMatchRead:
+    """Fotoğrafları dosya adına göre yolculara otomatik bağlar.
+
+    Eşleştirme konumdan bağımsızdır: dosya adının sadeleştirilmiş hali içinde
+    pasaport numarası (en uzun eşleşme) ya da ad+soyad aranır. ZIP arşivleri
+    açılıp içindeki görüntüler tek tek işlenir.
+    """
+    expanded: list[tuple[str, bytes]] = []
+    for filename, data in files:
+        if filename.lower().endswith(".zip") or data[:4] == b"PK\x03\x04":
+            expanded.extend(_extract_zip_images(data))
+        else:
+            expanded.append((filename, data))
+
+    codec = get_codec()
+    candidates: list[dict[str, Any]] = []
+    for passenger in db.scalars(
+        select(Passenger).where(
+            Passenger.organization_id == identity.organization_id,
+            Passenger.deleted_at.is_(None),
+        )
+    ):
+        try:
+            passport = _norm_key(codec.decrypt_passport(passenger.passport_ciphertext))
+        except ValueError:
+            continue
+        candidates.append(
+            {
+                "passenger": passenger,
+                "passport": passport,
+                "full_name": _norm_key(passenger.first_name + passenger.last_name),
+                "first": _norm_key(passenger.first_name),
+                "last": _norm_key(passenger.last_name),
+            }
+        )
+
+    matched = 0
+    unmatched: list[str] = []
+    attached: list[PhotoMatchItem] = []
+    for filename, data in expanded:
+        stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+        full = _norm_key(stem)
+        target: Passenger | None = None
+
+        best_len = 0
+        for row in candidates:
+            passport = row["passport"]
+            if passport and len(passport) >= 4 and passport in full and len(passport) > best_len:
+                target = row["passenger"]
+                best_len = len(passport)
+        if target is None:
+            for row in candidates:
+                if row["full_name"] and len(row["full_name"]) >= 4 and row["full_name"] in full:
+                    target = row["passenger"]
+                    break
+        if target is None:
+            for row in candidates:
+                if row["first"] and row["last"] and row["first"] in full and row["last"] in full:
+                    target = row["passenger"]
+                    break
+        if target is None:
+            unmatched.append(filename)
+            continue
+
+        jpeg = _photo_to_jpeg(data)
+        if jpeg is None:
+            unmatched.append(f"{filename} (görüntü okunamadı)")
+            continue
+        upload_passenger_photo(
+            db,
+            identity,
+            target.id,
+            f"{stem}.jpg",
+            "image/jpeg",
+            jpeg,
+            request_id,
+        )
+        matched += 1
+        attached.append(
+            PhotoMatchItem(
+                passenger_id=target.id,
+                passenger_name=f"{target.first_name} {target.last_name}".strip(),
+                filename=filename,
+            )
+        )
+
+    return PhotoMatchRead(matched=matched, unmatched=unmatched, attached=attached)
 
 
 def _import_row_read(row: ImportRow) -> ImportRowRead:

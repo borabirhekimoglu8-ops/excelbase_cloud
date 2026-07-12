@@ -233,6 +233,18 @@ class V7MigrationRead(StrictModel):
     photo_links: list[V7MigrationPhotoLink]
 
 
+class PhotoMatchItem(StrictModel):
+    passenger_id: uuid.UUID
+    passenger_name: str
+    filename: str
+
+
+class PhotoMatchRead(StrictModel):
+    matched: int
+    unmatched: list[str]
+    attached: list[PhotoMatchItem]
+
+
 class ImportBatchRead(StrictModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
