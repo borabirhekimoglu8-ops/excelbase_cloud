@@ -79,7 +79,17 @@ def get_engine() -> "Engine | None":
                 os.makedirs(parent, exist_ok=True)
         engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
         if not _init_done:
-            _create_tables(engine)
+            try:
+                _create_tables(engine)
+            except Exception:
+                # Render'in dahili PostgreSQL adresi TLS sonlandirmasi yapmaz.
+                # Harici adreslerde guvenli SSL'i once dener, dahili agda ise
+                # yalnizca ilk baglanti basarisizsa SSL'siz baglantiya duseriz.
+                if not connect_args or "+pg8000" not in url:
+                    raise
+                engine.dispose()
+                engine = create_engine(url, pool_pre_ping=True, connect_args={})
+                _create_tables(engine)
             _init_done = True
         _engine = engine
     except Exception:
