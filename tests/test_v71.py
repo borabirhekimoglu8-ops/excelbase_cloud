@@ -82,6 +82,16 @@ def test_first_run_auth_roles_and_cookie(monkeypatch, tmp_path):
         assert upload.status_code == 200
         assert upload.json()["imported"] == 2
 
+        empty_upload = client.post(
+            "/api/import?dup_strategy=skip&batch_id=empty-batch",
+            files=[(
+                "files",
+                ("empty.xlsx", b"", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            )],
+        )
+        assert empty_upload.status_code == 400
+        assert "0 bayt" in empty_upload.json()["detail"]
+
         photo = client.post(
             "/api/photos/match",
             files=[("files", ("P111111.jpg", b"\xff\xd8\xff\xe0synthetic", "image/jpeg"))],
