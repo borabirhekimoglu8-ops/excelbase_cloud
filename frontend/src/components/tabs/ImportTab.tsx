@@ -16,14 +16,7 @@ import {
 } from "@/lib/api";
 import { newId } from "@/lib/id";
 import { useStore } from "@/lib/store";
-import {
-  UnreadableUploadFileError,
-  clearQueueFiles,
-  loadQueueFiles,
-  materializeUploadFile,
-  persistQueueFile,
-  removeQueueFile,
-} from "@/lib/uploadQueue";
+import { materializeUploadFile, purgeLegacyUploadQueue } from "@/lib/uploadQueue";
 
 type QueueStatus = "ready" | "uploading" | "success" | "error";
 type QueueItem = {
@@ -31,8 +24,6 @@ type QueueItem = {
   file: File;
   status: QueueStatus;
   rows: number;
-  duplicates: number;
-  invalid: number;
   message: string;
 };
 
@@ -54,33 +45,7 @@ export function ImportTab() {
   }, []);
 
   useEffect(() => {
-    void loadQueueFiles()
-      .then(async ({ files: stored, discarded }) => {
-        if (discarded) {
-          const message = `${discarded} okunamayan eski kuyruk kaydı temizlendi. Dosyaları yeniden seçin.`;
-          setLog([message]);
-          notify(message, "warn");
-        }
-        const restored = stored.map<QueueItem>((item) => ({
-          id: item.id,
-          file: item.file,
-          status: "ready",
-          rows: 0,
-          duplicates: 0,
-          invalid: 0,
-          message: "Bekleyen dosya doğrudan aktarılacak.",
-        }));
-        if (!restored.length) return;
-        setQueue(restored);
-        await startImport(restored);
-      })
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : "Bekleyen aktarım okunamadı.";
-        setLog([message]);
-        notify(message, "error");
-      })
-      .finally(() => setBusy(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    purgeLegacyUploadQueue();
   }, []);
 
   useEffect(() => {
@@ -89,62 +54,11 @@ export function ImportTab() {
 
   const processedCount = queue.filter((item) => item.status === "success" || item.status === "error").length;
   const progress = queue.length ? Math.round((processedCount / queue.length) * 100) : 0;
-  const canStart = queue.some((item) => item.status === "ready") && !busy;
+  const importedRows = queue.reduce((sum, item) => sum + item.rows, 0);
+  const failedItems = queue.filter((item) => item.status === "error");
 
-  async function handleExcel(event: ChangeEvent<HTMLInputElement>) {
-    const sourceFiles = Array.from(event.target.files ?? []);
-    if (!sourceFiles.length) {
-      event.target.value = "";
-      return;
-    }
-    setBusy(true);
-    const items: QueueItem[] = [];
-    const unreadable: string[] = [];
-    try {
-      for (const source of sourceFiles) {
-        try {
-          const file = await materializeUploadFile(source);
-          items.push({
-            id: newId(),
-            file,
-            status: "ready",
-            rows: 0,
-            duplicates: 0,
-            invalid: 0,
-            message: "Aktarım kuyruğuna alındı.",
-          });
-        } catch (error) {
-          unreadable.push(error instanceof Error ? error.message : `${source.name}: dosya okunamadı.`);
-        }
-      }
-      if (!items.length) {
-        const message = unreadable[0] ?? "Seçilen dosyalar okunamadı.";
-        setLog(unreadable.length ? unreadable : [message]);
-        notify(message, "error");
-        return;
-      }
-      setQueue((current) => [...current.filter((row) => row.status !== "success"), ...items]);
-      await startImport(items);
-      if (unreadable.length) {
-        setLog((current) => [...current, ...unreadable]);
-        notify(`${unreadable.length} dosya telefondan okunamadı; yeniden seçin.`, "warn");
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Aktarım başlatılamadı.";
-      setLog([message]);
-      notify(message, "error");
-    } finally {
-      event.target.value = "";
-      setBusy(false);
-    }
-  }
-
-  async function startImport(explicitItems?: QueueItem[]) {
-    const pending = explicitItems ?? queue.filter((item) => item.status === "ready");
-    if (!pending.length) {
-      setBusy(false);
-      return;
-    }
+  async function startImport(items: QueueItem[]) {
+    if (busy || !items.length) return;
     setBusy(true);
     const batchId = newId();
     let imported = 0;
@@ -152,39 +66,34 @@ export function ImportTab() {
     let shouldReplace = replace;
     const serverWarnings: string[] = [];
     try {
-      for (const item of pending) {
+      for (const item of items) {
+        setQueue((current) =>
+          current.map((row) =>
+            row.id === item.id ? { ...row, status: "uploading", message: "Sunucuya gönderiliyor…" } : row,
+          ),
+        );
         try {
-          const uploadFile = await persistQueueFile({ id: item.id, file: item.file, createdAt: Date.now() });
-          setQueue((current) =>
-            current.map((row) =>
-              row.id === item.id
-                ? { ...row, status: "uploading", message: "Sunucuya gönderiliyor…" }
-                : row,
-            ),
-          );
-          const result = await uploadPassengerFile(uploadFile, shouldReplace, dupStrategy, batchId);
+          const result = await uploadPassengerFile(item.file, shouldReplace, dupStrategy, batchId);
           shouldReplace = false;
           imported += result.imported;
           serverWarnings.push(...result.warnings);
+          const detail = [
+            `${result.imported} yolcu aktarıldı`,
+            result.duplicate_count ? `${result.duplicate_count} tekrar` : "",
+            result.invalid_count ? `${result.invalid_count} kritik kontrol` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ");
           setQueue((current) =>
             current.map((row) =>
               row.id === item.id
-                ? {
-                    ...row,
-                    status: "success",
-                    rows: result.imported,
-                    duplicates: result.duplicate_count,
-                    invalid: result.invalid_count,
-                    message: `${result.imported} yolcu aktarıldı.`,
-                  }
+                ? { ...row, status: "success", rows: result.imported, message: `${detail}.` }
                 : row,
             ),
           );
-          await removeQueueFile(item.id);
           bump();
         } catch (err) {
           failed += 1;
-          if (err instanceof UnreadableUploadFileError) await removeQueueFile(item.id);
           setQueue((current) =>
             current.map((row) =>
               row.id === item.id
@@ -195,15 +104,57 @@ export function ImportTab() {
         }
       }
       setLog([
-        `${pending.length - failed}/${pending.length} dosya işlendi.`,
-        `${imported} yolcu aktarıldı.`,
+        `${items.length - failed}/${items.length} dosya işlendi, ${imported} yolcu aktarıldı.`,
         ...serverWarnings.slice(0, 8),
       ]);
-      notify(failed ? `${failed} dosya yeniden denenmeli` : `${imported} yolcu aktarıldı`, failed ? "warn" : "ok");
+      notify(failed ? `${failed} dosya aktarılamadı` : `${imported} yolcu aktarıldı`, failed ? "warn" : "ok");
       bump();
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleExcel(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.target;
+    const sourceFiles = Array.from(input.files ?? []);
+    if (!sourceFiles.length) {
+      input.value = "";
+      return;
+    }
+    const items: QueueItem[] = [];
+    const unreadable: string[] = [];
+    for (const source of sourceFiles) {
+      try {
+        // Baytlar input temizlenmeden ÖNCE kopyalanmalı (iOS Safari).
+        const file = await materializeUploadFile(source);
+        items.push({ id: newId(), file, status: "ready", rows: 0, message: "Sırada." });
+      } catch (error) {
+        unreadable.push(error instanceof Error ? error.message : `${source.name}: dosya okunamadı.`);
+      }
+    }
+    input.value = "";
+    if (unreadable.length) {
+      setLog(unreadable);
+      notify(`${unreadable.length} dosya okunamadı; yeniden seçin.`, "warn");
+    }
+    if (!items.length) return;
+    setQueue((current) => [...current.filter((row) => row.status !== "success"), ...items]);
+    await startImport(items);
+  }
+
+  async function retryFailed() {
+    const retryItems = failedItems.map<QueueItem>((row) => ({ ...row, status: "ready", message: "Yeniden sırada." }));
+    setQueue((current) => current.map((row) => retryItems.find((item) => item.id === row.id) ?? row));
+    await startImport(retryItems);
+  }
+
+  function discardItem(item: QueueItem) {
+    setQueue((current) => current.filter((row) => row.id !== item.id));
+  }
+
+  function discardAllQueue() {
+    setQueue([]);
+    setLog([]);
   }
 
   async function handlePhotos(event: ChangeEvent<HTMLInputElement>) {
@@ -275,36 +226,8 @@ export function ImportTab() {
     await refreshUnmatched();
   }
 
-  async function retryItem(item: QueueItem) {
-    const readyItem: QueueItem = { ...item, status: "ready", message: "Yeniden aktarım kuyruğuna alındı." };
-    setQueue((current) => current.map((row) => row.id === item.id ? readyItem : row));
-    setBusy(true);
-    try {
-      await startImport([readyItem]);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function discardItem(item: QueueItem) {
-    await removeQueueFile(item.id);
-    const hasOtherActiveItems = queue.some(
-      (row) => row.id !== item.id && row.status === "uploading",
-    );
-    setQueue((current) => current.filter((row) => row.id !== item.id));
-    if (!hasOtherActiveItems) setBusy(false);
-  }
-
-  async function discardAllQueue() {
-    await clearQueueFiles();
-    setQueue([]);
-    setLog(["Aktarım kuyruğu temizlendi. Dosyaları yeniden seçebilirsiniz."]);
-    notify("Aktarım kuyruğu temizlendi", "warn");
-    setBusy(false);
-  }
-
   const statusLabels = useMemo<Record<QueueStatus, string>>(
-    () => ({ ready: "Hazır", uploading: "Aktarılıyor", success: "Tamamlandı", error: "Hata" }),
+    () => ({ ready: "Sırada", uploading: "Gönderiliyor", success: "Tamamlandı", error: "Hata" }),
     [],
   );
 
@@ -314,7 +237,7 @@ export function ImportTab() {
         <div>
           <p className="overline">VERİ AKTARIMI</p>
           <h2>Toplu liste merkezi</h2>
-          <p>Dosya adedi sınırı olmadan; seçilen listeler bekletilmeden sırayla aktarılır.</p>
+          <p>Dosyayı seçin, gerisi otomatik: her dosya sırayla aktarılır ve sonucu satırında görünür.</p>
         </div>
         {summary.can_undo && (
           <button className="text-btn danger-text" onClick={() => void handleUndo()} type="button">
@@ -339,7 +262,7 @@ export function ImportTab() {
             <p>Excel, CSV ve ODS dosyaları. Seçim adedi sınırsızdır.</p>
           </div>
           <label className="primary-btn compact-btn">
-            Dosya seç
+            {busy ? "Aktarılıyor…" : "Dosya seç"}
             <input type="file" accept=".xlsx,.xls,.xlsm,.ods,.csv" multiple onChange={handleExcel} disabled={busy} />
           </label>
         </div>
@@ -348,10 +271,10 @@ export function ImportTab() {
           <>
             <div className="queue-summary">
               <span>{queue.length} dosya</span>
-              <span>{queue.reduce((sum, item) => sum + item.rows, 0)} satır</span>
-              <span>%{progress} işlendi</span>
-              <button className="text-btn danger-text" disabled={busy} onClick={() => void discardAllQueue()} type="button">
-                Kuyruğu temizle
+              <span>{importedRows} yolcu aktarıldı</span>
+              <span>%{progress} tamamlandı</span>
+              <button className="text-btn danger-text" disabled={busy} onClick={discardAllQueue} type="button">
+                Listeyi temizle
               </button>
             </div>
             <div className="queue-list">
@@ -359,15 +282,15 @@ export function ImportTab() {
                 <div className={`queue-row status-${item.status}`} key={item.id}>
                   <div>
                     <strong>{item.file.name}</strong>
-                    <small>
-                      {item.rows} satır · {item.duplicates} tekrar · {item.invalid} kritik kontrol
-                    </small>
                     {item.message && <small className="queue-message">{item.message}</small>}
                   </div>
                   <div className="queue-actions">
                     <span className="status-label">{statusLabels[item.status]}</span>
-                    {item.status === "error" && <button className="text-btn" onClick={() => void retryItem(item)}>Yeniden dene</button>}
-                    {item.status !== "uploading" && <button className="text-btn danger-text" onClick={() => void discardItem(item)}>Kaldır</button>}
+                    {item.status !== "uploading" && (
+                      <button className="text-btn danger-text" disabled={busy} onClick={() => discardItem(item)}>
+                        Kaldır
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -391,9 +314,16 @@ export function ImportTab() {
             </label>
           )}
         </div>
-        <button className="primary-btn wide" disabled={!canStart} onClick={() => void startImport()} type="button">
-          {busy ? "Dosyalar sırayla aktarılıyor…" : "Hazır dosyaları yeniden aktar"}
-        </button>
+        {busy && (
+          <button className="primary-btn wide" disabled type="button">
+            Dosyalar sırayla aktarılıyor… %{progress}
+          </button>
+        )}
+        {!busy && failedItems.length > 0 && (
+          <button className="primary-btn wide" onClick={() => void retryFailed()} type="button">
+            Hatalı {failedItems.length} dosyayı yeniden dene
+          </button>
+        )}
       </section>
 
       <section className="panel-card">
