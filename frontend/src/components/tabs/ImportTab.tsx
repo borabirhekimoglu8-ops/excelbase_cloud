@@ -14,6 +14,7 @@ import {
   undoImport,
   uploadPassengerFile,
 } from "@/lib/api";
+import { newId } from "@/lib/id";
 import { useStore } from "@/lib/store";
 import {
   UnreadableUploadFileError,
@@ -104,7 +105,7 @@ export function ImportTab() {
         try {
           const file = await materializeUploadFile(source);
           items.push({
-            id: crypto.randomUUID(),
+            id: newId(),
             file,
             status: "ready",
             rows: 0,
@@ -145,10 +146,11 @@ export function ImportTab() {
       return;
     }
     setBusy(true);
-    const batchId = crypto.randomUUID();
+    const batchId = newId();
     let imported = 0;
     let failed = 0;
     let shouldReplace = replace;
+    const serverWarnings: string[] = [];
     try {
       for (const item of pending) {
         try {
@@ -163,6 +165,7 @@ export function ImportTab() {
           const result = await uploadPassengerFile(uploadFile, shouldReplace, dupStrategy, batchId);
           shouldReplace = false;
           imported += result.imported;
+          serverWarnings.push(...result.warnings);
           setQueue((current) =>
             current.map((row) =>
               row.id === item.id
@@ -191,7 +194,11 @@ export function ImportTab() {
           );
         }
       }
-      setLog([`${pending.length - failed}/${pending.length} dosya işlendi.`, `${imported} yolcu aktarıldı.`]);
+      setLog([
+        `${pending.length - failed}/${pending.length} dosya işlendi.`,
+        `${imported} yolcu aktarıldı.`,
+        ...serverWarnings.slice(0, 8),
+      ]);
       notify(failed ? `${failed} dosya yeniden denenmeli` : `${imported} yolcu aktarıldı`, failed ? "warn" : "ok");
       bump();
     } finally {
@@ -234,7 +241,7 @@ export function ImportTab() {
       return;
     }
     setBusy(true);
-    const batchId = crypto.randomUUID();
+    const batchId = newId();
     const notes: string[] = [];
     for (const source of files) {
       try {
@@ -315,6 +322,14 @@ export function ImportTab() {
           </button>
         )}
       </div>
+
+      {summary.persistence === "local-fallback" && (
+        <div className="banner warn">
+          <strong>Veritabanı bağlantısı yok.</strong> Aktarılan veriler geçici bellekte tutuluyor ve uygulama
+          yeniden başladığında silinebilir. Sorun sürerse sunucu loglarını ve <code>DATABASE_URL</code> ayarını
+          kontrol edin.
+        </div>
+      )}
 
       <section className="panel-card upload-panel">
         <div className="panel-head">

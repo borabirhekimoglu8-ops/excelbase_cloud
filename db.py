@@ -3,8 +3,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
+import threading
+import time
 from datetime import date
+
+logger = logging.getLogger(__name__)
 
 try:
     from sqlalchemy import create_engine, text
@@ -39,62 +44,79 @@ def _read_database_url() -> str | None:
 _engine: "Engine | None" = None
 _init_done = False
 _init_failed = False
+# Geçici bağlantı hatasından sonra yeniden deneme zamanı (time.monotonic).
+# Kalıcı _init_failed kilidinden farklı: DB açılışta ulaşılamasa bile süreç
+# ömrü boyunca devre dışı kalmaz, kısa aralıklarla yeniden denenir.
+_retry_at = 0.0
+_RETRY_INTERVAL_SECONDS = 30.0
+_ENGINE_LOCK = threading.Lock()
 
 
 def get_engine() -> "Engine | None":
-    global _engine, _init_done, _init_failed
+    global _engine, _init_done, _init_failed, _retry_at
     if _engine is not None or _init_failed:
         return _engine
-    if create_engine is None:
-        _init_failed = True
+    if time.monotonic() < _retry_at:
         return None
-    url = _read_database_url()
-    if not url:
-        _init_failed = True
-        return None
-    try:
-        connect_args: dict = {}
-        # Bare "postgresql://" -> saf-Python pg8000 sürücüsü (Streamlit Cloud'da
-        # derleme gerektirmez). Kullanıcı sürücü belirtmişse (örn. +psycopg2) dokunma.
-        if url.startswith("postgresql://"):
-            url = url.replace("postgresql://", "postgresql+pg8000://", 1)
-        if "+pg8000" in url:
-            # Supabase vb. barındırılan DB'ler için TLS gerekir. Varsayılan güvenli
-            # doğrulamadır; sadece eski/özel ortamlarda açıkça gevşetilebilir.
-            try:
-                import ssl
+    with _ENGINE_LOCK:
+        if _engine is not None or _init_failed:
+            return _engine
+        if time.monotonic() < _retry_at:
+            return None
+        if create_engine is None:
+            _init_failed = True
+            return None
+        url = _read_database_url()
+        if not url:
+            _init_failed = True
+            return None
+        try:
+            connect_args: dict = {}
+            # Bare "postgresql://" -> saf-Python pg8000 sürücüsü (Streamlit Cloud'da
+            # derleme gerektirmez). Kullanıcı sürücü belirtmişse (örn. +psycopg2) dokunma.
+            if url.startswith("postgresql://"):
+                url = url.replace("postgresql://", "postgresql+pg8000://", 1)
+            if "+pg8000" in url:
+                # Supabase vb. barındırılan DB'ler için TLS gerekir. Varsayılan güvenli
+                # doğrulamadır; sadece eski/özel ortamlarda açıkça gevşetilebilir.
+                try:
+                    import ssl
 
-                ctx = ssl.create_default_context()
-                if os.environ.get("APP_ENV") == "development" and os.environ.get("DATABASE_SSL_INSECURE") == "1":
-                    ctx.check_hostname = False
-                    ctx.verify_mode = ssl.CERT_NONE
-                connect_args = {"ssl_context": ctx}
-            except Exception:
-                connect_args = {}
-        elif url.startswith("sqlite:///"):
-            # SQLite dosya yolu için üst klasörü oluştur.
-            sqlite_path = url.replace("sqlite:///", "", 1)
-            parent = os.path.dirname(sqlite_path)
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-        engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
-        if not _init_done:
-            try:
-                _create_tables(engine)
-            except Exception:
-                # Render'in dahili PostgreSQL adresi TLS sonlandirmasi yapmaz.
-                # Harici adreslerde guvenli SSL'i once dener, dahili agda ise
-                # yalnizca ilk baglanti basarisizsa SSL'siz baglantiya duseriz.
-                if not connect_args or "+pg8000" not in url:
-                    raise
-                engine.dispose()
-                engine = create_engine(url, pool_pre_ping=True, connect_args={})
-                _create_tables(engine)
-            _init_done = True
-        _engine = engine
-    except Exception:
-        _engine = None
-        _init_failed = True
+                    ctx = ssl.create_default_context()
+                    if os.environ.get("APP_ENV") == "development" and os.environ.get("DATABASE_SSL_INSECURE") == "1":
+                        ctx.check_hostname = False
+                        ctx.verify_mode = ssl.CERT_NONE
+                    connect_args = {"ssl_context": ctx}
+                except Exception:
+                    connect_args = {}
+            elif url.startswith("sqlite:///"):
+                # SQLite dosya yolu için üst klasörü oluştur.
+                sqlite_path = url.replace("sqlite:///", "", 1)
+                parent = os.path.dirname(sqlite_path)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+            engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
+            if not _init_done:
+                try:
+                    _create_tables(engine)
+                except Exception:
+                    # Render'in dahili PostgreSQL adresi TLS sonlandirmasi yapmaz.
+                    # Harici adreslerde guvenli SSL'i once dener, dahili agda ise
+                    # yalnizca ilk baglanti basarisizsa SSL'siz baglantiya duseriz.
+                    if not connect_args or "+pg8000" not in url:
+                        raise
+                    engine.dispose()
+                    engine = create_engine(url, pool_pre_ping=True, connect_args={})
+                    _create_tables(engine)
+                _init_done = True
+            _engine = engine
+        except Exception:
+            logger.exception(
+                "Veritabanı bağlantısı kurulamadı; %.0f sn sonra yeniden denenecek",
+                _RETRY_INTERVAL_SECONDS,
+            )
+            _engine = None
+            _retry_at = time.monotonic() + _RETRY_INTERVAL_SECONDS
     return _engine
 
 
@@ -135,6 +157,7 @@ def save_state(payload: dict) -> bool:
     engine = get_engine()
     if engine is None:
         return False
+    value = ""
     try:
         value = json.dumps(payload, ensure_ascii=False)
         with engine.begin() as conn:
@@ -145,6 +168,7 @@ def save_state(payload: dict) -> bool:
             )
         return True
     except Exception:
+        logger.exception("Yolcu durumu veritabanına yazılamadı (payload %d karakter)", len(value))
         return False
 
 
@@ -161,6 +185,7 @@ def load_state() -> dict | None:
             return {}
         return json.loads(row[0])
     except Exception:
+        logger.exception("Yolcu durumu veritabanından okunamadı")
         return None
 
 
@@ -199,6 +224,7 @@ def save_daily_backup(payload: dict) -> bool:
                 conn.execute(text("DELETE FROM app_backups WHERE snapshot_date = :d"), {"d": row[0]})
         return True
     except Exception:
+        logger.exception("Günlük yedek veritabanına yazılamadı")
         return False
 
 

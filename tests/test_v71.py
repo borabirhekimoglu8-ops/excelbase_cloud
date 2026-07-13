@@ -191,3 +191,60 @@ def test_real_gate_visa_xlsx_is_parsed_with_openpyxl():
     assert len(results) == 1
     assert results[0].rows == 1
     assert results[0].dataframe.iloc[0]["PASSPORT NUMBER"] == "X1234567"
+
+
+def test_import_fails_loudly_when_db_write_fails(monkeypatch, tmp_path):
+    """DB açıkken yazma başarısızsa import 'başarılı' dönmemeli (sessiz veri kaybı)."""
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+    monkeypatch.setattr(db, "enabled", lambda: True)
+    monkeypatch.setattr(db, "save_state", lambda payload: False)
+    monkeypatch.setattr(db, "load_state", lambda: {})
+    monkeypatch.setattr(db, "save_daily_backup", lambda payload: False)
+
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/import?dup_strategy=skip&batch_id=db-fail",
+            files=[("files", ("one.csv", _csv("P333333", "2026-07-15"), "text/csv"))],
+        )
+        assert response.status_code == 503
+        assert "veritaban" in response.json()["detail"].lower()
+        assert client.get("/api/passengers").json() == []
+        assert client.get("/api/summary").json()["persistence"] == "database"
+
+
+def test_summary_reports_local_fallback_persistence(monkeypatch, tmp_path):
+    _isolate_store(monkeypatch, tmp_path)
+    from backend import services
+
+    assert services.get_summary().persistence == "local-fallback"
+
+
+def test_db_engine_retries_after_transient_failure(monkeypatch, tmp_path):
+    """Açılışta DB'ye ulaşılamazsa bağlantı kalıcı olarak kapanmamalı."""
+    calls = {"n": 0}
+    real_create_engine = db.create_engine
+
+    def flaky_create_engine(url, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("bağlantı reddedildi")
+        return real_create_engine(url, **kwargs)
+
+    monkeypatch.setattr(db, "create_engine", flaky_create_engine)
+    monkeypatch.setattr(db, "_engine", None)
+    monkeypatch.setattr(db, "_init_done", False)
+    monkeypatch.setattr(db, "_init_failed", False)
+    monkeypatch.setattr(db, "_retry_at", 0.0)
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/retry.db")
+
+    assert db.get_engine() is None  # ilk deneme başarısız
+    assert db.get_engine() is None  # bekleme süresi dolmadan yeniden denenmez
+    assert calls["n"] == 1
+
+    monkeypatch.setattr(db, "_retry_at", 0.0)  # bekleme süresi doldu
+    assert db.get_engine() is not None
+    assert calls["n"] == 2

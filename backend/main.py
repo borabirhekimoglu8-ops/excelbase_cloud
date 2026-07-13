@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from .config import (
     ALLOWED_IMPORT_EXTENSIONS,
@@ -58,10 +58,16 @@ from .auth import (
     authenticate,
 )
 from . import services
+from persistence import StorePersistenceError  # noqa: E402  (kök dizin yolu .state importuyla eklenir)
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Gate Visa Operations API", version="7.1.5")
+app = FastAPI(title="Gate Visa Operations API", version="7.1.6")
+
+
+@app.exception_handler(StorePersistenceError)
+async def persistence_error_handler(request: Request, exc: StorePersistenceError) -> JSONResponse:
+    return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"detail": str(exc)})
 
 app.add_middleware(
     CORSMiddleware,
@@ -104,7 +110,7 @@ def _key_qs() -> str:
 def health() -> dict[str, str]:
     return {
         "status": "ok",
-        "version": "7.1.5",
+        "version": "7.1.6",
         "persistence": "database" if services.db.enabled() else "local-fallback",
     }
 
@@ -327,7 +333,10 @@ async def import_files(
             )
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except StorePersistenceError:
+            raise
         except Exception as exc:
+            logger.exception("import failed filename=%r", filename)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"{filename} okunamadi veya desteklenmeyen format.",
@@ -366,7 +375,10 @@ async def import_mail(file: UploadFile = File(...), batch_id: str = Query(defaul
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="E-posta dosyasi cok buyuk.")
     try:
         return services.ingest_eml(filename, data, batch_id)
+    except StorePersistenceError:
+        raise
     except Exception as exc:
+        logger.exception("mail import failed filename=%r", filename)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="E-posta dosyasi islenemedi.") from exc
 
 

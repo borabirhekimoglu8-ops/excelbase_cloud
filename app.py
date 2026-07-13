@@ -30,7 +30,7 @@ from operation_helpers import (
     unique_values,
 )
 import db
-from persistence import load_store, save_store
+from persistence import StorePersistenceError, load_store, save_store
 from photo_store import (
     extract_images_from_zip,
     is_zip,
@@ -1281,6 +1281,8 @@ def persist() -> None:
     except TypeError:
         # Eski/stale persistence modülü ile uyumluluk
         save_store(st.session_state.base_df, st.session_state.get("loaded_files", []))
+    except StorePersistenceError as exc:
+        st.error(str(exc))
 
 
 def snapshot_for_undo(label: str) -> None:
