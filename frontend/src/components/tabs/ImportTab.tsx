@@ -11,14 +11,13 @@ import {
   fetchUnmatchedPhotos,
   importMail,
   matchPhotos,
-  previewPassengerFile,
   undoImport,
   uploadPassengerFile,
 } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { loadQueueFiles, persistQueueFile, removeQueueFile } from "@/lib/uploadQueue";
 
-type QueueStatus = "checking" | "ready" | "uploading" | "success" | "error";
+type QueueStatus = "ready" | "uploading" | "success" | "error";
 type QueueItem = {
   id: string;
   file: File;
@@ -46,54 +45,21 @@ export function ImportTab() {
     setPassengers(rows);
   }, []);
 
-  async function checkItem(item: QueueItem): Promise<QueueItem | null> {
-    try {
-      const preview = await previewPassengerFile(item.file);
-      const readyItem: QueueItem = {
-        ...item,
-        status: "ready",
-        rows: preview.rows,
-        duplicates: preview.duplicate_count,
-        invalid: preview.invalid_count,
-        message: preview.warnings.join(" "),
-      };
-      setQueue((current) =>
-        current.map((row) => row.id === item.id ? readyItem : row),
-      );
-      return readyItem;
-    } catch (err) {
-      setQueue((current) =>
-        current.map((row) =>
-          row.id === item.id
-            ? { ...row, status: "error", message: err instanceof Error ? err.message : "Dosya okunamadı" }
-            : row,
-        ),
-      );
-      return null;
-    }
-  }
-
   useEffect(() => {
     void loadQueueFiles()
       .then(async (stored) => {
         const restored = stored.map<QueueItem>((item) => ({
           id: item.id,
           file: item.file,
-          status: "checking",
+          status: "ready",
           rows: 0,
           duplicates: 0,
           invalid: 0,
-          message: "Kaldığı yerden devam etmek için kontrol ediliyor.",
+          message: "Bekleyen dosya doğrudan aktarılacak.",
         }));
         if (!restored.length) return;
         setQueue(restored);
-        setBusy(true);
-        const ready: QueueItem[] = [];
-        for (const item of restored) {
-          const checked = await checkItem(item);
-          if (checked) ready.push(checked);
-        }
-        if (ready.length) await startImport(ready);
+        await startImport(restored);
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : "Bekleyen aktarım okunamadı.";
@@ -108,9 +74,8 @@ export function ImportTab() {
     void refreshUnmatched();
   }, [refreshUnmatched, version]);
 
-  const readyCount = queue.filter((item) => item.status === "ready" || item.status === "error").length;
-  const successCount = queue.filter((item) => item.status === "success").length;
-  const progress = queue.length ? Math.round(((readyCount + successCount) / queue.length) * 100) : 0;
+  const processedCount = queue.filter((item) => item.status === "success" || item.status === "error").length;
+  const progress = queue.length ? Math.round((processedCount / queue.length) * 100) : 0;
   const canStart = queue.some((item) => item.status === "ready") && !busy;
 
   async function handleExcel(event: ChangeEvent<HTMLInputElement>) {
@@ -120,26 +85,16 @@ export function ImportTab() {
     const items = files.map<QueueItem>((file) => ({
       id: crypto.randomUUID(),
       file,
-      status: "checking",
+      status: "ready",
       rows: 0,
       duplicates: 0,
       invalid: 0,
-      message: "Ön kontrol yapılıyor…",
+      message: "Aktarım kuyruğuna alındı.",
     }));
     setQueue((current) => [...current.filter((row) => row.status !== "success"), ...items]);
     setBusy(true);
     try {
-      const ready: QueueItem[] = [];
-      for (const item of items) {
-        await persistQueueFile({ id: item.id, file: item.file, createdAt: Date.now() });
-        const checked = await checkItem(item);
-        if (checked) ready.push(checked);
-      }
-      if (ready.length) {
-        await startImport(ready);
-      } else {
-        setLog(["Aktarılacak geçerli yolcu bulunamadı. Dosya satırındaki hata bilgisini kontrol edin."]);
-      }
+      await startImport(items);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Aktarım başlatılamadı.";
       setLog([message]);
@@ -162,7 +117,14 @@ export function ImportTab() {
     let shouldReplace = replace;
     try {
       for (const item of pending) {
-        setQueue((current) => current.map((row) => (row.id === item.id ? { ...row, status: "uploading" } : row)));
+        await persistQueueFile({ id: item.id, file: item.file, createdAt: Date.now() });
+        setQueue((current) =>
+          current.map((row) =>
+            row.id === item.id
+              ? { ...row, status: "uploading", message: "Sunucuya gönderiliyor…" }
+              : row,
+          ),
+        );
         try {
           const result = await uploadPassengerFile(item.file, shouldReplace, dupStrategy, batchId);
           shouldReplace = false;
@@ -170,11 +132,19 @@ export function ImportTab() {
           setQueue((current) =>
             current.map((row) =>
               row.id === item.id
-                ? { ...row, status: "success", message: `${result.imported} yolcu aktarıldı.` }
+                ? {
+                    ...row,
+                    status: "success",
+                    rows: result.imported,
+                    duplicates: result.duplicate_count,
+                    invalid: result.invalid_count,
+                    message: `${result.imported} yolcu aktarıldı.`,
+                  }
                 : row,
             ),
           );
           await removeQueueFile(item.id);
+          bump();
         } catch (err) {
           failed += 1;
           setQueue((current) =>
@@ -255,11 +225,11 @@ export function ImportTab() {
   }
 
   async function retryItem(item: QueueItem) {
-    setQueue((current) => current.map((row) => row.id === item.id ? { ...row, status: "checking", message: "Yeniden kontrol ediliyor…" } : row));
+    const readyItem: QueueItem = { ...item, status: "ready", message: "Yeniden aktarım kuyruğuna alındı." };
+    setQueue((current) => current.map((row) => row.id === item.id ? readyItem : row));
     setBusy(true);
     try {
-      const checked = await checkItem(item);
-      if (checked) await startImport([checked]);
+      await startImport([readyItem]);
     } finally {
       setBusy(false);
     }
@@ -268,14 +238,14 @@ export function ImportTab() {
   async function discardItem(item: QueueItem) {
     await removeQueueFile(item.id);
     const hasOtherActiveItems = queue.some(
-      (row) => row.id !== item.id && (row.status === "checking" || row.status === "uploading"),
+      (row) => row.id !== item.id && row.status === "uploading",
     );
     setQueue((current) => current.filter((row) => row.id !== item.id));
     if (!hasOtherActiveItems) setBusy(false);
   }
 
   const statusLabels = useMemo<Record<QueueStatus, string>>(
-    () => ({ checking: "Kontrol", ready: "Hazır", uploading: "Aktarılıyor", success: "Tamamlandı", error: "Hata" }),
+    () => ({ ready: "Hazır", uploading: "Aktarılıyor", success: "Tamamlandı", error: "Hata" }),
     [],
   );
 
@@ -285,7 +255,7 @@ export function ImportTab() {
         <div>
           <p className="overline">VERİ AKTARIMI</p>
           <h2>Toplu liste merkezi</h2>
-          <p>Dosya adedi sınırı olmadan; seçilen listeler kontrol edilir ve otomatik aktarılır.</p>
+          <p>Dosya adedi sınırı olmadan; seçilen listeler bekletilmeden sırayla aktarılır.</p>
         </div>
         {summary.can_undo && (
           <button className="text-btn danger-text" onClick={() => void handleUndo()} type="button">
@@ -312,7 +282,7 @@ export function ImportTab() {
             <div className="queue-summary">
               <span>{queue.length} dosya</span>
               <span>{queue.reduce((sum, item) => sum + item.rows, 0)} satır</span>
-              <span>%{progress} kontrol edildi</span>
+              <span>%{progress} işlendi</span>
             </div>
             <div className="queue-list">
               {queue.map((item) => (
@@ -352,7 +322,7 @@ export function ImportTab() {
           )}
         </div>
         <button className="primary-btn wide" disabled={!canStart} onClick={() => void startImport()} type="button">
-          {busy ? "Otomatik aktarım sürüyor…" : "Hazır dosyaları yeniden aktar"}
+          {busy ? "Dosyalar sırayla aktarılıyor…" : "Hazır dosyaları yeniden aktar"}
         </button>
       </section>
 
