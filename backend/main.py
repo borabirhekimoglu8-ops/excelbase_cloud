@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -58,7 +59,9 @@ from .auth import (
 )
 from . import services
 
-app = FastAPI(title="Gate Visa Operations API", version="7.1.0")
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Gate Visa Operations API", version="7.1.5")
 
 app.add_middleware(
     CORSMiddleware,
@@ -101,7 +104,7 @@ def _key_qs() -> str:
 def health() -> dict[str, str]:
     return {
         "status": "ok",
-        "version": "7.1.0",
+        "version": "7.1.5",
         "persistence": "database" if services.db.enabled() else "local-fallback",
     }
 
@@ -298,10 +301,22 @@ async def import_files(
                 detail="Desteklenen dosya türleri: .xlsx, .xls, .xlsm, .ods, .csv",
             )
         data = await upload.read(MAX_UPLOAD_BYTES + 1)
+        logger.info(
+            "import upload received filename=%r content_type=%r bytes=%d",
+            filename,
+            upload.content_type,
+            len(data),
+        )
         if len(data) > MAX_UPLOAD_BYTES:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=f"Dosya limiti {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+            )
+        if not data:
+            logger.warning("empty import upload filename=%r content_type=%r", filename, upload.content_type)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{filename}: dosya içeriği alınamadı (0 bayt). Dosyayı yeniden seçin.",
             )
         try:
             imported, warnings, loaded_files, passenger_count, resolved_batch_id, duplicates, invalid = services.import_gate_visa_files(
