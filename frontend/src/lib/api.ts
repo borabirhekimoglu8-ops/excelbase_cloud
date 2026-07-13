@@ -124,6 +124,21 @@ function authHeaders(extra?: HeadersInit): HeadersInit {
   return { ...(API_KEY ? { "x-api-key": API_KEY } : {}), ...(extra ?? {}) };
 }
 
+function unreadableUploadMessage(file: File): string {
+  return `${file.name || "Dosya"}: dosya içeriği telefondan okunamadı. Dosyayı yeniden seçin.`;
+}
+
+async function appendReadableFile(body: FormData, field: string, file: File): Promise<void> {
+  if (!(file instanceof Blob) || file.size === 0) throw new Error(unreadableUploadMessage(file));
+  try {
+    const probe = await file.slice(0, 1).arrayBuffer();
+    if (probe.byteLength === 0) throw new Error(unreadableUploadMessage(file));
+  } catch {
+    throw new Error(unreadableUploadMessage(file));
+  }
+  body.append(field, file, file.name);
+}
+
 async function request<T>(path: string, init?: RequestInit, timeoutMs = 45_000): Promise<T> {
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
@@ -252,7 +267,7 @@ export function saveOperationMeta(meta: OperationMeta): Promise<SimpleResult> {
 
 export async function previewPassengerFile(file: File): Promise<ImportPreviewResponse> {
   const body = new FormData();
-  body.append("file", file);
+  await appendReadableFile(body, "file", file);
   return request<ImportPreviewResponse>("/api/import/preview", { method: "POST", body });
 }
 export async function uploadPassengerFile(
@@ -262,7 +277,7 @@ export async function uploadPassengerFile(
   batchId: string,
 ): Promise<ImportResponse> {
   const body = new FormData();
-  body.append("files", file);
+  await appendReadableFile(body, "files", file);
   const qs = new URLSearchParams({ replace: String(replace), dup_strategy: dupStrategy, batch_id: batchId });
   return request<ImportResponse>(`/api/import?${qs.toString()}`, { method: "POST", body }, 120_000);
 }
@@ -272,7 +287,7 @@ export async function uploadPassengerFiles(
   dupStrategy = "add",
 ): Promise<ImportResponse> {
   const body = new FormData();
-  Array.from(files).forEach((file) => body.append("files", file));
+  for (const file of Array.from(files)) await appendReadableFile(body, "files", file);
   const qs = new URLSearchParams({
     replace: String(replace),
     dup_strategy: dupStrategy,
@@ -287,12 +302,12 @@ export function undoImport(batchId = ""): Promise<SimpleResult> {
 
 export async function matchPhotos(files: FileList | File[]): Promise<MatchPhotosResponse> {
   const body = new FormData();
-  Array.from(files).forEach((file) => body.append("files", file));
+  for (const file of Array.from(files)) await appendReadableFile(body, "files", file);
   return request<MatchPhotosResponse>("/api/photos/match", { method: "POST", body }, 120_000);
 }
 export async function setPassengerPhoto(id: number, file: File): Promise<SimpleResult> {
   const body = new FormData();
-  body.append("file", file);
+  await appendReadableFile(body, "file", file);
   return request<SimpleResult>(`/api/passengers/${id}/photo`, { method: "POST", body });
 }
 export function removePassengerPhoto(id: number): Promise<SimpleResult> {
@@ -314,7 +329,7 @@ export function deleteUnmatchedPhoto(itemId: string): Promise<SimpleResult> {
 
 export async function importMail(file: File, batchId: string): Promise<MailImportResponse> {
   const body = new FormData();
-  body.append("file", file);
+  await appendReadableFile(body, "file", file);
   return request<MailImportResponse>(`/api/mail/import?batch_id=${encodeURIComponent(batchId)}`, {
     method: "POST",
     body,
@@ -323,7 +338,7 @@ export async function importMail(file: File, batchId: string): Promise<MailImpor
 
 export async function restoreBackup(file: File): Promise<SimpleResult> {
   const body = new FormData();
-  body.append("file", file);
+  await appendReadableFile(body, "file", file);
   return request<SimpleResult>("/api/restore", { method: "POST", body });
 }
 export function fetchBackups(): Promise<BackupInfo[]> {
