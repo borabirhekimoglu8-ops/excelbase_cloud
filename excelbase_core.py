@@ -11,6 +11,21 @@ import pandas as pd
 
 DEFAULT_PRESET = "Excel başlıklarını aynen al"
 
+EXCEL_ENGINES = {
+    ".xlsx": "openpyxl",
+    ".xlsm": "openpyxl",
+    ".xls": "xlrd",
+    ".ods": "odf",
+}
+
+
+def excel_engine_for_filename(file_name: str) -> str:
+    lower = file_name.lower()
+    for suffix, engine in EXCEL_ENGINES.items():
+        if lower.endswith(suffix):
+            return engine
+    raise ValueError("Desteklenen Excel türleri: .xlsx, .xls, .xlsm, .ods")
+
 PRESETS: dict[str, list[str] | None] = {
     DEFAULT_PRESET: None,
     "Kapı Vizesi": [
@@ -240,7 +255,7 @@ def read_file_bytes(file_name: str, raw: bytes) -> list[ReadResult]:
         raise ValueError("Desteklenen dosya türleri: .xlsx, .xls, .xlsm, .ods, .csv")
 
     try:
-        excel = pd.ExcelFile(io.BytesIO(raw))
+        excel = pd.ExcelFile(io.BytesIO(raw), engine=excel_engine_for_filename(file_name))
     except Exception as exc:
         raise ValueError(f"Excel dosyası açılamadı: {exc}") from exc
 
