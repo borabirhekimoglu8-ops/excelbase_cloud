@@ -161,3 +161,23 @@ def test_gate_visa_reader_passes_explicit_excel_engine(monkeypatch):
         gate_visa_reader.read_gate_visa_file_bytes("22.05.xlsx", b"synthetic")
 
     assert captured["engine"] == "openpyxl"
+
+
+
+def test_real_gate_visa_xlsx_is_parsed_with_openpyxl():
+    from openpyxl import load_workbook
+    from gate_visa_reader import build_gate_visa_template_xlsx, read_gate_visa_file_bytes
+
+    workbook = load_workbook(io.BytesIO(build_gate_visa_template_xlsx()))
+    sheet = workbook.active
+    values = [1, "JANE", "DOE", "X1234567", "V-42", "2026-07-20", "2026-07-22", 25, 0]
+    for column, value in enumerate(values, start=1):
+        sheet.cell(row=5, column=column, value=value)
+    payload = io.BytesIO()
+    workbook.save(payload)
+
+    results = read_gate_visa_file_bytes("22.05.xlsx", payload.getvalue())
+
+    assert len(results) == 1
+    assert results[0].rows == 1
+    assert results[0].dataframe.iloc[0]["PASSPORT NUMBER"] == "X1234567"
