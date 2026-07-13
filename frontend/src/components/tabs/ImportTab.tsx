@@ -238,7 +238,7 @@ export function ImportTab() {
   async function discardItem(item: QueueItem) {
     await removeQueueFile(item.id);
     const hasOtherActiveItems = queue.some(
-      (row) => row.id !== item.id && (row.status === "checking" || row.status === "uploading"),
+      (row) => row.id !== item.id && row.status === "uploading",
     );
     setQueue((current) => current.filter((row) => row.id !== item.id));
     if (!hasOtherActiveItems) setBusy(false);
