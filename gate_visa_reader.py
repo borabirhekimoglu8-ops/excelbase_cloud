@@ -8,7 +8,7 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from excelbase_core import ReadResult, format_cell_value, is_blank
+from excelbase_core import ReadResult, excel_engine_for_filename, format_cell_value, is_blank
 
 TEMPLATE_TITLE = "GATE VISA PAX LIST"
 
@@ -234,7 +234,7 @@ def read_gate_visa_file_bytes(file_name: str, raw_bytes: bytes) -> list[ReadResu
     if not lower.endswith((".xlsx", ".xls", ".xlsm", ".ods")):
         raise ValueError("Desteklenen dosya türleri: .xlsx, .xls, .xlsm, .ods, .csv")
 
-    excel = pd.ExcelFile(io.BytesIO(raw_bytes))
+    excel = pd.ExcelFile(io.BytesIO(raw_bytes), engine=excel_engine_for_filename(file_name))
     results: list[ReadResult] = []
     for sheet in excel.sheet_names:
         try:
