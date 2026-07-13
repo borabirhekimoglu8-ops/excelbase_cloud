@@ -234,7 +234,14 @@ def read_gate_visa_file_bytes(file_name: str, raw_bytes: bytes) -> list[ReadResu
     if not lower.endswith((".xlsx", ".xls", ".xlsm", ".ods")):
         raise ValueError("Desteklenen dosya türleri: .xlsx, .xls, .xlsm, .ods, .csv")
 
-    excel = pd.ExcelFile(io.BytesIO(raw_bytes), engine=excel_engine_for_filename(file_name))
+    if not raw_bytes:
+        raise ValueError("Excel dosyası boş.")
+    try:
+        excel = pd.ExcelFile(io.BytesIO(raw_bytes), engine=excel_engine_for_filename(file_name))
+    except Exception as exc:
+        raise ValueError(
+            "Excel dosyası açılamadı. Dosya bozuk olabilir veya uzantısı içeriğiyle uyuşmuyor."
+        ) from exc
     results: list[ReadResult] = []
     for sheet in excel.sheet_names:
         try:
