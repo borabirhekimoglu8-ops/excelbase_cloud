@@ -124,12 +124,25 @@ function authHeaders(extra?: HeadersInit): HeadersInit {
   return { ...(API_KEY ? { "x-api-key": API_KEY } : {}), ...(extra ?? {}) };
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: authHeaders(init?.headers),
-  });
+async function request<T>(path: string, init?: RequestInit, timeoutMs = 45_000): Promise<T> {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      credentials: "include",
+      headers: authHeaders(init?.headers),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error("İşlem zaman aşımına uğradı. Bağlantıyı kontrol edip yeniden deneyin.");
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
   if (!response.ok) {
     let detail = `${response.status}`;
     try {
@@ -251,7 +264,7 @@ export async function uploadPassengerFile(
   const body = new FormData();
   body.append("files", file);
   const qs = new URLSearchParams({ replace: String(replace), dup_strategy: dupStrategy, batch_id: batchId });
-  return request<ImportResponse>(`/api/import?${qs.toString()}`, { method: "POST", body });
+  return request<ImportResponse>(`/api/import?${qs.toString()}`, { method: "POST", body }, 120_000);
 }
 export async function uploadPassengerFiles(
   files: FileList | File[],
@@ -275,7 +288,7 @@ export function undoImport(batchId = ""): Promise<SimpleResult> {
 export async function matchPhotos(files: FileList | File[]): Promise<MatchPhotosResponse> {
   const body = new FormData();
   Array.from(files).forEach((file) => body.append("files", file));
-  return request<MatchPhotosResponse>("/api/photos/match", { method: "POST", body });
+  return request<MatchPhotosResponse>("/api/photos/match", { method: "POST", body }, 120_000);
 }
 export async function setPassengerPhoto(id: number, file: File): Promise<SimpleResult> {
   const body = new FormData();
@@ -305,7 +318,7 @@ export async function importMail(file: File, batchId: string): Promise<MailImpor
   return request<MailImportResponse>(`/api/mail/import?batch_id=${encodeURIComponent(batchId)}`, {
     method: "POST",
     body,
-  });
+  }, 120_000);
 }
 
 export async function restoreBackup(file: File): Promise<SimpleResult> {

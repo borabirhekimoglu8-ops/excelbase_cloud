@@ -74,17 +74,18 @@ export function ImportTab() {
   }
 
   useEffect(() => {
-    void loadQueueFiles().then(async (stored) => {
-      const restored = stored.map<QueueItem>((item) => ({
-        id: item.id,
-        file: item.file,
-        status: "checking",
-        rows: 0,
-        duplicates: 0,
-        invalid: 0,
-        message: "Kaldığı yerden devam etmek için kontrol ediliyor.",
-      }));
-      if (restored.length) {
+    void loadQueueFiles()
+      .then(async (stored) => {
+        const restored = stored.map<QueueItem>((item) => ({
+          id: item.id,
+          file: item.file,
+          status: "checking",
+          rows: 0,
+          duplicates: 0,
+          invalid: 0,
+          message: "Kaldığı yerden devam etmek için kontrol ediliyor.",
+        }));
+        if (!restored.length) return;
         setQueue(restored);
         setBusy(true);
         const ready: QueueItem[] = [];
@@ -93,9 +94,13 @@ export function ImportTab() {
           if (checked) ready.push(checked);
         }
         if (ready.length) await startImport(ready);
-        else setBusy(false);
-      }
-    });
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Bekleyen aktarım okunamadı.";
+        setLog([message]);
+        notify(message, "error");
+      })
+      .finally(() => setBusy(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -123,53 +128,70 @@ export function ImportTab() {
     }));
     setQueue((current) => [...current.filter((row) => row.status !== "success"), ...items]);
     setBusy(true);
-    const ready: QueueItem[] = [];
-    for (const item of items) {
-      await persistQueueFile({ id: item.id, file: item.file, createdAt: Date.now() });
-      const checked = await checkItem(item);
-      if (checked) ready.push(checked);
+    try {
+      const ready: QueueItem[] = [];
+      for (const item of items) {
+        await persistQueueFile({ id: item.id, file: item.file, createdAt: Date.now() });
+        const checked = await checkItem(item);
+        if (checked) ready.push(checked);
+      }
+      if (ready.length) {
+        await startImport(ready);
+      } else {
+        setLog(["Aktarılacak geçerli yolcu bulunamadı. Dosya satırındaki hata bilgisini kontrol edin."]);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Aktarım başlatılamadı.";
+      setLog([message]);
+      notify(message, "error");
+    } finally {
+      setBusy(false);
     }
-    if (ready.length) await startImport(ready);
-    else setBusy(false);
   }
 
   async function startImport(explicitItems?: QueueItem[]) {
     const pending = explicitItems ?? queue.filter((item) => item.status === "ready");
-    if (!pending.length) return;
+    if (!pending.length) {
+      setBusy(false);
+      return;
+    }
     setBusy(true);
     const batchId = crypto.randomUUID();
     let imported = 0;
     let failed = 0;
     let shouldReplace = replace;
-    for (const item of pending) {
-      setQueue((current) => current.map((row) => (row.id === item.id ? { ...row, status: "uploading" } : row)));
-      try {
-        const result = await uploadPassengerFile(item.file, shouldReplace, dupStrategy, batchId);
-        shouldReplace = false;
-        imported += result.imported;
-        setQueue((current) =>
-          current.map((row) =>
-            row.id === item.id
-              ? { ...row, status: "success", message: `${result.imported} yolcu aktarıldı.` }
-              : row,
-          ),
-        );
-        await removeQueueFile(item.id);
-      } catch (err) {
-        failed += 1;
-        setQueue((current) =>
-          current.map((row) =>
-            row.id === item.id
-              ? { ...row, status: "error", message: err instanceof Error ? err.message : "Aktarım başarısız" }
-              : row,
-          ),
-        );
+    try {
+      for (const item of pending) {
+        setQueue((current) => current.map((row) => (row.id === item.id ? { ...row, status: "uploading" } : row)));
+        try {
+          const result = await uploadPassengerFile(item.file, shouldReplace, dupStrategy, batchId);
+          shouldReplace = false;
+          imported += result.imported;
+          setQueue((current) =>
+            current.map((row) =>
+              row.id === item.id
+                ? { ...row, status: "success", message: `${result.imported} yolcu aktarıldı.` }
+                : row,
+            ),
+          );
+          await removeQueueFile(item.id);
+        } catch (err) {
+          failed += 1;
+          setQueue((current) =>
+            current.map((row) =>
+              row.id === item.id
+                ? { ...row, status: "error", message: err instanceof Error ? err.message : "Aktarım başarısız" }
+                : row,
+            ),
+          );
+        }
       }
+      setLog([`${pending.length - failed}/${pending.length} dosya işlendi.`, `${imported} yolcu aktarıldı.`]);
+      notify(failed ? `${failed} dosya yeniden denenmeli` : `${imported} yolcu aktarıldı`, failed ? "warn" : "ok");
+      bump();
+    } finally {
+      setBusy(false);
     }
-    setLog([`${pending.length - failed}/${pending.length} dosya işlendi.`, `${imported} yolcu aktarıldı.`]);
-    notify(failed ? `${failed} dosya yeniden denenmeli` : `${imported} yolcu aktarıldı`, failed ? "warn" : "ok");
-    setBusy(false);
-    bump();
   }
 
   async function handlePhotos(event: ChangeEvent<HTMLInputElement>) {
@@ -235,14 +257,21 @@ export function ImportTab() {
   async function retryItem(item: QueueItem) {
     setQueue((current) => current.map((row) => row.id === item.id ? { ...row, status: "checking", message: "Yeniden kontrol ediliyor…" } : row));
     setBusy(true);
-    const checked = await checkItem(item);
-    if (checked) await startImport([checked]);
-    else setBusy(false);
+    try {
+      const checked = await checkItem(item);
+      if (checked) await startImport([checked]);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function discardItem(item: QueueItem) {
     await removeQueueFile(item.id);
+    const hasOtherActiveItems = queue.some(
+      (row) => row.id !== item.id && (row.status === "checking" || row.status === "uploading"),
+    );
     setQueue((current) => current.filter((row) => row.id !== item.id));
+    if (!hasOtherActiveItems) setBusy(false);
   }
 
   const statusLabels = useMemo<Record<QueueStatus, string>>(
