@@ -126,3 +126,38 @@ def test_bulk_list_count_limit_disabled_by_default():
     from backend.config import MAX_UPLOAD_FILES
 
     assert MAX_UPLOAD_FILES == int(os.environ.get("GATEVISA_MAX_UPLOAD_FILES", "0"))
+
+
+
+@pytest.mark.parametrize(
+    ("filename", "engine"),
+    [
+        ("pax.xlsx", "openpyxl"),
+        ("pax.xlsm", "openpyxl"),
+        ("pax.xls", "xlrd"),
+        ("pax.ods", "odf"),
+    ],
+)
+def test_excel_engine_is_selected_from_filename(filename, engine):
+    from excelbase_core import excel_engine_for_filename
+
+    assert excel_engine_for_filename(filename) == engine
+
+
+def test_gate_visa_reader_passes_explicit_excel_engine(monkeypatch):
+    import gate_visa_reader
+
+    captured = {}
+
+    class EmptyExcel:
+        sheet_names = []
+
+    def fake_excel_file(source, *, engine=None):
+        captured["engine"] = engine
+        return EmptyExcel()
+
+    monkeypatch.setattr(gate_visa_reader.pd, "ExcelFile", fake_excel_file)
+    with pytest.raises(ValueError, match="okunabilir yolcu verisi"):
+        gate_visa_reader.read_gate_visa_file_bytes("22.05.xlsx", b"synthetic")
+
+    assert captured["engine"] == "openpyxl"
