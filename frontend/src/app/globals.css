@@ -234,6 +234,7 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 
 .banner { padding: 13px 16px; color: var(--navy-800); border-left: 3px solid var(--blue-600); }
 .banner .link-btn { margin-left: 8px; }
+.banner.warn { border-left-color: var(--warning); background: var(--warning-soft); }
 .readiness-card { padding: 20px; }
 .readiness-card > p:first-child { margin: 0; color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
 .readiness-card > strong { display: block; color: var(--navy-950); font-size: 34px; margin: 5px 0 10px; }

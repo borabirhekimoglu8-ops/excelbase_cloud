@@ -1,3 +1,5 @@
+import { newId } from "@/lib/id";
+
 export type DateScope = {
   range: string;
   start: string;
@@ -53,6 +55,7 @@ export type OperationSummary = {
   can_undo: boolean;
   last_batch_id: string;
   unmatched_photo_count: number;
+  persistence: string;
 };
 
 export type OperationMeta = { date_key: string; status: string; staff: string; note: string };
@@ -291,7 +294,7 @@ export async function uploadPassengerFiles(
   const qs = new URLSearchParams({
     replace: String(replace),
     dup_strategy: dupStrategy,
-    batch_id: crypto.randomUUID(),
+    batch_id: newId(),
   });
   return request<ImportResponse>(`/api/import?${qs.toString()}`, { method: "POST", body });
 }

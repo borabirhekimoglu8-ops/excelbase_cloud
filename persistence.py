@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 
@@ -8,6 +9,22 @@ import pandas as pd
 
 import db
 from passenger_schema import ALL_COLUMNS, normalize_passenger_dataframe
+
+logger = logging.getLogger(__name__)
+
+
+class StorePersistenceError(RuntimeError):
+    """Veritabanı yapılandırılmışken kalıcı kayıt başarısız olduğunda fırlatılır.
+
+    Bu durumda sessizce yerel dosyaya düşmek veri kaybına yol açar: okuma
+    veritabanından devam ettiği için yazılamayan değişiklik bir sonraki
+    istekte yok olur ama API 'başarılı' dönmüş olur. Hata açıkça yükseltilir
+    ki kullanıcı aktarımın işlenmediğini görüp yeniden deneyebilsin.
+    """
+
+
+def persistence_mode() -> str:
+    return "database" if db.enabled() else "local-fallback"
 
 # Veriyi diske yazarak sayfa yenilemelerinde sıfırlanmayı önler.
 # Not: Streamlit Cloud'da bu dosya container yeniden başlatılana (reboot/redeploy)
@@ -70,23 +87,37 @@ def _payload_to_state(payload: dict) -> tuple[pd.DataFrame, list[str], dict]:
     return normalize_passenger_dataframe(df), list(loaded_files), extra
 
 
+def _write_local(payload: dict) -> bool:
+    try:
+        os.makedirs(os.path.dirname(STORE_PATH), exist_ok=True)
+        tmp_path = STORE_PATH + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+        os.replace(tmp_path, STORE_PATH)
+        return True
+    except Exception:
+        logger.exception("Yolcu durumu yerel dosyaya yazılamadı: %s", STORE_PATH)
+        return False
+
+
 def save_store(df: pd.DataFrame, loaded_files: list[str] | None = None, extra: dict | None = None) -> None:
     """Yolcu tablosunu kaydeder: önce veritabanı, yoksa yerel dosya."""
     payload = _build_payload(df, loaded_files, extra)
     with _STORE_LOCK:
-        if db.enabled() and db.save_state(payload):
-            db.save_daily_backup(payload)
-            return
+        if db.enabled():
+            if db.save_state(payload):
+                db.save_daily_backup(payload)
+                return
+            # Yerel dosya okunmayacağı için (okuma DB'den sürer) buraya yazmak
+            # veriyi kurtarmaz; yalnızca acil durum kopyası olarak bırakılır.
+            _write_local(payload)
+            raise StorePersistenceError(
+                "Veriler kalıcı veritabanına yazılamadı; aktarım işlenmedi. "
+                "Lütfen yeniden deneyin — sorun sürerse veritabanı bağlantısını "
+                "ve disk kotasını kontrol edin."
+            )
 
-        try:
-            os.makedirs(os.path.dirname(STORE_PATH), exist_ok=True)
-            tmp_path = STORE_PATH + ".tmp"
-            with open(tmp_path, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False)
-            os.replace(tmp_path, STORE_PATH)
-        except Exception:
-            # Kalıcı kayıt başarısız olsa bile uygulama çalışmaya devam etmeli.
-            pass
+        _write_local(payload)
 
 
 def load_store() -> tuple[pd.DataFrame, list[str], dict]:

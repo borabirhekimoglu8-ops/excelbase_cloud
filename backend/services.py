@@ -222,6 +222,7 @@ def get_summary(range_choice: str = "Tümü", start: str = "", end: str = "") ->
         can_undo=bool(last_batch),
         last_batch_id=str(last_batch.get("id", "")) if last_batch else "",
         unmatched_photo_count=len(extra.get("unmatched_photos", [])),
+        persistence="database" if db.enabled() else "local-fallback",
     )
 
 
