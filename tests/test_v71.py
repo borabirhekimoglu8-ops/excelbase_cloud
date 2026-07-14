@@ -272,6 +272,7 @@ def _wait_queue_idle(client, timeout_seconds: float = 15.0) -> dict:
     return state
 
 
+@pytest.mark.import_worker
 def test_background_import_queue_processes_without_client(monkeypatch, tmp_path):
     """Dosyalar teslim edildikten sonra işleme istemciden bağımsız sürmeli."""
     _isolate_store(monkeypatch, tmp_path)
@@ -314,6 +315,7 @@ def test_background_import_queue_processes_without_client(monkeypatch, tmp_path)
         assert "broken.xlsx" not in names
 
 
+@pytest.mark.import_worker
 def test_background_import_replace_applies_only_to_first_file(monkeypatch, tmp_path):
     _isolate_store(monkeypatch, tmp_path)
     monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
@@ -352,20 +354,24 @@ def test_daily_backup_is_throttled(monkeypatch, tmp_path):
         calls["backup"] += 1
         return True
 
-    monkeypatch.setattr(db, "enabled", lambda: True)
-    monkeypatch.setattr(db, "save_state", lambda payload: True)
-    monkeypatch.setattr(db, "save_daily_backup", fake_backup)
-    monkeypatch.setattr(persistence, "_last_backup_at", 0.0)
-
     df = pd.DataFrame(columns=persistence.ALL_COLUMNS)
     # Aynı süreçte yaşayan arka plan aktarım işleyicisi de save_store'u
-    # çağırabilir (bkz. tests/conftest.py); kilidi burada tutmak bu testin
-    # üç çağrısını dışarıdan gelecek herhangi bir araya girmeden garanti eder.
+    # çağırabilir ve _STORE_LOCK'u kullanır (bkz. tests/conftest.py). Kilidi
+    # monkeypatch'lerden ÖNCE alıp asserte kadar bırakmamak zorunlu: yalnızca
+    # 3 çağrının etrafını sarmak yetmiyor — kilit alınmadan önce mock'lar
+    # zaten aktif olduğundan, kilidi bekleyen bir arka plan çağrısı tam o
+    # aralıkta devreye girip _last_backup_at'i kendi payına güncelleyebiliyor
+    # (CI'da tekrarlayan 'assert 0 == 1' hatasının kök nedeni buydu).
     with persistence._STORE_LOCK:
+        monkeypatch.setattr(db, "enabled", lambda: True)
+        monkeypatch.setattr(db, "save_state", lambda payload: True)
+        monkeypatch.setattr(db, "save_daily_backup", fake_backup)
+        monkeypatch.setattr(persistence, "_last_backup_at", 0.0)
         persistence.save_store(df, [], {})
         persistence.save_store(df, [], {})
         persistence.save_store(df, [], {})
-    assert calls["backup"] == 1
+        observed = calls["backup"]
+    assert observed == 1
 
 
 def test_db_engine_retries_after_transient_failure(monkeypatch, tmp_path):
