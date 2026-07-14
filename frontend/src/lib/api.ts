@@ -349,6 +349,26 @@ function splitImportUpload(files: File[]): File[][] {
 
 export type QueueImportResult = ImportQueueResponse & { failedFiles: string[] };
 
+export async function queueImportFile(
+  file: File,
+  replace: boolean,
+  dupStrategy: string,
+  batchId: string,
+): Promise<ImportQueueResponse> {
+  const body = new FormData();
+  await appendReadableFile(body, "files", file);
+  const qs = new URLSearchParams({
+    replace: String(replace),
+    dup_strategy: dupStrategy,
+    batch_id: batchId,
+  });
+  return request<ImportQueueResponse>(
+    `/api/import/queue?${qs.toString()}`,
+    { method: "POST", body },
+    120_000,
+  );
+}
+
 export async function queueImportFiles(
   files: File[],
   replace: boolean,
