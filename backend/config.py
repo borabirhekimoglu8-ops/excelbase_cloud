@@ -19,6 +19,16 @@ MAX_UPLOAD_FILES = int(os.environ.get("GATEVISA_MAX_UPLOAD_FILES", "0"))
 MAX_UPLOAD_BYTES = int(os.environ.get("GATEVISA_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 ALLOWED_IMPORT_EXTENSIONS = {".xlsx", ".xls", ".xlsm", ".ods", ".csv"}
 
+# ZIP, iPhone'da onlarca ayrı dosya tutamacı yerine tek güvenilir aktarım
+# sağlar. Adet sınırı yoktur; yalnızca sıkıştırılmış/sıkıştırılmamış toplam
+# boyutlar kaynak tüketimini ve ZIP bombalarını sınırlar.
+MAX_IMPORT_ARCHIVE_BYTES = int(
+    os.environ.get("GATEVISA_MAX_IMPORT_ARCHIVE_BYTES", str(100 * 1024 * 1024))
+)
+MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES = int(
+    os.environ.get("GATEVISA_MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES", str(300 * 1024 * 1024))
+)
+
 MAX_PHOTO_FILES = int(os.environ.get("GATEVISA_MAX_PHOTO_FILES", "300"))
 MAX_PHOTO_BYTES = int(os.environ.get("GATEVISA_MAX_PHOTO_BYTES", str(25 * 1024 * 1024)))
 MAX_RESTORE_BYTES = int(os.environ.get("GATEVISA_MAX_RESTORE_BYTES", str(30 * 1024 * 1024)))
