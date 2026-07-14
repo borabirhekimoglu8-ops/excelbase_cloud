@@ -51,6 +51,7 @@ _EXTRA_DEFAULTS = {
     "auth": {},
     "unmatched_photos": [],
     "mail_inbox": [],
+    "import_jobs": [],
 }
 
 

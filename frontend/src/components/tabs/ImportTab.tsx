@@ -1,42 +1,47 @@
 "use client";
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ImportJob,
   Passenger,
   UnmatchedPhoto,
   assignUnmatchedPhoto,
+  deleteImportJob,
   deleteUnmatchedPhoto,
   downloadUrl,
+  fetchImportQueue,
   fetchPassengers,
   fetchUnmatchedPhotos,
   importMail,
   matchPhotos,
+  queueImportFiles,
+  retryImportJob,
   undoImport,
-  uploadPassengerFile,
 } from "@/lib/api";
 import { newId } from "@/lib/id";
 import { useStore } from "@/lib/store";
 import { materializeUploadFile, purgeLegacyUploadQueue } from "@/lib/uploadQueue";
 
-type QueueStatus = "ready" | "uploading" | "success" | "error";
-type QueueItem = {
-  id: string;
-  file: File;
-  status: QueueStatus;
-  rows: number;
-  message: string;
+const STATUS_LABELS: Record<ImportJob["status"], string> = {
+  pending: "Sırada",
+  processing: "İşleniyor",
+  done: "Tamamlandı",
+  error: "Hata",
 };
 
 export function ImportTab() {
   const { summary, notify, bump, version } = useStore();
   const [replace, setReplace] = useState(false);
   const [dupStrategy, setDupStrategy] = useState("skip");
-  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [jobs, setJobs] = useState<ImportJob[]>([]);
+  const [queueActive, setQueueActive] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [unmatched, setUnmatched] = useState<UnmatchedPhoto[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
+  const doneCountRef = useRef(-1);
 
   const refreshUnmatched = useCallback(async () => {
     const [photos, rows] = await Promise.all([fetchUnmatchedPhotos(), fetchPassengers({ sort: "name" })]);
@@ -44,75 +49,47 @@ export function ImportTab() {
     setPassengers(rows);
   }, []);
 
+  const refreshQueue = useCallback(async () => {
+    try {
+      const state = await fetchImportQueue();
+      setJobs(state.jobs);
+      setQueueActive(state.active);
+      const doneCount = state.jobs.filter((job) => job.status === "done" || job.status === "error").length;
+      if (doneCountRef.current !== -1 && doneCount !== doneCountRef.current) {
+        bump();
+      }
+      doneCountRef.current = doneCount;
+    } catch {
+      // Bağlantı yoksa mevcut görünüm korunur; sonraki turda yeniden denenir.
+    }
+  }, [bump]);
+
   useEffect(() => {
     purgeLegacyUploadQueue();
+    void refreshQueue();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refreshQueue();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!queueActive) return;
+    const timer = window.setInterval(() => void refreshQueue(), 2500);
+    return () => window.clearInterval(timer);
+  }, [queueActive, refreshQueue]);
 
   useEffect(() => {
     void refreshUnmatched();
   }, [refreshUnmatched, version]);
 
-  const processedCount = queue.filter((item) => item.status === "success" || item.status === "error").length;
-  const progress = queue.length ? Math.round((processedCount / queue.length) * 100) : 0;
-  const importedRows = queue.reduce((sum, item) => sum + item.rows, 0);
-  const failedItems = queue.filter((item) => item.status === "error");
-
-  async function startImport(items: QueueItem[]) {
-    if (busy || !items.length) return;
-    setBusy(true);
-    const batchId = newId();
-    let imported = 0;
-    let failed = 0;
-    let shouldReplace = replace;
-    const serverWarnings: string[] = [];
-    try {
-      for (const item of items) {
-        setQueue((current) =>
-          current.map((row) =>
-            row.id === item.id ? { ...row, status: "uploading", message: "Sunucuya gönderiliyor…" } : row,
-          ),
-        );
-        try {
-          const result = await uploadPassengerFile(item.file, shouldReplace, dupStrategy, batchId);
-          shouldReplace = false;
-          imported += result.imported;
-          serverWarnings.push(...result.warnings);
-          const detail = [
-            `${result.imported} yolcu aktarıldı`,
-            result.duplicate_count ? `${result.duplicate_count} tekrar` : "",
-            result.invalid_count ? `${result.invalid_count} kritik kontrol` : "",
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          setQueue((current) =>
-            current.map((row) =>
-              row.id === item.id
-                ? { ...row, status: "success", rows: result.imported, message: `${detail}.` }
-                : row,
-            ),
-          );
-          bump();
-        } catch (err) {
-          failed += 1;
-          setQueue((current) =>
-            current.map((row) =>
-              row.id === item.id
-                ? { ...row, status: "error", message: err instanceof Error ? err.message : "Aktarım başarısız" }
-                : row,
-            ),
-          );
-        }
-      }
-      setLog([
-        `${items.length - failed}/${items.length} dosya işlendi, ${imported} yolcu aktarıldı.`,
-        ...serverWarnings.slice(0, 8),
-      ]);
-      notify(failed ? `${failed} dosya aktarılamadı` : `${imported} yolcu aktarıldı`, failed ? "warn" : "ok");
-      bump();
-    } finally {
-      setBusy(false);
-    }
-  }
+  const processedCount = jobs.filter((job) => job.status === "done" || job.status === "error").length;
+  const progress = jobs.length ? Math.round((processedCount / jobs.length) * 100) : 0;
+  const importedRows = jobs.reduce((sum, job) => sum + job.imported, 0);
+  const failedJobs = jobs.filter((job) => job.status === "error");
+  const finishedJobs = jobs.filter((job) => job.status === "done" || job.status === "error");
 
   async function handleExcel(event: ChangeEvent<HTMLInputElement>) {
     const input = event.target;
@@ -121,40 +98,74 @@ export function ImportTab() {
       input.value = "";
       return;
     }
-    const items: QueueItem[] = [];
-    const unreadable: string[] = [];
-    for (const source of sourceFiles) {
+    setUploading(true);
+    try {
+      const files: File[] = [];
+      const unreadable: string[] = [];
+      for (const source of sourceFiles) {
+        try {
+          // Baytlar input temizlenmeden ÖNCE kopyalanmalı (iOS Safari).
+          files.push(await materializeUploadFile(source));
+        } catch (error) {
+          unreadable.push(error instanceof Error ? error.message : `${source.name}: dosya okunamadı.`);
+        }
+      }
+      input.value = "";
+      if (unreadable.length) {
+        setLog(unreadable);
+        notify(`${unreadable.length} dosya okunamadı; yeniden seçin.`, "warn");
+      }
+      if (!files.length) return;
+      const result = await queueImportFiles(files, replace, dupStrategy);
+      setJobs((current) => {
+        const known = new Set(current.map((job) => job.id));
+        return [...current, ...result.jobs.filter((job) => !known.has(job.id))];
+      });
+      setQueueActive(true);
+      setLog([
+        `${result.jobs.length} dosya sunucuya teslim edildi.`,
+        "İşleme sunucuda sürüyor — uygulamadan çıksanız bile devam eder.",
+      ]);
+      notify(`${result.jobs.length} dosya kuyruğa alındı`);
+      void refreshQueue();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Dosyalar sunucuya teslim edilemedi.";
+      setLog([message]);
+      notify(message, "error");
+    } finally {
+      input.value = "";
+      setUploading(false);
+    }
+  }
+
+  async function handleRetry(job: ImportJob) {
+    try {
+      await retryImportJob(job.id);
+      setQueueActive(true);
+      await refreshQueue();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Yeniden deneme başlatılamadı.", "error");
+    }
+  }
+
+  async function handleDiscard(job: ImportJob) {
+    try {
+      await deleteImportJob(job.id);
+      await refreshQueue();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Kayıt kaldırılamadı.", "error");
+    }
+  }
+
+  async function clearFinished() {
+    for (const job of finishedJobs) {
       try {
-        // Baytlar input temizlenmeden ÖNCE kopyalanmalı (iOS Safari).
-        const file = await materializeUploadFile(source);
-        items.push({ id: newId(), file, status: "ready", rows: 0, message: "Sırada." });
-      } catch (error) {
-        unreadable.push(error instanceof Error ? error.message : `${source.name}: dosya okunamadı.`);
+        await deleteImportJob(job.id);
+      } catch {
+        // Tek kayıt kaldırılamazsa diğerlerine devam edilir.
       }
     }
-    input.value = "";
-    if (unreadable.length) {
-      setLog(unreadable);
-      notify(`${unreadable.length} dosya okunamadı; yeniden seçin.`, "warn");
-    }
-    if (!items.length) return;
-    setQueue((current) => [...current.filter((row) => row.status !== "success"), ...items]);
-    await startImport(items);
-  }
-
-  async function retryFailed() {
-    const retryItems = failedItems.map<QueueItem>((row) => ({ ...row, status: "ready", message: "Yeniden sırada." }));
-    setQueue((current) => current.map((row) => retryItems.find((item) => item.id === row.id) ?? row));
-    await startImport(retryItems);
-  }
-
-  function discardItem(item: QueueItem) {
-    setQueue((current) => current.filter((row) => row.id !== item.id));
-  }
-
-  function discardAllQueue() {
-    setQueue([]);
-    setLog([]);
+    await refreshQueue();
   }
 
   async function handlePhotos(event: ChangeEvent<HTMLInputElement>) {
@@ -213,8 +224,8 @@ export function ImportTab() {
     if (!window.confirm("Son toplu liste aktarımı geri alınsın mı?")) return;
     const result = await undoImport(summary.last_batch_id);
     notify(result.message, "warn");
-    setQueue([]);
     bump();
+    await refreshQueue();
   }
 
   async function handleAssign(item: UnmatchedPhoto) {
@@ -226,10 +237,11 @@ export function ImportTab() {
     await refreshUnmatched();
   }
 
-  const statusLabels = useMemo<Record<QueueStatus, string>>(
-    () => ({ ready: "Sırada", uploading: "Gönderiliyor", success: "Tamamlandı", error: "Hata" }),
-    [],
-  );
+  const uploadLocked = uploading || busy;
+  const summaryLine = useMemo(() => {
+    if (!jobs.length) return "";
+    return `${jobs.length} dosya · ${importedRows} yolcu aktarıldı · %${progress} tamamlandı`;
+  }, [jobs.length, importedRows, progress]);
 
   return (
     <div className="tab-body">
@@ -237,7 +249,7 @@ export function ImportTab() {
         <div>
           <p className="overline">VERİ AKTARIMI</p>
           <h2>Toplu liste merkezi</h2>
-          <p>Dosyayı seçin, gerisi otomatik: her dosya sırayla aktarılır ve sonucu satırında görünür.</p>
+          <p>Dosyalar tek seferde sunucuya teslim edilir ve arka planda işlenir — uygulamadan çıksanız bile aktarım sürer.</p>
         </div>
         {summary.can_undo && (
           <button className="text-btn danger-text" onClick={() => void handleUndo()} type="button">
@@ -262,32 +274,38 @@ export function ImportTab() {
             <p>Excel, CSV ve ODS dosyaları. Seçim adedi sınırsızdır.</p>
           </div>
           <label className="primary-btn compact-btn">
-            {busy ? "Aktarılıyor…" : "Dosya seç"}
-            <input type="file" accept=".xlsx,.xls,.xlsm,.ods,.csv" multiple onChange={handleExcel} disabled={busy} />
+            {uploading ? "Sunucuya teslim ediliyor…" : "Dosya seç"}
+            <input type="file" accept=".xlsx,.xls,.xlsm,.ods,.csv" multiple onChange={handleExcel} disabled={uploadLocked} />
           </label>
         </div>
 
-        {queue.length > 0 && (
+        {jobs.length > 0 && (
           <>
             <div className="queue-summary">
-              <span>{queue.length} dosya</span>
-              <span>{importedRows} yolcu aktarıldı</span>
-              <span>%{progress} tamamlandı</span>
-              <button className="text-btn danger-text" disabled={busy} onClick={discardAllQueue} type="button">
-                Listeyi temizle
-              </button>
+              <span>{summaryLine}</span>
+              {queueActive && <span className="status-label">Sunucu işliyor…</span>}
+              {finishedJobs.length > 0 && !queueActive && (
+                <button className="text-btn danger-text" onClick={() => void clearFinished()} type="button">
+                  Listeyi temizle
+                </button>
+              )}
             </div>
             <div className="queue-list">
-              {queue.map((item) => (
-                <div className={`queue-row status-${item.status}`} key={item.id}>
+              {jobs.map((job) => (
+                <div className={`queue-row status-${job.status === "pending" ? "ready" : job.status === "processing" ? "uploading" : job.status === "done" ? "success" : "error"}`} key={job.id}>
                   <div>
-                    <strong>{item.file.name}</strong>
-                    {item.message && <small className="queue-message">{item.message}</small>}
+                    <strong>{job.filename}</strong>
+                    {job.message && <small className="queue-message">{job.message}</small>}
                   </div>
                   <div className="queue-actions">
-                    <span className="status-label">{statusLabels[item.status]}</span>
-                    {item.status !== "uploading" && (
-                      <button className="text-btn danger-text" disabled={busy} onClick={() => discardItem(item)}>
+                    <span className="status-label">{STATUS_LABELS[job.status]}</span>
+                    {job.status === "error" && (
+                      <button className="text-btn" onClick={() => void handleRetry(job)} type="button">
+                        Yeniden dene
+                      </button>
+                    )}
+                    {job.status !== "processing" && (
+                      <button className="text-btn danger-text" onClick={() => void handleDiscard(job)} type="button">
                         Kaldır
                       </button>
                     )}
@@ -314,15 +332,10 @@ export function ImportTab() {
             </label>
           )}
         </div>
-        {busy && (
-          <button className="primary-btn wide" disabled type="button">
-            Dosyalar sırayla aktarılıyor… %{progress}
-          </button>
-        )}
-        {!busy && failedItems.length > 0 && (
-          <button className="primary-btn wide" onClick={() => void retryFailed()} type="button">
-            Hatalı {failedItems.length} dosyayı yeniden dene
-          </button>
+        {queueActive && (
+          <div className="banner">
+            Aktarım sunucuda sürüyor (%{progress}). Bu ekranı kapatabilirsiniz; geri döndüğünüzde sonuçlar burada olacak.
+          </div>
         )}
       </section>
 
@@ -335,7 +348,7 @@ export function ImportTab() {
           </div>
           <label className={`secondary-btn compact-btn ${summary.passenger_count === 0 ? "disabled" : ""}`}>
             Fotoğraf / ZIP seç
-            <input type="file" accept="image/*,.zip,.heic,.heif" multiple onChange={handlePhotos} disabled={summary.passenger_count === 0 || busy} />
+            <input type="file" accept="image/*,.zip,.heic,.heif" multiple onChange={handlePhotos} disabled={summary.passenger_count === 0 || uploadLocked} />
           </label>
         </div>
       </section>
@@ -349,7 +362,7 @@ export function ImportTab() {
           </div>
           <label className="secondary-btn compact-btn">
             E-posta seç
-            <input type="file" accept="message/rfc822,.eml" multiple onChange={handleMail} disabled={busy} />
+            <input type="file" accept="message/rfc822,.eml" multiple onChange={handleMail} disabled={uploadLocked} />
           </label>
         </div>
       </section>

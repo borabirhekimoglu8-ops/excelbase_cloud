@@ -29,6 +29,8 @@ from .models import (
     AuthStatusResponse,
     BackupInfo,
     BulkDeleteRequest,
+    ImportJobView,
+    ImportQueueResponse,
     ImportResponse,
     ImportPreviewResponse,
     MailImportResponse,
@@ -69,6 +71,18 @@ app = FastAPI(title="Gate Visa Operations API", version=APP_VERSION)
 @app.exception_handler(StorePersistenceError)
 async def persistence_error_handler(request: Request, exc: StorePersistenceError) -> JSONResponse:
     return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"detail": str(exc)})
+
+
+@app.on_event("startup")
+async def resume_import_queue() -> None:
+    """Sunucu yeniden başladığında yarım kalan aktarım işlerini sürdürür."""
+    try:
+        recovered = services.recover_stale_import_jobs()
+        if recovered:
+            logger.info("Yeniden başlatma sonrası %d aktarım işi kuyruğa iade edildi", recovered)
+        services.ensure_import_worker()
+    except Exception:
+        logger.exception("Aktarım kuyruğu açılışta sürdürülemedi")
 
 app.add_middleware(
     CORSMiddleware,
@@ -373,6 +387,94 @@ async def import_files(
         duplicate_count=duplicate_count,
         invalid_count=invalid_count,
     )
+
+
+async def _read_validated_import_upload(upload: UploadFile) -> tuple[str, bytes]:
+    filename = upload.filename or "upload.xlsx"
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_IMPORT_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{filename}: desteklenen dosya türleri: .xlsx, .xls, .xlsm, .ods, .csv",
+        )
+    data = await upload.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"{filename}: dosya limiti {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{filename}: dosya içeriği alınamadı (0 bayt). Dosyayı yeniden seçin.",
+        )
+    return filename, data
+
+
+@app.post("/api/import/queue", response_model=ImportQueueResponse, dependencies=[Depends(require_write_access)])
+async def queue_import_files(
+    files: list[UploadFile] = File(...),
+    replace: bool = Query(default=False),
+    dup_strategy: str = Query(default="skip"),
+    batch_id: str = Query(default=""),
+) -> ImportQueueResponse:
+    """Dosyaları tek istekte teslim alır; işleme sunucuda arka planda sürer.
+
+    Kullanıcı sekmeden çıksa/telefon kilitlense bile kuyruk tamamlanır.
+    """
+    if dup_strategy not in {"add", "skip", "overwrite"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Gecersiz tekrar stratejisi.")
+    if MAX_UPLOAD_FILES > 0 and len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"En fazla {MAX_UPLOAD_FILES} dosya yüklenebilir.",
+        )
+    payload: list[tuple[str, bytes]] = []
+    for upload in files:
+        payload.append(await _read_validated_import_upload(upload))
+    jobs, resolved_batch = services.enqueue_import_files(
+        payload, replace=replace, dup_strategy=dup_strategy, batch_id=batch_id
+    )
+    services.ensure_import_worker()
+    return ImportQueueResponse(
+        jobs=[ImportJobView(**job) for job in jobs],
+        active=True,
+        batch_id=resolved_batch,
+    )
+
+
+@app.get("/api/import/queue", response_model=ImportQueueResponse, dependencies=[Depends(require_api_key)])
+def import_queue_status() -> ImportQueueResponse:
+    jobs, active = services.get_import_jobs()
+    if active:
+        services.ensure_import_worker()
+    return ImportQueueResponse(jobs=[ImportJobView(**job) for job in jobs], active=active)
+
+
+@app.post(
+    "/api/import/queue/{job_id}/retry",
+    response_model=SimpleResult,
+    dependencies=[Depends(require_write_access)],
+)
+def retry_import_job(job_id: str) -> SimpleResult:
+    if not services.retry_import_job(job_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Yeniden denenecek iş bulunamadı.")
+    services.ensure_import_worker()
+    return SimpleResult(ok=True, message="Dosya yeniden kuyruğa alındı.")
+
+
+@app.delete(
+    "/api/import/queue/{job_id}",
+    response_model=SimpleResult,
+    dependencies=[Depends(require_write_access)],
+)
+def remove_import_job(job_id: str) -> SimpleResult:
+    if not services.delete_import_job(job_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="İş bulunamadı veya şu anda işleniyor; bitince kaldırabilirsiniz.",
+        )
+    return SimpleResult(ok=True, message="Kayıt kuyruktan kaldırıldı.")
 
 
 @app.post("/api/import/undo", response_model=SimpleResult, dependencies=[Depends(require_write_access)])

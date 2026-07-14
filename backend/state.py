@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import functools
 import os
 import sys
+import threading
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -23,7 +25,24 @@ from passenger_schema import (  # noqa: E402
 from persistence import load_store, save_store  # noqa: E402
 from photo_store import _norm_key  # noqa: E402
 
-APP_VERSION = "7.1.7"
+APP_VERSION = "7.1.8"
+
+# Durum tek JSON blob olarak yükle-değiştir-kaydet döngüsüyle güncellenir.
+# Arka plan aktarım işleyicisi eklendiğinden bu döngüler artık gerçekten
+# eşzamanlı çalışabilir; kilit olmadan iki eşzamanlı kayıt birbirinin
+# değişikliğini (örn. içeri alınmış yolcuları) sessizce silebilir.
+MUTATION_LOCK = threading.RLock()
+
+
+def locked_mutation(fn):
+    """Yükle-değiştir-kaydet yapan fonksiyonları tek küresel kilitle sıralar."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with MUTATION_LOCK:
+            return fn(*args, **kwargs)
+
+    return wrapper
 
 
 def load_state() -> tuple[pd.DataFrame, list[str], dict]:
