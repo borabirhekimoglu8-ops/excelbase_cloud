@@ -20,10 +20,14 @@ services:
         value: production
       - key: GATEVISA_REQUIRE_AUTH
         value: "1"
+      # Render'ın kendi Postgres'i (excelbase-v8-db) free plan'da 30 gün sonra
+      # otomatik silinir. Ücretsiz kalıcı bir alternatif için (ör. Neon/
+      # Supabase) bağlantı dizesini burada değil, Render Dashboard →
+      # excelbase → Environment sekmesinde DATABASE_URL olarak elle girin
+      # (postgresql://... formatı; db.py hem pg8000 sürücüsünü hem TLS'i
+      # otomatik ayarlar, kod tarafında ek değişiklik gerekmez).
       - key: DATABASE_URL
-        fromDatabase:
-          name: excelbase-v8-db
-          property: connectionString
+        sync: false
       - key: GATEVISA_DATA_SECRET
         generateValue: true
       # /v8 sayfasının varsayılan API adresi (build sırasında gömülür).
