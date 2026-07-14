@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from .config import (
     ALLOWED_IMPORT_EXTENSIONS,
+    MAX_IMPORT_ARCHIVE_BYTES,
     MAX_PHOTO_BYTES,
     MAX_PHOTO_FILES,
     MAX_RESTORE_BYTES,
@@ -397,16 +398,19 @@ async def import_files(
 async def _read_validated_import_upload(upload: UploadFile) -> tuple[str, bytes]:
     filename = upload.filename or "upload.xlsx"
     ext = os.path.splitext(filename)[1].lower()
-    if ext not in ALLOWED_IMPORT_EXTENSIONS:
+    is_archive = ext == ".zip"
+    if ext not in ALLOWED_IMPORT_EXTENSIONS and not is_archive:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{filename}: desteklenen dosya türleri: .xlsx, .xls, .xlsm, .ods, .csv",
+            detail=f"{filename}: desteklenen dosya türleri: .xlsx, .xls, .xlsm, .ods, .csv, .zip",
         )
-    data = await upload.read(MAX_UPLOAD_BYTES + 1)
-    if len(data) > MAX_UPLOAD_BYTES:
+    byte_limit = MAX_IMPORT_ARCHIVE_BYTES if is_archive else MAX_UPLOAD_BYTES
+    data = await upload.read(byte_limit + 1)
+    if len(data) > byte_limit:
+        label = "ZIP" if is_archive else "Dosya"
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"{filename}: dosya limiti {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+            detail=f"{filename}: {label} limiti {byte_limit // (1024 * 1024)} MB.",
         )
     if not data:
         raise HTTPException(
@@ -423,9 +427,10 @@ async def queue_import_files(
     dup_strategy: str = Query(default="skip"),
     batch_id: str = Query(default=""),
 ) -> ImportQueueResponse:
-    """Dosyaları tek istekte teslim alır; işleme sunucuda arka planda sürer.
+    """Excel/CSV dosyalarını veya bir ZIP arşivini kalıcı kuyruğa alır.
 
-    Kullanıcı sekmeden çıksa/telefon kilitlense bile kuyruk tamamlanır.
+    ZIP içindeki desteklenen tüm listeler sunucuda açılır; kullanıcı sekmeden
+    çıksa veya telefonu kilitlese bile işleme arka planda tamamlanır.
     """
     if dup_strategy not in {"add", "skip", "overwrite"}:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Gecersiz tekrar stratejisi.")
@@ -436,7 +441,11 @@ async def queue_import_files(
         )
     payload: list[tuple[str, bytes]] = []
     for upload in files:
-        payload.append(await _read_validated_import_upload(upload))
+        filename, data = await _read_validated_import_upload(upload)
+        try:
+            payload.extend(services.expand_import_upload(filename, data))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     jobs, resolved_batch = services.enqueue_import_files(
         payload, replace=replace, dup_strategy=dup_strategy, batch_id=batch_id
     )

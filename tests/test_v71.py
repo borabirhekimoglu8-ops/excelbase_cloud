@@ -385,6 +385,56 @@ def test_background_import_queue_processes_without_client(monkeypatch, tmp_path)
 
 
 @pytest.mark.import_worker
+def test_zip_import_queue_expands_all_passenger_lists(monkeypatch, tmp_path):
+    """Tek ZIP içindeki tüm desteklenen listeler ayrı kuyruk işi olmalı."""
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    archive_bytes = io.BytesIO()
+    with zipfile.ZipFile(archive_bytes, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("one.csv", _csv("PZIP001", "2026-07-17", "ALICE"))
+        archive.writestr("nested/two.csv", _csv("PZIP002", "2026-07-18", "BOB"))
+        archive.writestr("__MACOSX/._one.csv", b"metadata")
+        archive.writestr("notes.txt", b"ignored")
+
+    with TestClient(app) as client:
+        enqueue = client.post(
+            "/api/import/queue?dup_strategy=skip&batch_id=zip-batch",
+            files=[("files", ("49-listeler.zip", archive_bytes.getvalue(), "application/zip"))],
+        )
+        assert enqueue.status_code == 200
+        assert [job["filename"] for job in enqueue.json()["jobs"]] == ["one.csv", "two.csv"]
+
+        state = _wait_queue_idle(client)
+        assert state["active"] is False
+        assert all(job["status"] == "done" for job in state["jobs"])
+        assert client.get("/api/summary").json()["passenger_count"] == 2
+
+
+def test_zip_import_rejects_unsafe_paths(monkeypatch, tmp_path):
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    archive_bytes = io.BytesIO()
+    with zipfile.ZipFile(archive_bytes, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("../escape.csv", _csv("PZIP003", "2026-07-19"))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/import/queue",
+            files=[("files", ("unsafe.zip", archive_bytes.getvalue(), "application/zip"))],
+        )
+        assert response.status_code == 400
+        assert "güvensiz" in response.json()["detail"].lower()
+
+
+@pytest.mark.import_worker
 def test_background_import_replace_applies_only_to_first_file(monkeypatch, tmp_path):
     _isolate_store(monkeypatch, tmp_path)
     monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
