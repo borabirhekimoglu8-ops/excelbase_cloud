@@ -285,6 +285,31 @@ def test_import_fails_loudly_when_db_write_fails(monkeypatch, tmp_path):
         assert client.get("/api/summary").json()["persistence"] == "database"
 
 
+def test_read_fails_loudly_when_db_read_fails(monkeypatch, tmp_path):
+    """DB açıkken okuma başarısızsa (None) yolcular sessizce '0 kayıt' görünmemeli.
+
+    db.load_state() yalnızca gerçek bir okuma/çözümleme hatasında None döner
+    (veri gerçekten yoksa {} döner). Bunu sessizce boş yerel dosyaya düşüp
+    kullanıcıya '0 yolcu' göstermek, aktarım veritabanına başarıyla yazılmış
+    olsa bile veri kaybı gibi görünürdü.
+    """
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+    monkeypatch.setattr(db, "enabled", lambda: True)
+    monkeypatch.setattr(db, "load_state", lambda: None)
+
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    with TestClient(app) as client:
+        response = client.get("/api/passengers")
+        assert response.status_code == 503
+        assert "veritaban" in response.json()["detail"].lower()
+
+        summary_response = client.get("/api/summary")
+        assert summary_response.status_code == 503
+
+
 def test_summary_reports_local_fallback_persistence(monkeypatch, tmp_path):
     _isolate_store(monkeypatch, tmp_path)
     from backend import services

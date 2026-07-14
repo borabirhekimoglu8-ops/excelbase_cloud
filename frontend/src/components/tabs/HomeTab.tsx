@@ -12,7 +12,7 @@ function fileKind(name: string): "xls" | "zip" | "pdf" {
 }
 
 export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
-  const { summary, dateScope } = useStore();
+  const { summary, connected, dateScope } = useStore();
   const [voyage, setVoyage] = useState<ArchiveGroup | null>(null);
 
   useEffect(() => {
@@ -29,6 +29,15 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
       active = false;
     };
   }, []);
+
+  if (!connected) {
+    return (
+      <div className="ic-empty">
+        <h3>Sunucuya ulaşılamıyor</h3>
+        <p>Kayıtlar yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.</p>
+      </div>
+    );
+  }
 
   if (summary.passenger_count === 0) {
     return (

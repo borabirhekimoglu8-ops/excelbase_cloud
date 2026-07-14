@@ -16,13 +16,14 @@ const FILTER_CHIPS: { key: string; label: (n: number) => string; tone?: "ok" | "
 const PAGE_SIZE = 20;
 
 export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }) {
-  const { summary, version, notify, bump, dateScope } = useStore();
+  const { summary, connected, version, notify, bump, dateScope } = useStore();
   const { user } = useAuth();
   const canWrite = user.role !== "viewer";
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>(initialStatus);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
@@ -41,7 +42,12 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
         .then((data) => {
           if (!active) return;
           setPassengers(data);
+          setLoadError(false);
           setPage(0);
+        })
+        .catch(() => {
+          if (!active) return;
+          setLoadError(true);
         })
         .finally(() => active && setLoading(false));
     }, 220);
@@ -56,10 +62,14 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
     Promise.all([
       fetchPassengers({ status: "Hazır", scope: dateScope }),
       fetchPassengers({ status: "Eksik", scope: dateScope }),
-    ]).then(([ready, missing]) => {
-      if (!active) return;
-      setChipCounts({ ready: ready.length, missing: missing.length });
-    });
+    ])
+      .then(([ready, missing]) => {
+        if (!active) return;
+        setChipCounts({ ready: ready.length, missing: missing.length });
+      })
+      .catch(() => {
+        // Ana liste isteği zaten hatayı yakalayıp gösteriyor.
+      });
     return () => {
       active = false;
     };
@@ -95,6 +105,15 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
     notify(`${selected.size} yolcu silindi`, "warn");
     setSelected(new Set());
     bump();
+  }
+
+  if (!connected) {
+    return (
+      <div className="ic-empty">
+        <h3>Sunucuya ulaşılamıyor</h3>
+        <p>Yolcu kayıtları yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.</p>
+      </div>
+    );
   }
 
   if (summary.passenger_count === 0) {
@@ -171,7 +190,12 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
       )}
 
       {loading && <p className="muted">Yükleniyor…</p>}
-      {!loading && passengers.length === 0 && (
+      {!loading && loadError && (
+        <div className="ic-card ic-card-pad" style={{ textAlign: "center", color: "var(--ido-red)" }}>
+          Liste yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.
+        </div>
+      )}
+      {!loading && !loadError && passengers.length === 0 && (
         <div className="ic-card ic-card-pad" style={{ textAlign: "center", color: "var(--ido-muted)" }}>
           Sonuç bulunamadı.
         </div>

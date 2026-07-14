@@ -154,6 +154,16 @@ def load_store() -> tuple[pd.DataFrame, list[str], dict]:
             payload = db.load_state()
             if payload is not None:
                 return _payload_to_state(payload)
+            # db.load_state() yalnızca gerçek bir okuma/çözümleme hatasında
+            # None döner (veri gerçekten yoksa {} döner) — bunu sessizce
+            # yerel (muhtemelen boş) dosyaya düşüp "0 yolcu" göstermek,
+            # aktarım veritabanına yazılmış olsa bile kullanıcıya veri kaybı
+            # gibi görünür. Hata açıkça yükseltilir ki kullanıcı yeniden
+            # deneyebilsin, veri sessizce "kayıp" görünmesin.
+            raise StorePersistenceError(
+                "Veriler veritabanından okunamadı. Lütfen sayfayı yeniden yükleyip "
+                "tekrar deneyin; sorun sürerse veritabanı bağlantısını kontrol edin."
+            )
 
         if not os.path.exists(STORE_PATH):
             return empty, [], empty_extra
