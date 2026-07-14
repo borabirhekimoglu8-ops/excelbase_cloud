@@ -45,6 +45,7 @@ class OperationSummary(BaseModel):
     last_batch_id: str = ""
     unmatched_photo_count: int = 0
     persistence: str = "local-fallback"
+    version: str = ""
 
 
 class ImportResponse(BaseModel):

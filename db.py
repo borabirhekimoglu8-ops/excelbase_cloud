@@ -172,6 +172,24 @@ def save_state(payload: dict) -> bool:
         return False
 
 
+def probe_write() -> bool:
+    """Veritabanına gerçekten yazılabildiğini küçük bir kayıtla doğrular."""
+    engine = get_engine()
+    if engine is None:
+        return False
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM app_state WHERE key = 'health-probe'"))
+            conn.execute(
+                text("INSERT INTO app_state (key, value) VALUES ('health-probe', :v)"),
+                {"v": date.today().isoformat()},
+            )
+        return True
+    except Exception:
+        logger.exception("Veritabanı yazma sondası başarısız")
+        return False
+
+
 def load_state() -> dict | None:
     engine = get_engine()
     if engine is None:

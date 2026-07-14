@@ -56,6 +56,7 @@ export type OperationSummary = {
   last_batch_id: string;
   unmatched_photo_count: number;
   persistence: string;
+  version: string;
 };
 
 export type OperationMeta = { date_key: string; status: string; staff: string; note: string };

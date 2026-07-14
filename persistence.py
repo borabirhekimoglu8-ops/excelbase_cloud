@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import threading
+import time
 
 import pandas as pd
 
@@ -35,6 +36,12 @@ STORE_PATH = os.environ.get(
 )
 
 _STORE_LOCK = threading.RLock()
+
+# Günlük yedek her kayıtta tüm veriyi şifreleyip yeniden yazıyordu; art arda
+# dosya aktarımlarında bu maliyet kaydın kendisini geçiyordu. Yedek zaten günlük
+# granülerlikte olduğu için en fazla 10 dakikada bir tazelenmesi yeterli.
+_BACKUP_INTERVAL_SECONDS = 600.0
+_last_backup_at = 0.0
 
 _EXTRA_DEFAULTS = {
     "import_history": [],
@@ -103,10 +110,14 @@ def _write_local(payload: dict) -> bool:
 def save_store(df: pd.DataFrame, loaded_files: list[str] | None = None, extra: dict | None = None) -> None:
     """Yolcu tablosunu kaydeder: önce veritabanı, yoksa yerel dosya."""
     payload = _build_payload(df, loaded_files, extra)
+    global _last_backup_at
     with _STORE_LOCK:
         if db.enabled():
             if db.save_state(payload):
-                db.save_daily_backup(payload)
+                now = time.monotonic()
+                if now - _last_backup_at >= _BACKUP_INTERVAL_SECONDS:
+                    if db.save_daily_backup(payload):
+                        _last_backup_at = now
                 return
             # Yerel dosya okunmayacağı için (okuma DB'den sürer) buraya yazmak
             # veriyi kurtarmaz; yalnızca acil durum kopyası olarak bırakılır.

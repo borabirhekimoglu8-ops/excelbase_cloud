@@ -58,11 +58,12 @@ from .auth import (
     authenticate,
 )
 from . import services
+from .state import APP_VERSION
 from persistence import StorePersistenceError  # noqa: E402  (kök dizin yolu .state importuyla eklenir)
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Gate Visa Operations API", version="7.1.6")
+app = FastAPI(title="Gate Visa Operations API", version=APP_VERSION)
 
 
 @app.exception_handler(StorePersistenceError)
@@ -80,6 +81,21 @@ app.add_middleware(
 ROOT_DIR = Path(__file__).resolve().parents[1]
 FRONTEND_OUT = ROOT_DIR / "frontend" / "out"
 NEXT_ASSETS = FRONTEND_OUT / "_next"
+
+
+@app.middleware("http")
+async def cache_headers(request: Request, call_next):
+    """iOS Safari, başlıksız yanıtları sezgisel olarak önbellekler: eski uygulama
+    kabuğu ve bayat /api GET yanıtları 'veriler işlenmiyor' olarak görünür.
+    HTML ve API yanıtları her zaman taze, parmak izli statikler kalıcı olur."""
+    response = await call_next(request)
+    path = request.url.path
+    content_type = response.headers.get("content-type", "")
+    if path.startswith("/_next/static/") and response.status_code == 200 and "text/html" not in content_type:
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path.startswith("/api/") or "text/html" in content_type:
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.middleware("http")
@@ -107,11 +123,13 @@ def _key_qs() -> str:
 
 # ---------------------------------------------------------------- health / meta
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict:
+    db_enabled = services.db.enabled()
     return {
         "status": "ok",
-        "version": "7.1.6",
-        "persistence": "database" if services.db.enabled() else "local-fallback",
+        "version": APP_VERSION,
+        "persistence": "database" if db_enabled else "local-fallback",
+        "database_writable": services.db.probe_write() if db_enabled else False,
     }
 
 

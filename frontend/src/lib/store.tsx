@@ -32,6 +32,7 @@ const emptySummary: OperationSummary = {
   last_batch_id: "",
   unmatched_photo_count: 0,
   persistence: "database",
+  version: "",
 };
 
 export type Toast = { id: number; text: string; tone: "ok" | "warn" | "error" };

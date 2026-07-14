@@ -34,4 +34,7 @@ def require_auth() -> bool:
 SESSION_COOKIE = os.environ.get("GATEVISA_SESSION_COOKIE", "gatevisa_session")
 SESSION_DAYS = int(os.environ.get("GATEVISA_SESSION_DAYS", "14"))
 MAX_AUDIT_EVENTS = int(os.environ.get("GATEVISA_MAX_AUDIT_EVENTS", "500"))
-MAX_IMPORT_SNAPSHOTS = int(os.environ.get("GATEVISA_MAX_IMPORT_SNAPSHOTS", "12"))
+# Geri alma yalnızca SON aktarımı desteklediği için fazladan anlık görüntü saklamak
+# her kayıtta tüm yolcu listesinin o kadar kopyasının veritabanına yazılması demek.
+# 12 kopya, liste büyüyünce ücretsiz sunucuda kaydetmeyi yavaşlatıp şişiriyordu.
+MAX_IMPORT_SNAPSHOTS = int(os.environ.get("GATEVISA_MAX_IMPORT_SNAPSHOTS", "2"))
