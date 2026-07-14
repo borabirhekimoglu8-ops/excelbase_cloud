@@ -122,19 +122,22 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
     setUploading(true);
     setDeliveryProgress({ delivered: 0, total: sourceFiles.length });
     try {
-      // iOS, dosya seçici kapandıktan sonra bazı geçici dosya tutamaçlarını
-      // geçersizleştirebilir. Tüm okumaları seçim anında başlatırız.
-      const settled = await Promise.allSettled(sourceFiles.map((source) => materializeUploadFile(source)));
+      // iCloud sağlayıcısını onlarca eşzamanlı tam dosya okumasıyla
+      // kilitlememek için dosyaları üçlü dalgalar hâlinde belleğe alırız.
       const files: File[] = [];
       const unreadable: string[] = [];
-      settled.forEach((result, index) => {
-        if (result.status === "fulfilled") {
-          files.push(result.value);
-        } else {
-          const error = result.reason;
-          unreadable.push(error instanceof Error ? error.message : `${sourceFiles[index].name}: dosya okunamadı.`);
-        }
-      });
+      for (let start = 0; start < sourceFiles.length; start += 3) {
+        const group = sourceFiles.slice(start, start + 3);
+        const settled = await Promise.allSettled(group.map((source) => materializeUploadFile(source)));
+        settled.forEach((result, index) => {
+          if (result.status === "fulfilled") {
+            files.push(result.value);
+          } else {
+            const error = result.reason;
+            unreadable.push(error instanceof Error ? error.message : `${group[index].name}: dosya okunamadı.`);
+          }
+        });
+      }
       input.value = "";
       if (unreadable.length) notify(`${unreadable.length} dosya okunamadı; yeniden seçin.`, "warn");
       if (!files.length) return;
