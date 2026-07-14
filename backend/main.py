@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+import uuid
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
@@ -78,7 +80,12 @@ async def persistence_error_handler(request: Request, exc: StorePersistenceError
 async def resume_import_queue() -> None:
     """Sunucu yeniden başladığında yarım kalan aktarım işlerini sürdürür."""
     try:
-        recovered = services.recover_stale_import_jobs()
+        migrated = services.migrate_legacy_import_queue()
+        if migrated:
+            logger.info("Eski kuyruktan %d aktarım işi yeni kalıcı kuyruğa taşındı", migrated)
+        # Bu process yeni başladığı için önceki lease owner artık yoktur.
+        # Tek-worker Render deployment'ında processing kalanları hemen kurtar.
+        recovered = services.recover_stale_import_jobs(force=True)
         if recovered:
             logger.info("Yeniden başlatma sonrası %d aktarım işi kuyruğa iade edildi", recovered)
         services.ensure_import_worker()
@@ -90,13 +97,14 @@ app.add_middleware(
     allow_origins=allowed_origins(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["content-type", "x-api-key"],
+    allow_headers=["content-type", "x-api-key", "x-request-id"],
+    expose_headers=["x-request-id"],
 )
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 FRONTEND_OUT = ROOT_DIR / "frontend" / "out"
 NEXT_ASSETS = FRONTEND_OUT / "_next"
-FRONTEND_ASSET_PREFIX = "/assets/20260714-bulkfix"
+FRONTEND_ASSET_PREFIX = "/assets/20260714-durablequeue"
 
 
 @app.middleware("http")
@@ -119,6 +127,40 @@ async def cache_headers(request: Request, call_next):
 
 
 @app.middleware("http")
+async def request_observability(request: Request, call_next):
+    """Her isteği uçtan uca izlenebilir yapar; istemcinin kimliğini korur."""
+    incoming = request.headers.get("x-request-id", "").strip()
+    request_id = (
+        incoming
+        if incoming and len(incoming) <= 128 and all(ch.isalnum() or ch in "_.:-" for ch in incoming)
+        else str(uuid.uuid4())
+    )
+    request.state.request_id = request_id
+    started = time.monotonic()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "request failed request_id=%s method=%s path=%s duration_ms=%d",
+            request_id,
+            request.method,
+            request.url.path,
+            round((time.monotonic() - started) * 1000),
+        )
+        raise
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request complete request_id=%s method=%s path=%s status=%d duration_ms=%d",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        round((time.monotonic() - started) * 1000),
+    )
+    return response
+
+
+@app.middleware("http")
 async def audit_mutations(request: Request, call_next):
     response = await call_next(request)
     if (
@@ -129,10 +171,9 @@ async def audit_mutations(request: Request, call_next):
     ):
         actor = getattr(request.state, "actor", None)
         if actor is not None:
-            try:
-                services.record_audit(actor.name, actor.role, request.method, request.url.path)
-            except Exception:
-                pass
+            # Audit, özellikle /import/queue 202 yanıtını DB gecikmesiyle
+            # bloke etmemeli. Ayrı audit tablosuna daemon iş parçacığında yazılır.
+            services.record_audit_async(actor.name, actor.role, request.method, request.url.path)
     return response
 
 
@@ -420,18 +461,25 @@ async def _read_validated_import_upload(upload: UploadFile) -> tuple[str, bytes]
     return filename, data
 
 
-@app.post("/api/import/queue", response_model=ImportQueueResponse, dependencies=[Depends(require_write_access)])
+@app.post(
+    "/api/import/queue",
+    response_model=ImportQueueResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_write_access)],
+)
 async def queue_import_files(
+    request: Request,
+    background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     replace: bool = Query(default=False),
     dup_strategy: str = Query(default="skip"),
     batch_id: str = Query(default=""),
+    upload_id: str = Query(default=""),
+    upload_index: int = Query(default=0, ge=0),
 ) -> ImportQueueResponse:
-    """Excel/CSV dosyalarını veya bir ZIP arşivini kalıcı kuyruğa alır.
-
-    ZIP içindeki desteklenen tüm listeler sunucuda açılır; kullanıcı sekmeden
-    çıksa veya telefonu kilitlese bile işleme arka planda tamamlanır.
-    """
+    """Top-level yüklemeyi kaydeder ve ayrıştırmayı 202 yanıtından sonraya bırakır."""
+    request_id = str(getattr(request.state, "request_id", ""))
+    request_started = time.monotonic()
     if dup_strategy not in {"add", "skip", "overwrite"}:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Gecersiz tekrar stratejisi.")
     if MAX_UPLOAD_FILES > 0 and len(files) > MAX_UPLOAD_FILES:
@@ -439,17 +487,43 @@ async def queue_import_files(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"En fazla {MAX_UPLOAD_FILES} dosya yüklenebilir.",
         )
-    payload: list[tuple[str, bytes]] = []
+    payload: list[tuple[str, bytes, str]] = []
+    read_started = time.monotonic()
     for upload in files:
         filename, data = await _read_validated_import_upload(upload)
-        try:
-            payload.extend(services.expand_import_upload(filename, data))
-        except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    jobs, resolved_batch = services.enqueue_import_files(
-        payload, replace=replace, dup_strategy=dup_strategy, batch_id=batch_id
+        payload.append((filename, data, upload.content_type or "application/octet-stream"))
+    logger.info(
+        "import intake stage request_id=%s stage=read_uploads files=%d bytes=%d duration_ms=%d",
+        request_id,
+        len(payload),
+        sum(len(item[1]) for item in payload),
+        round((time.monotonic() - read_started) * 1000),
     )
-    services.ensure_import_worker()
+    persist_started = time.monotonic()
+    try:
+        jobs, resolved_batch = services.enqueue_import_uploads(
+            payload,
+            replace=replace,
+            dup_strategy=dup_strategy,
+            batch_id=batch_id,
+            upload_id=upload_id,
+            upload_index=upload_index,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    finally:
+        # İstek kapsamındaki büyük bytes referansları worker'a taşınmaz.
+        payload.clear()
+    logger.info(
+        "import intake stage request_id=%s stage=persist jobs=%d duration_ms=%d total_ms=%d",
+        request_id,
+        len(jobs),
+        round((time.monotonic() - persist_started) * 1000),
+        round((time.monotonic() - request_started) * 1000),
+    )
+    # FastAPI bu çağrıyı 202 gövdesi gönderildikten sonra çalıştırır; worker
+    # açılışındaki DB lease/cleanup gecikmesi mobil yanıtı tutamaz.
+    background_tasks.add_task(services.ensure_import_worker)
     return ImportQueueResponse(
         jobs=[ImportJobView(**job) for job in jobs],
         active=True,

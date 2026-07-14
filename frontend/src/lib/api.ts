@@ -1,4 +1,5 @@
 import { newId } from "@/lib/id";
+import { assertOriginalUploadFile } from "@/lib/uploadQueue";
 
 export type DateScope = {
   range: string;
@@ -83,13 +84,18 @@ export type ImportPreviewResponse = {
 export type ImportJob = {
   id: string;
   filename: string;
-  status: "pending" | "processing" | "done" | "error";
+  status: "waiting" | "pending" | "processing" | "done" | "error";
   imported: number;
   duplicates: number;
   invalid: number;
   message: string;
   created_at: string;
-  finished_at: string;
+  finished_at?: string | null;
+  parent_id?: string | null;
+  kind?: "upload" | "file";
+  stage?: string;
+  total_files?: number;
+  processed_files?: number;
 };
 
 export type ImportQueueResponse = {
@@ -142,23 +148,81 @@ export type MailImportResponse = {
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
 
+type ApiErrorKind = "http" | "timeout" | "network";
+
+export class ApiRequestError extends Error {
+  readonly kind: ApiErrorKind;
+  readonly status: number | null;
+  readonly detail: string;
+  readonly requestId: string;
+  readonly originalError?: unknown;
+
+  constructor(options: {
+    kind: ApiErrorKind;
+    detail: string;
+    status?: number | null;
+    requestId?: string;
+    originalError?: unknown;
+  }) {
+    const statusPrefix = options.status ? `HTTP ${options.status}: ` : "";
+    const requestSuffix = options.requestId ? ` · İstek kimliği: ${options.requestId}` : "";
+    super(`${statusPrefix}${options.detail}${requestSuffix}`);
+    this.name = "ApiRequestError";
+    this.kind = options.kind;
+    this.status = options.status ?? null;
+    this.detail = options.detail;
+    this.requestId = options.requestId ?? "";
+    this.originalError = options.originalError;
+  }
+}
+
+// Yalnızca sunucudan hiçbir HTTP yanıtı alınamadığında yeniden göndermek
+// güvenlidir; çağıran aynı upload_id değerini koruyarak sunucu tarafındaki
+// idempotency kaydından yararlanır. 4xx/5xx yanıtları burada tekrar edilmez.
+export function isRetryableTransportError(error: unknown): error is ApiRequestError {
+  return error instanceof ApiRequestError && (error.kind === "network" || error.kind === "timeout");
+}
+
 function authHeaders(extra?: HeadersInit): HeadersInit {
   return { ...(API_KEY ? { "x-api-key": API_KEY } : {}), ...(extra ?? {}) };
 }
 
-function unreadableUploadMessage(file: File): string {
-  return `${file.name || "Dosya"}: dosya içeriği telefondan okunamadı. Dosyayı yeniden seçin.`;
+function appendReadableFile(body: FormData, field: string, file: File): void {
+  assertOriginalUploadFile(file);
+  body.append(field, file, file.name);
 }
 
-async function appendReadableFile(body: FormData, field: string, file: File): Promise<void> {
-  if (!(file instanceof Blob) || file.size === 0) throw new Error(unreadableUploadMessage(file));
+function errorText(error: unknown): string {
+  if (error instanceof DOMException) return `${error.name}: ${error.message}`;
+  if (error instanceof Error) return error.message || error.name;
+  if (typeof error === "string") return error;
   try {
-    const probe = await file.slice(0, 1).arrayBuffer();
-    if (probe.byteLength === 0) throw new Error(unreadableUploadMessage(file));
+    return JSON.stringify(error) ?? String(error);
   } catch {
-    throw new Error(unreadableUploadMessage(file));
+    return String(error);
   }
-  body.append(field, file, file.name);
+}
+
+function responseRequestId(response: Response): string {
+  return response.headers.get("x-request-id") ?? response.headers.get("request-id") ?? "";
+}
+
+function responseDetail(rawBody: string, fallback: string): string {
+  if (!rawBody) return fallback;
+  try {
+    const parsed = JSON.parse(rawBody) as { detail?: unknown; message?: unknown } | unknown;
+    if (parsed && typeof parsed === "object") {
+      const candidate = "detail" in parsed
+        ? parsed.detail
+        : "message" in parsed
+          ? parsed.message
+          : parsed;
+      return typeof candidate === "string" ? candidate : JSON.stringify(candidate);
+    }
+    return typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+  } catch {
+    return rawBody;
+  }
 }
 
 async function request<T>(path: string, init?: RequestInit, timeoutMs = 45_000): Promise<T> {
@@ -174,21 +238,28 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = 45_000):
     });
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new Error("İşlem zaman aşımına uğradı. Bağlantıyı kontrol edip yeniden deneyin.");
+      throw new ApiRequestError({
+        kind: "timeout",
+        detail: `İstek ${Math.round(timeoutMs / 1_000)} saniye içinde yanıtlanmadı: ${errorText(error)}`,
+        originalError: error,
+      });
     }
-    throw error;
+    throw new ApiRequestError({
+      kind: "network",
+      detail: `Ağ veya dosya okuma hatası: ${errorText(error)}`,
+      originalError: error,
+    });
   } finally {
     globalThis.clearTimeout(timeout);
   }
   if (!response.ok) {
-    let detail = `${response.status}`;
-    try {
-      const body = await response.json();
-      detail = body?.detail ?? detail;
-    } catch {
-      detail = (await response.text()) || detail;
-    }
-    throw new Error(detail);
+    const rawBody = await response.text();
+    throw new ApiRequestError({
+      kind: "http",
+      status: response.status,
+      detail: responseDetail(rawBody, response.statusText || "Sunucu isteği reddetti"),
+      requestId: responseRequestId(response),
+    });
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -317,50 +388,32 @@ export async function uploadPassengerFiles(
   });
   return request<ImportResponse>(`/api/import?${qs.toString()}`, { method: "POST", body });
 }
-// Dosya başına 1 istek 49 dosyalık bir seçimde 49 ardışık ağ turu demekti;
-// sekme arka plana alındığında veya ağ kesintiye uğradığında bu uzun zincirin
-// herhangi bir halkası kalıcı olarak asılı kalabiliyordu. Daha az, daha büyük
-// istekle (bayt tavanı aynı kalır) toplam tur sayısı — dolayısıyla arıza
-// penceresi — büyük ölçüde küçülür.
-const IMPORT_QUEUE_CHUNK_FILES = 12;
-const IMPORT_QUEUE_CHUNK_BYTES = 15 * 1024 * 1024;
-const IMPORT_QUEUE_CHUNK_ATTEMPTS = 3;
-const IMPORT_QUEUE_RETRY_DELAY_MS = 2_000;
+const IMPORT_QUEUE_SAFE_RETRY_DELAY_MS = 1_000;
 
-function splitImportUpload(files: File[]): File[][] {
-  const chunks: File[][] = [];
-  let current: File[] = [];
-  let currentBytes = 0;
-
-  for (const file of files) {
-    const exceedsCount = current.length >= IMPORT_QUEUE_CHUNK_FILES;
-    const exceedsBytes = current.length > 0 && currentBytes + file.size > IMPORT_QUEUE_CHUNK_BYTES;
-    if (exceedsCount || exceedsBytes) {
-      chunks.push(current);
-      current = [];
-      currentBytes = 0;
-    }
-    current.push(file);
-    currentBytes += file.size;
-  }
-  if (current.length) chunks.push(current);
-  return chunks;
-}
-
-export type QueueImportResult = ImportQueueResponse & { failedFiles: string[] };
+export type QueueImportFailure = { filename: string; error: string };
+export type QueueImportResult = ImportQueueResponse & {
+  failedFiles: string[];
+  failures: QueueImportFailure[];
+};
 
 export async function queueImportFile(
   file: File,
   replace: boolean,
   dupStrategy: string,
   batchId: string,
+  uploadId: string,
+  uploadIndex = 0,
 ): Promise<ImportQueueResponse> {
   const body = new FormData();
-  await appendReadableFile(body, "files", file);
+  // File doğrudan FormData'ya eklenir. arrayBuffer()/Blob kopyası oluşturmak,
+  // büyük ZIP'lerde iPhone belleğini tüketir ve iCloud tutamacını koparır.
+  appendReadableFile(body, "files", file);
   const qs = new URLSearchParams({
     replace: String(replace),
     dup_strategy: dupStrategy,
     batch_id: batchId,
+    upload_id: uploadId,
+    upload_index: String(uploadIndex),
   });
   return request<ImportQueueResponse>(
     `/api/import/queue?${qs.toString()}`,
@@ -376,50 +429,49 @@ export async function queueImportFiles(
   onProgress?: (delivered: number, total: number) => void,
 ): Promise<QueueImportResult> {
   const batchId = newId();
-  const chunks = splitImportUpload(files);
   const jobs: ImportJob[] = [];
   const failedFiles: string[] = [];
+  const failures: QueueImportFailure[] = [];
   let delivered = 0;
   let active = false;
-  let replaceApplied = false;
 
   onProgress?.(0, files.length);
-  for (const chunk of chunks) {
-    const applyReplace = replace && !replaceApplied;
+  for (const [uploadIndex, file] of files.entries()) {
+    // Replace bir dosyaya değil batch'e ait niyettir. Her top-level iş bu
+    // niyeti taşır; sunucu yalnız ilk başarıyla ayrıştırılan dosyada tüketir.
+    const applyReplace = replace;
+    const uploadId = newId();
     let result: ImportQueueResponse | null = null;
-    for (let attempt = 1; attempt <= IMPORT_QUEUE_CHUNK_ATTEMPTS && !result; attempt += 1) {
-      if (attempt > 1) {
-        await new Promise((resolve) => globalThis.setTimeout(resolve, IMPORT_QUEUE_RETRY_DELAY_MS * (attempt - 1)));
-      }
-      try {
-        const body = new FormData();
-        for (const file of chunk) await appendReadableFile(body, "files", file);
-        const qs = new URLSearchParams({
-          replace: String(applyReplace),
-          dup_strategy: dupStrategy,
-          batch_id: batchId,
-        });
-        result = await request<ImportQueueResponse>(
-          `/api/import/queue?${qs.toString()}`,
-          { method: "POST", body },
-          120_000,
-        );
-      } catch {
-        // Bu deneme başarısız oldu; sınıra kadar yeniden denenir.
+    let failure: unknown;
+    try {
+      result = await queueImportFile(file, applyReplace, dupStrategy, batchId, uploadId, uploadIndex);
+    } catch (error) {
+      failure = error;
+      if (isRetryableTransportError(error)) {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, IMPORT_QUEUE_SAFE_RETRY_DELAY_MS));
+        try {
+          // İlk istek sunucuya ulaşıp yanıtı kaybolmuş olabilir. Aynı upload_id
+          // tekrar kullanıldığı için bu ikinci gönderim yeni iş oluşturmaz.
+          result = await queueImportFile(file, applyReplace, dupStrategy, batchId, uploadId, uploadIndex);
+          failure = undefined;
+        } catch (retryError) {
+          failure = retryError;
+        }
       }
     }
     if (result) {
       const known = new Set(jobs.map((job) => job.id));
       jobs.push(...result.jobs.filter((job) => !known.has(job.id)));
       active = active || result.active;
-      if (applyReplace) replaceApplied = true;
     } else {
-      failedFiles.push(...chunk.map((file) => file.name));
+      const message = failure instanceof Error ? failure.message : errorText(failure);
+      failedFiles.push(file.name);
+      failures.push({ filename: file.name, error: message });
     }
-    delivered += chunk.length;
+    delivered += 1;
     onProgress?.(delivered, files.length);
   }
-  return { jobs, active, batch_id: batchId, failedFiles };
+  return { jobs, active, batch_id: batchId, failedFiles, failures };
 }
 export function fetchImportQueue(): Promise<ImportQueueResponse> {
   return request<ImportQueueResponse>("/api/import/queue");

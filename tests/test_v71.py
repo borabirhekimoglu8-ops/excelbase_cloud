@@ -14,6 +14,17 @@ import photo_store
 
 
 def _isolate_store(monkeypatch, tmp_path) -> None:
+    # Queue worker metadata yolu persistence.STORE_PATH'ten dinamik çözülür.
+    # Önceki testin worker thread'i tamamen kapanmadan yeni tmp_path'e geçmek,
+    # üretimde mümkün olmayan testler-arası bir yol yarışı oluşturur.
+    try:
+        from backend import services
+
+        deadline = time.monotonic() + 3
+        while services._import_worker_alive and time.monotonic() < deadline:
+            time.sleep(0.01)
+    except (ImportError, AttributeError):
+        pass
     monkeypatch.setattr(persistence, "STORE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setattr(photo_store, "PHOTO_DIR", str(tmp_path / "photos"))
     monkeypatch.setattr(db, "_engine", None)
@@ -25,6 +36,21 @@ def _csv(passport: str, departure: str, name: str = "JOHN") -> bytes:
         "NO,NAME,SURNAME,PASSPORT NUMBER,VOUCHER,DEPARTURE,ARRIVAL,ADULT,CHILD\n"
         f"1,{name},DOE,{passport},V1,{departure},2026-07-22,25,0\n"
     ).encode("utf-8")
+
+
+def _xlsx(passport: str, departure: str, name: str = "JOHN") -> bytes:
+    """Üretimdeki gerçek Gate Visa yerleşimiyle küçük bir XLSX üretir."""
+    from openpyxl import load_workbook
+    from gate_visa_reader import build_gate_visa_template_xlsx
+
+    workbook = load_workbook(io.BytesIO(build_gate_visa_template_xlsx()))
+    sheet = workbook.active
+    values = [1, name, "DOE", passport, "V-1", departure, "2026-12-31", 25, 0]
+    for column, value in enumerate(values, start=1):
+        sheet.cell(row=5, column=column, value=value)
+    payload = io.BytesIO()
+    workbook.save(payload)
+    return payload.getvalue()
 
 
 def test_composite_dedup_date_scope_package_and_undo(monkeypatch, tmp_path):
@@ -359,7 +385,7 @@ def test_background_import_queue_processes_without_client(monkeypatch, tmp_path)
                 ("files", ("broken.xlsx", b"gecersiz icerik", "application/octet-stream")),
             ],
         )
-        assert enqueue.status_code == 200
+        assert enqueue.status_code == 202
         assert len(enqueue.json()["jobs"]) == 3
 
         state = _wait_queue_idle(client)
@@ -405,16 +431,22 @@ def test_zip_import_queue_expands_all_passenger_lists(monkeypatch, tmp_path):
             "/api/import/queue?dup_strategy=skip&batch_id=zip-batch",
             files=[("files", ("49-listeler.zip", archive_bytes.getvalue(), "application/zip"))],
         )
-        assert enqueue.status_code == 200
-        assert [job["filename"] for job in enqueue.json()["jobs"]] == ["one.csv", "two.csv"]
+        assert enqueue.status_code == 202
+        assert [job["filename"] for job in enqueue.json()["jobs"]] == ["49-listeler.zip"]
 
         state = _wait_queue_idle(client)
         assert state["active"] is False
-        assert all(job["status"] == "done" for job in state["jobs"])
+        children = [job for job in state["jobs"] if job["parent_id"]]
+        assert {job["filename"] for job in children} == {"one.csv", "two.csv"}
+        assert all(job["status"] == "done" for job in children)
+        parent = next(job for job in state["jobs"] if job["kind"] == "upload")
+        assert parent["status"] == "done"
+        assert parent["processed_files"] == 2
         assert client.get("/api/summary").json()["passenger_count"] == 2
 
 
-def test_zip_import_rejects_unsafe_paths(monkeypatch, tmp_path):
+@pytest.mark.import_worker
+def test_zip_import_marks_unsafe_member_without_blocking_intake(monkeypatch, tmp_path):
     _isolate_store(monkeypatch, tmp_path)
     monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
 
@@ -430,8 +462,12 @@ def test_zip_import_rejects_unsafe_paths(monkeypatch, tmp_path):
             "/api/import/queue",
             files=[("files", ("unsafe.zip", archive_bytes.getvalue(), "application/zip"))],
         )
-        assert response.status_code == 400
-        assert "güvensiz" in response.json()["detail"].lower()
+        assert response.status_code == 202
+        state = _wait_queue_idle(client)
+        child = next((job for job in state["jobs"] if job["parent_id"]), None)
+        assert child is not None, state
+        assert child["status"] == "error"
+        assert "güvensiz" in child["message"].lower()
 
 
 @pytest.mark.import_worker
@@ -457,10 +493,283 @@ def test_background_import_replace_applies_only_to_first_file(monkeypatch, tmp_p
                 ("files", ("r2.csv", _csv("P888888", "2026-07-16"), "text/csv")),
             ],
         )
-        assert enqueue.status_code == 200
+        assert enqueue.status_code == 202
         _wait_queue_idle(client)
         # İlk dosya listeyi değiştirdi, ikincisi eklendi: eski kayıt gitti.
         assert client.get("/api/summary").json()["passenger_count"] == 2
+
+
+@pytest.mark.import_worker
+def test_zip_with_49_real_xlsx_is_accepted_as_one_job_then_processed(monkeypatch, tmp_path):
+    """49 gerçek XLSX, HTTP isteği içinde açılmadan tek parent olarak teslim edilir."""
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    archive_bytes = io.BytesIO()
+    with zipfile.ZipFile(archive_bytes, "w", zipfile.ZIP_DEFLATED) as archive:
+        for index in range(49):
+            archive.writestr(
+                f"seferler/{index + 1:02d}.xlsx",
+                _xlsx(f"X49{index:05d}", f"2026-09-{(index % 28) + 1:02d}", f"PAX{index}"),
+            )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/import/queue?dup_strategy=skip&upload_id=realistic-49-zip",
+            files=[("files", ("49-listeler.zip", archive_bytes.getvalue(), "application/zip"))],
+            headers={"X-Request-ID": "test-realistic-49"},
+        )
+        assert response.status_code == 202
+        assert response.headers["x-request-id"] == "test-realistic-49"
+        assert len(response.json()["jobs"]) == 1
+        assert response.json()["jobs"][0]["filename"] == "49-listeler.zip"
+
+        state = _wait_queue_idle(client, timeout_seconds=60)
+        children = [job for job in state["jobs"] if job["parent_id"]]
+        assert len(children) == 49
+        assert all(job["status"] == "done" for job in children)
+        parent = next(job for job in state["jobs"] if job["id"] == "realistic-49-zip")
+        assert parent["status"] == "done"
+        assert parent["processed_files"] == 49
+        assert client.get("/api/summary").json()["passenger_count"] == 49
+
+
+def test_zip_intake_does_not_expand_or_read_passenger_state_and_is_idempotent(monkeypatch, tmp_path):
+    """İstek sadece bir ZIP kaydı yazar; 49 üye ve yavaş audit yanıtı geciktirmez."""
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+
+    from fastapi.testclient import TestClient
+    from backend import services
+    from backend.main import app
+
+    archive_bytes = io.BytesIO()
+    with zipfile.ZipFile(archive_bytes, "w", zipfile.ZIP_DEFLATED) as archive:
+        for index in range(49):
+            archive.writestr(f"{index:02d}.xlsx", _xlsx(f"FAST{index:04d}", "2026-10-01"))
+
+    with TestClient(app) as client:
+        original_enqueue = services._queue_enqueue_job
+        calls = {"persist": 0}
+
+        def one_slow_persist(*args, **kwargs):
+            calls["persist"] += 1
+            time.sleep(0.03)  # DB benzeri tek kalıcı yazma gecikmesi
+            return original_enqueue(*args, **kwargs)
+
+        monkeypatch.setattr(services, "_queue_enqueue_job", one_slow_persist)
+        monkeypatch.setattr(services, "ensure_import_worker", lambda: None)
+        monkeypatch.setattr(
+            services,
+            "expand_import_upload",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("intake ZIP açmamalı")),
+        )
+        monkeypatch.setattr(
+            services,
+            "load_state",
+            lambda: (_ for _ in ()).throw(AssertionError("intake yolcu state okumamalı")),
+        )
+        monkeypatch.setattr(services, "record_audit", lambda *args: time.sleep(0.5))
+
+        started = time.monotonic()
+        first = client.post(
+            "/api/import/queue?upload_id=safe-mobile-retry&upload_index=7",
+            files=[("files", ("all.zip", archive_bytes.getvalue(), "application/zip"))],
+        )
+        elapsed = time.monotonic() - started
+        second = client.post(
+            "/api/import/queue?upload_id=safe-mobile-retry&upload_index=7",
+            files=[("files", ("all.zip", archive_bytes.getvalue(), "application/zip"))],
+        )
+
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert first.json()["jobs"][0]["id"] == second.json()["jobs"][0]["id"]
+        assert elapsed < 0.4
+        # İki HTTP denemesi var; fakat ikisi de aynı top-level idempotency kaydını
+        # döndürür. ZIP'in 49 üyesi request thread'inde persist edilmez.
+        assert calls["persist"] == 2
+        assert len(services._queue_list()) == 1
+        assert services._queue_get("safe-mobile-retry")["ordinal"] == 7
+
+
+def test_configured_database_outage_returns_503_without_local_queue_fallback(monkeypatch, tmp_path):
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://temporarily-unavailable/example")
+
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/import/queue?upload_id=must-stay-durable",
+            files=[("files", ("one.csv", _csv("NODB001", "2026-10-02"), "text/csv"))],
+        )
+    assert response.status_code == 503
+    assert "veritaban" in response.json()["detail"].lower()
+    assert not (tmp_path / "import-queue" / "jobs.json").exists()
+
+
+@pytest.mark.import_worker
+def test_mixed_zip_keeps_good_files_and_reports_bad_member(monkeypatch, tmp_path):
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    archive_bytes = io.BytesIO()
+    with zipfile.ZipFile(archive_bytes, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("good-one.xlsx", _xlsx("MIXED001", "2026-11-01", "ALICE"))
+        archive.writestr("broken.xlsx", b"not an excel workbook")
+        archive.writestr("nested/good-two.xlsx", _xlsx("MIXED002", "2026-11-02", "BOB"))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/import/queue?upload_id=mixed-archive",
+            files=[("files", ("mixed.zip", archive_bytes.getvalue(), "application/zip"))],
+        )
+        assert response.status_code == 202
+        state = _wait_queue_idle(client, timeout_seconds=30)
+        children = {job["filename"]: job for job in state["jobs"] if job["parent_id"]}
+        assert children["good-one.xlsx"]["status"] == "done"
+        assert children["good-two.xlsx"]["status"] == "done"
+        assert children["broken.xlsx"]["status"] == "error"
+        parent = next(job for job in state["jobs"] if job["id"] == "mixed-archive")
+        assert parent["status"] == "done"
+        assert parent["processed_files"] == 3
+        assert client.get("/api/summary").json()["passenger_count"] == 2
+
+
+@pytest.mark.import_worker
+def test_bad_first_zip_member_does_not_consume_replace(monkeypatch, tmp_path):
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    archive_bytes = io.BytesIO()
+    with zipfile.ZipFile(archive_bytes, "w", zipfile.ZIP_DEFLATED) as archive:
+        # Boyutu sıfır değil: child oluşturulur ve ancak gerçek Excel parse
+        # aşamasında bozuk olduğu anlaşılır. Replace hakkını tüketmemeli.
+        archive.writestr("00-broken.xlsx", b"this is not an xlsx workbook")
+        archive.writestr("01-valid.xlsx", _xlsx("REPLACE2", "2026-12-02", "NEW"))
+
+    with TestClient(app) as client:
+        seeded = client.post(
+            "/api/import?dup_strategy=add&batch_id=seed-before-replace",
+            files=[("files", ("seed.csv", _csv("REPLACE1", "2026-12-01", "OLD"), "text/csv"))],
+        )
+        assert seeded.status_code == 200
+        response = client.post(
+            "/api/import/queue?replace=true&upload_id=replace-after-bad",
+            files=[("files", ("replace.zip", archive_bytes.getvalue(), "application/zip"))],
+        )
+        assert response.status_code == 202
+        state = _wait_queue_idle(client, timeout_seconds=30)
+        children = {job["filename"]: job for job in state["jobs"] if job["parent_id"]}
+        assert children["00-broken.xlsx"]["status"] == "error"
+        assert children["01-valid.xlsx"]["status"] == "done"
+        passengers = client.get("/api/passengers").json()
+        assert len(passengers) == 1
+        assert passengers[0]["passport_no"] == "REPLACE2"
+
+
+@pytest.mark.import_worker
+def test_bad_first_top_level_file_does_not_consume_batch_replace(monkeypatch, tmp_path):
+    """Ayrı mobil POST'larda da replace ilk 202'de değil ilk başarılı parse'ta tüketilir."""
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    with TestClient(app) as client:
+        seeded = client.post(
+            "/api/import?dup_strategy=add&batch_id=top-level-seed",
+            files=[("files", ("seed.csv", _csv("TOPOLD1", "2026-12-04", "OLD"), "text/csv"))],
+        )
+        assert seeded.status_code == 200
+
+        batch_id = "top-level-replace-batch"
+        broken = client.post(
+            f"/api/import/queue?replace=true&batch_id={batch_id}&upload_id=top-bad&upload_index=0",
+            files=[("files", ("00-broken.xlsx", b"not a workbook", "application/octet-stream"))],
+        )
+        valid = client.post(
+            f"/api/import/queue?replace=true&batch_id={batch_id}&upload_id=top-good&upload_index=1",
+            files=[("files", ("01-valid.xlsx", _xlsx("TOPNEW2", "2026-12-05", "NEW"), "application/octet-stream"))],
+        )
+        assert broken.status_code == 202
+        assert valid.status_code == 202
+
+        state = _wait_queue_idle(client, timeout_seconds=30)
+        top_jobs = {job["filename"]: job for job in state["jobs"] if not job["parent_id"]}
+        assert top_jobs["00-broken.xlsx"]["status"] == "error"
+        assert top_jobs["01-valid.xlsx"]["status"] == "done"
+        passengers = client.get("/api/passengers").json()
+        assert [passenger["passport_no"] for passenger in passengers] == ["TOPNEW2"]
+
+
+@pytest.mark.import_worker
+def test_local_queue_recovers_processing_job_after_restart(monkeypatch, tmp_path):
+    _isolate_store(monkeypatch, tmp_path)
+    from backend import services
+
+    jobs, _ = services.enqueue_import_uploads(
+        [("restart.csv", _csv("RESTART1", "2026-12-03"), "text/csv")],
+        upload_id="restart-job",
+    )
+    assert jobs[0]["status"] == "pending"
+    claimed = services._queue_claim()
+    assert claimed and claimed["status"] == "processing"
+
+    assert services.recover_stale_import_jobs() == 1
+    assert services._queue_get("restart-job")["status"] == "pending"
+    services.ensure_import_worker()
+    deadline = time.monotonic() + 10
+    while services.get_import_jobs()[1] and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert services._queue_get("restart-job")["status"] == "done"
+    assert services.get_summary().passenger_count == 1
+
+
+@pytest.mark.import_worker
+def test_recovered_add_job_is_idempotent_if_state_saved_before_worker_crash(monkeypatch, tmp_path):
+    """At-least-once lease, add stratejisinde aynı yolcuyu iki kez yazmamalı."""
+    _isolate_store(monkeypatch, tmp_path)
+    from backend import services
+
+    jobs, batch_id = services.enqueue_import_uploads(
+        [("once.csv", _csv("ONCE001", "2026-12-04"), "text/csv")],
+        dup_strategy="add",
+        upload_id="crash-after-save",
+    )
+    claimed = services._queue_claim()
+    assert claimed is not None
+    # Yolcu state kaydı başarıyla bitti, fakat queue finish çağrısından önce
+    # process öldü senaryosu.
+    result = services.import_gate_visa_files(
+        [("once.csv", claimed["payload"])],
+        dup_strategy="add",
+        batch_id=batch_id,
+        job_id=jobs[0]["id"],
+    )
+    assert result[0] == 1
+    assert services.get_summary().passenger_count == 1
+
+    assert services.recover_stale_import_jobs(force=True) == 1
+    services.ensure_import_worker()
+    deadline = time.monotonic() + 10
+    while services.get_import_jobs()[1] and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert services._queue_get("crash-after-save")["status"] == "done"
+    assert services.get_summary().passenger_count == 1
 
 
 def test_daily_backup_is_throttled(monkeypatch, tmp_path):

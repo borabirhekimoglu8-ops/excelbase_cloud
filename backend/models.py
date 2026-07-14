@@ -52,9 +52,14 @@ class ImportJobView(BaseModel):
     id: str
     filename: str
     status: str
+    parent_id: str = ""
+    kind: str = "file"
+    stage: str = ""
     imported: int = 0
     duplicates: int = 0
     invalid: int = 0
+    total_files: int = 0
+    processed_files: int = 0
     message: str = ""
     created_at: str = ""
     finished_at: str = ""
