@@ -1,28 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Passenger, bulkDelete, downloadUrl, fetchPassengers, scopedPath } from "@/lib/api";
+import { Passenger, bulkDelete, fetchPassengers } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
 import { PassengerCard } from "@/components/PassengerCard";
 import { PassengerDetail } from "@/components/PassengerDetail";
-import { EmptyState, Segmented } from "@/components/tabs/shared";
 
-const STATUS_OPTS = [
-  { key: "", label: "Tümü" },
-  { key: "Hazır", label: "Hazır" },
-  { key: "Eksik", label: "Eksik" },
-  { key: "Fotosuz", label: "Fotosuz" },
-  { key: "Pasaportsuz", label: "Pasaportsuz" },
-  { key: "Tekrarlı", label: "Tekrarlı" },
-] as const;
-
-const SORT_OPTS = [
-  { key: "", label: "Sıra" },
-  { key: "name", label: "Ada göre" },
-  { key: "departure", label: "Gidişe göre" },
-  { key: "passport", label: "Pasaport" },
-] as const;
+const FILTER_CHIPS: { key: string; label: (n: number) => string; tone?: "ok" | "warn" }[] = [
+  { key: "", label: (n) => `TÜM KAYITLAR ${n}` },
+  { key: "Hazır", label: (n) => `HAZIR ${n}`, tone: "ok" },
+  { key: "Eksik", label: (n) => `BELGE EKSİK ${n}`, tone: "warn" },
+];
 
 const PAGE_SIZE = 20;
 
@@ -32,12 +21,13 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
   const canWrite = user.role !== "viewer";
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>(initialStatus);
-  const [sort, setSort] = useState<string>("");
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [chipCounts, setChipCounts] = useState<{ ready: number; missing: number }>({ ready: 0, missing: 0 });
 
   useEffect(() => {
     setStatus(initialStatus);
@@ -47,7 +37,7 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
     let active = true;
     setLoading(true);
     const timer = window.setTimeout(() => {
-      fetchPassengers({ search, status, sort, scope: dateScope })
+      fetchPassengers({ search, status, sort: "name", scope: dateScope })
         .then((data) => {
           if (!active) return;
           setPassengers(data);
@@ -59,7 +49,21 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
       active = false;
       window.clearTimeout(timer);
     };
-  }, [search, status, sort, version, dateScope]);
+  }, [search, status, version, dateScope]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      fetchPassengers({ status: "Hazır", scope: dateScope }),
+      fetchPassengers({ status: "Eksik", scope: dateScope }),
+    ]).then(([ready, missing]) => {
+      if (!active) return;
+      setChipCounts({ ready: ready.length, missing: missing.length });
+    });
+    return () => {
+      active = false;
+    };
+  }, [version, dateScope]);
 
   const pages = Math.max(1, Math.ceil(passengers.length / PAGE_SIZE));
   const current = Math.min(page, pages - 1);
@@ -68,9 +72,12 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
     [passengers, current],
   );
 
-  if (summary.passenger_count === 0) {
-    return <EmptyState />;
-  }
+  const chipCount = (key: string) => {
+    if (key === "") return summary.passenger_count;
+    if (key === "Hazır") return chipCounts.ready;
+    if (key === "Eksik") return chipCounts.missing;
+    return 0;
+  };
 
   function toggle(id: number, checked: boolean) {
     setSelected((prev) => {
@@ -90,49 +97,92 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
     bump();
   }
 
+  if (summary.passenger_count === 0) {
+    return (
+      <div className="ic-empty">
+        <h3>Henüz yolcu kaydı yok</h3>
+        <p>Yükle sekmesinden yolcu listelerini içeri aktararak başlayın.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="tab-body">
-      <input
-        type="text"
-        className="search"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Ad, pasaport, voucher, tarih ara..."
-      />
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <label className="ic-search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Ad soyad, pasaport veya rezervasyon numarası"
+          aria-label="Yolcu ara"
+        />
+      </label>
 
-      <Segmented options={STATUS_OPTS.map((o) => ({ ...o }))} value={status} onChange={setStatus} />
-      <Segmented options={SORT_OPTS.map((o) => ({ ...o }))} value={sort} onChange={setSort} />
-
-      <div className="filter-summary">
-        <span>{passengers.length} görünür</span>
-        <span>{summary.passenger_count} toplam</span>
-        <span>{summary.missing_photo} fotosuz</span>
-        <a href={downloadUrl(scopedPath("/api/export?kind=excel", dateScope))} className="chip-link">
-          Excel indir
-        </a>
+      <div className="ic-chips" role="tablist" aria-label="Durum filtresi">
+        {FILTER_CHIPS.map((chip) => (
+          <button
+            key={chip.key}
+            type="button"
+            className={`ic-chip${chip.tone ? ` tone-${chip.tone}` : ""}${status === chip.key ? " active" : ""}`}
+            onClick={() => setStatus(chip.key)}
+          >
+            {chip.label(chipCount(chip.key))}
+          </button>
+        ))}
+        {canWrite && (
+          <button
+            type="button"
+            className={`ic-chip${selectMode ? " active" : ""}`}
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setSelected(new Set());
+            }}
+          >
+            {selectMode ? "SEÇİMİ BİTİR" : "SEÇ"}
+          </button>
+        )}
       </div>
 
-      {canWrite && selected.size > 0 && (
-        <div className="bulk-bar">
-          <span>{selected.size} seçili</span>
-          <button className="soft-btn danger" onClick={handleBulkDelete}>
-            Seçilenleri sil
-          </button>
-          <button className="ghost-btn" onClick={() => setSelected(new Set())}>
-            Temizle
+      {dateScope.range !== "Tümü" && (
+        <div className="ic-date-filter">
+          <span>
+            {dateScope.range === "Aralık" && dateScope.start && dateScope.end
+              ? `${dateScope.start} – ${dateScope.end}`
+              : dateScope.range.toUpperCase()}
+          </span>
+          <span>Değiştir</span>
+        </div>
+      )}
+
+      {canWrite && selectMode && selected.size > 0 && (
+        <div className="ic-callout amber">
+          <div className="ic-callout-copy">
+            <p className="ic-callout-title">{selected.size} kayıt seçildi</p>
+            <p className="ic-callout-detail">Toplu işlem uygulanacak</p>
+          </div>
+          <button className="ic-callout-action" onClick={handleBulkDelete} type="button">
+            Sil
           </button>
         </div>
       )}
 
-      {loading && <p className="muted">Yükleniyor...</p>}
-      {!loading && passengers.length === 0 && <div className="empty-card">Sonuç bulunamadı.</div>}
+      {loading && <p className="muted">Yükleniyor…</p>}
+      {!loading && passengers.length === 0 && (
+        <div className="ic-card ic-card-pad" style={{ textAlign: "center", color: "var(--ido-muted)" }}>
+          Sonuç bulunamadı.
+        </div>
+      )}
 
-      <div className="passenger-list">
+      <div style={{ display: "grid", gap: 9 }}>
         {chunk.map((p) => (
           <PassengerCard
             key={p.id}
             passenger={p}
-            selectable={canWrite}
+            selectable={canWrite && selectMode}
             selected={selected.has(p.id)}
             onToggle={toggle}
             onOpen={setDetailId}
@@ -153,6 +203,17 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
           </button>
         </div>
       )}
+
+      <div className="ic-actions-row">
+        <span style={{ color: "var(--ido-muted)", fontWeight: 600, fontSize: 9, letterSpacing: ".02em" }}>
+          TOPLAM {summary.passenger_count} KAYIT
+        </span>
+        {canWrite && (
+          <button type="button" onClick={() => setSelectMode((v) => !v)}>
+            {selectMode ? "Vazgeç" : "Seç"}
+          </button>
+        )}
+      </div>
 
       {detailId !== null && <PassengerDetail id={detailId} onClose={() => setDetailId(null)} />}
     </div>

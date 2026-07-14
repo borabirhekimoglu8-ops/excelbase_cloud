@@ -2,12 +2,18 @@
 
 import { Passenger } from "@/lib/api";
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "—";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export function PassengerPhoto({ passenger }: { passenger: Passenger }) {
   if (passenger.photo_url) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        className="pax-photo"
         src={passenger.photo_url}
         alt={passenger.full_name || "Yolcu"}
         loading="lazy"
@@ -15,11 +21,14 @@ export function PassengerPhoto({ passenger }: { passenger: Passenger }) {
       />
     );
   }
-  return (
-    <div className="photo-slot" aria-hidden="true">
-      {passenger.full_name ? passenger.full_name.slice(0, 1).toUpperCase() : "◎"}
-    </div>
-  );
+  return <span aria-hidden="true">{initials(passenger.full_name || "?")}</span>;
+}
+
+export function passengerStatusTone(passenger: Passenger): { tone: "ok" | "warn" | "bad"; label: string } {
+  const issues = passenger.issues;
+  if (issues.length === 0) return { tone: "ok", label: "HAZIR" };
+  const critical = issues.some((i) => ["Pasaport yok", "İsim yok", "Tarih hatalı"].includes(i));
+  return critical ? { tone: "bad", label: "EKSİK" } : { tone: "warn", label: "KONTROL" };
 }
 
 export function PassengerCard({
@@ -35,50 +44,38 @@ export function PassengerCard({
   selected?: boolean;
   onToggle?: (id: number, checked: boolean) => void;
 }) {
-  const issues = passenger.issues;
-  const tone = issues.length === 0 ? "ok" : issues.some((i) => ["Pasaport yok", "İsim yok", "Tarih hatalı"].includes(i)) ? "bad" : "warn";
-  const toneLabel = issues.length === 0 ? "Hazır" : tone === "bad" ? "Eksik" : "Kontrol";
+  const { tone, label } = passengerStatusTone(passenger);
+  const metaParts = [
+    passenger.passport_no || "Pasaport yok",
+    passenger.voucher,
+    passenger.departure_date && `Gidiş ${passenger.departure_date}`,
+  ].filter(Boolean);
 
   return (
-    <article className={`passenger-card${selected ? " is-selected" : ""}`}>
-      {selectable && (
-        <input
-          type="checkbox"
-          className="pax-check"
-          checked={selected}
-          onChange={(e) => onToggle?.(passenger.id, e.target.checked)}
-          aria-label="Seç"
-        />
-      )}
-      <button
-        className="pax-photo-btn"
-        onClick={() => onOpen?.(passenger.id)}
-        aria-label={`${passenger.full_name} detay`}
-      >
-        <PassengerPhoto passenger={passenger} />
-      </button>
-      <div className="passenger-main" onClick={() => onOpen?.(passenger.id)}>
-        <div className="passenger-top">
-          <span className="number">#{passenger.no || "—"}</span>
-          <span className={`tone ${tone === "bad" ? "bad" : tone === "warn" ? "warn" : "ok"}`}>{toneLabel}</span>
-        </div>
-        <h3>{passenger.full_name || "İsimsiz yolcu"}</h3>
-        <p className="passport">{passenger.passport_no || "Pasaport yok"}</p>
-        <div className="passenger-tags">
-          {passenger.voucher && <span>{passenger.voucher}</span>}
-          {passenger.departure_date && <span>Gidiş {passenger.departure_date}</span>}
-          {passenger.arrival_date && <span>Varış {passenger.arrival_date}</span>}
-          {passenger.adult_fee && <span>Yetişkin {passenger.adult_fee}</span>}
-          {passenger.child_fee && passenger.child_fee !== "0" && <span>Çocuk {passenger.child_fee}</span>}
-        </div>
-        {issues.length > 0 && (
-          <div className="issue-row">
-            {issues.map((issue) => (
-              <span key={issue}>{issue}</span>
-            ))}
-          </div>
+    <div className="ic-row as-btn" style={{ minHeight: 76 }} onClick={() => onOpen?.(passenger.id)} role="button" tabIndex={0}>
+      <div className="ic-row-id">
+        {selectable && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => {
+              e.stopPropagation();
+              onToggle?.(passenger.id, e.target.checked);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`${passenger.full_name || "Yolcu"} seç`}
+            style={{ width: 17, height: 17, accentColor: "var(--ido-primary)", flex: "0 0 auto" }}
+          />
         )}
+        <span className="ic-avatar">
+          <PassengerPhoto passenger={passenger} />
+        </span>
+        <div className="ic-row-copy">
+          <p className="ic-row-title">{passenger.full_name || "İsimsiz yolcu"}</p>
+          <p className="ic-row-meta">{metaParts.join(" · ")}</p>
+        </div>
       </div>
-    </article>
+      <span className={`ic-pill lg ic-pill-${tone}`}>{label}</span>
+    </div>
   );
 }

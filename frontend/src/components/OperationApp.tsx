@@ -1,127 +1,126 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { AuthGate, useAuth } from "@/lib/auth";
 import { StoreProvider, useStore } from "@/lib/store";
-import { DateScopeBar } from "@/components/DateScopeBar";
+import { AppHeaderHome, AppHeaderScreen } from "@/components/ido/AppHeader";
+import { BottomNav, NavKey } from "@/components/ido/BottomNav";
 import { HomeTab } from "@/components/tabs/HomeTab";
 import { PassengersTab } from "@/components/tabs/PassengersTab";
+import { ImportTab } from "@/components/tabs/ImportTab";
+import { SettingsTab, SettingsSub } from "@/components/tabs/SettingsTab";
 import { IssuesTab } from "@/components/tabs/IssuesTab";
 import { GalleryTab } from "@/components/tabs/GalleryTab";
 import { ArchiveTab } from "@/components/tabs/ArchiveTab";
-import { ImportTab } from "@/components/tabs/ImportTab";
 import { PackageTab } from "@/components/tabs/PackageTab";
 import { ManagementTab } from "@/components/tabs/ManagementTab";
-import { UI_VERSION } from "@/lib/version";
+import { DateScopeBar } from "@/components/DateScopeBar";
 
-type TabKey = "home" | "passengers" | "issues" | "gallery" | "archive" | "import" | "package" | "management";
+type Screen =
+  | { kind: "home" }
+  | { kind: "passengers"; status: string }
+  | { kind: "import" }
+  | { kind: "settings" }
+  | { kind: "settings-sub"; sub: SettingsSub };
 
-const TABS: Array<{ key: TabKey; label: string; code: string; roles?: string[] }> = [
-  { key: "home", label: "Genel", code: "01" },
-  { key: "passengers", label: "Yolcular", code: "02" },
-  { key: "issues", label: "Kontrol", code: "03" },
-  { key: "gallery", label: "Galeri", code: "04" },
-  { key: "archive", label: "Arşiv", code: "05" },
-  { key: "import", label: "Aktarım", code: "06", roles: ["admin", "operator"] },
-  { key: "package", label: "Teslim", code: "07" },
-  { key: "management", label: "Yönetim", code: "08", roles: ["admin"] },
-];
-
-const ROLE_LABELS: Record<string, string> = {
-  admin: "Yönetici",
-  operator: "Operasyon",
-  viewer: "Görüntüleme",
+const SETTINGS_TITLES: Record<SettingsSub, string> = {
+  issues: "Kontrol Merkezi",
+  gallery: "Fotoğraf Galerisi",
+  archive: "Tarih Arşivi",
+  package: "Teslim Paketi",
+  management: "Yönetim",
 };
 
 function Shell() {
-  const { summary, connected, toasts } = useStore();
-  const { user, signOut } = useAuth();
-  const [tab, setTab] = useState<TabKey>("home");
-  const [passengerStatus, setPassengerStatus] = useState("");
-
-  const tabs = useMemo(
-    () => TABS.filter((item) => !item.roles || item.roles.includes(user.role)),
-    [user.role],
-  );
+  const { toasts } = useStore();
+  const { user } = useAuth();
+  const [screen, setScreen] = useState<Screen>({ kind: "home" });
 
   function navigate(target: string) {
     if (target === "passengers-fotosuz") {
-      setPassengerStatus("Fotosuz");
-      setTab("passengers");
+      setScreen({ kind: "passengers", status: "Fotosuz" });
       return;
     }
-    if (!tabs.some((item) => item.key === target)) return;
-    setPassengerStatus("");
-    setTab(target as TabKey);
+    if (target === "passengers-eksik") {
+      setScreen({ kind: "passengers", status: "Eksik" });
+      return;
+    }
+    if (target === "home" || target === "import") {
+      setScreen({ kind: target });
+      return;
+    }
+    if (target === "passengers") {
+      setScreen({ kind: "passengers", status: "" });
+      return;
+    }
+    setScreen({ kind: "home" });
   }
 
-  const issueTotal = Object.values(summary.issue_counts).reduce((a, b) => a + b, 0);
+  function onNavSelect(key: NavKey) {
+    if (key === "home") setScreen({ kind: "home" });
+    else if (key === "passengers") setScreen({ kind: "passengers", status: "" });
+    else if (key === "import") setScreen({ kind: "import" });
+    else setScreen({ kind: "settings" });
+  }
+
+  const activeNav: NavKey =
+    screen.kind === "home"
+      ? "home"
+      : screen.kind === "passengers"
+        ? "passengers"
+        : screen.kind === "import"
+          ? "import"
+          : "settings";
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div className="brand-lockup">
-          <span className="brand-symbol">GV</span>
-          <div>
-            <strong>Gate Visa Operations</strong>
-            <small>Passenger Operations Platform</small>
-          </div>
+    <div className="ido-app">
+      <div className="ido-frame">
+        {screen.kind === "home" && <AppHeaderHome />}
+        {screen.kind === "passengers" && (
+          <AppHeaderScreen
+            title="Yolcular"
+            onBack={() => navigate("home")}
+            action={
+              user.role !== "viewer" ? (
+                <button className="ido-header-action" onClick={() => navigate("import")} type="button">
+                  TOPLU EKLE
+                </button>
+              ) : undefined
+            }
+          />
+        )}
+        {screen.kind === "import" && <AppHeaderScreen title="Toplu Yükleme" onBack={() => navigate("home")} />}
+        {screen.kind === "settings" && <AppHeaderScreen title="Ayarlar" onBack={() => navigate("home")} />}
+        {screen.kind === "settings-sub" && (
+          <AppHeaderScreen title={SETTINGS_TITLES[screen.sub]} onBack={() => setScreen({ kind: "settings" })} />
+        )}
+
+        <div className={`ido-content${screen.kind === "import" ? " has-sticky" : ""}`}>
+          {screen.kind !== "import" && (
+            <div style={{ marginBottom: -2 }}>
+              <DateScopeBar />
+            </div>
+          )}
+          {screen.kind === "home" && <HomeTab onNavigate={navigate} />}
+          {screen.kind === "passengers" && <PassengersTab initialStatus={screen.status} />}
+          {screen.kind === "import" && <ImportTab onNavigate={navigate} />}
+          {screen.kind === "settings" && (
+            <SettingsTab onOpen={(sub) => setScreen({ kind: "settings-sub", sub })} />
+          )}
+          {screen.kind === "settings-sub" && screen.sub === "issues" && <IssuesTab />}
+          {screen.kind === "settings-sub" && screen.sub === "gallery" && <GalleryTab />}
+          {screen.kind === "settings-sub" && screen.sub === "archive" && <ArchiveTab />}
+          {screen.kind === "settings-sub" && screen.sub === "package" && <PackageTab />}
+          {screen.kind === "settings-sub" && screen.sub === "management" && <ManagementTab />}
         </div>
-        <div className="header-account">
-          <div className="account-copy">
-            <strong>{user.name}</strong>
-            <small>{ROLE_LABELS[user.role] ?? user.role}</small>
-          </div>
-          <button className="account-action" onClick={() => void signOut()} type="button">Çıkış</button>
+
+        <BottomNav active={activeNav} onSelect={onNavSelect} />
+
+        <div className="toast-stack" aria-live="polite">
+          {toasts.map((toast) => (
+            <div key={toast.id} className={`toast ${toast.tone}`}>{toast.text}</div>
+          ))}
         </div>
-      </header>
-
-      <div className="status-strip">
-        <span className={connected ? "system-dot online" : "system-dot offline"} />
-        <span>{connected ? "Sistem çevrimiçi" : "Sunucu bağlantısı yok"}</span>
-        <span className="status-divider" />
-        <span>{summary.passenger_count} yolcu</span>
-        <span className="status-divider" />
-        <span>%{summary.readiness_percent} hazır</span>
-        <span className="status-divider" />
-        <span>
-          v{UI_VERSION}
-          {summary.version && summary.version !== UI_VERSION ? ` · sunucu v${summary.version} — sayfayı yenileyin` : ""}
-        </span>
-      </div>
-
-      <DateScopeBar />
-
-      <main className="tab-content">
-        {tab === "home" && <HomeTab onNavigate={navigate} />}
-        {tab === "passengers" && <PassengersTab initialStatus={passengerStatus} />}
-        {tab === "issues" && <IssuesTab />}
-        {tab === "gallery" && <GalleryTab />}
-        {tab === "archive" && <ArchiveTab />}
-        {tab === "import" && <ImportTab />}
-        {tab === "package" && <PackageTab />}
-        {tab === "management" && <ManagementTab />}
-      </main>
-
-      <nav className="tab-bar" aria-label="Ana gezinme">
-        {tabs.map((item) => (
-          <button
-            key={item.key}
-            className={item.key === tab ? "tab active" : "tab"}
-            onClick={() => navigate(item.key)}
-            type="button"
-          >
-            <span className="tab-code">{item.code}</span>
-            <span className="tab-label">{item.label}</span>
-            {item.key === "issues" && issueTotal > 0 && <span className="tab-badge">{issueTotal}</span>}
-          </button>
-        ))}
-      </nav>
-
-      <div className="toast-stack" aria-live="polite">
-        {toasts.map((toast) => (
-          <div key={toast.id} className={`toast ${toast.tone}`}>{toast.text}</div>
-        ))}
       </div>
     </div>
   );
