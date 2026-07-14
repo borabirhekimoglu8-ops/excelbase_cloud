@@ -11,16 +11,17 @@ import {
 } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
-import { PassengerPhoto } from "@/components/PassengerCard";
+import { PassengerPhoto, passengerStatusTone } from "@/components/PassengerCard";
+import { AppHeaderScreen } from "@/components/ido/AppHeader";
 
-const FIELDS: { key: keyof Passenger; label: string; mono?: boolean; type?: string }[] = [
+const FIELDS: { key: keyof Passenger; label: string; type?: string }[] = [
   { key: "no", label: "No" },
   { key: "first_name", label: "Ad" },
   { key: "last_name", label: "Soyad" },
-  { key: "passport_no", label: "Pasaport No", mono: true },
-  { key: "voucher", label: "Voucher" },
-  { key: "departure_date", label: "Gidiş Tarihi", type: "date" },
-  { key: "arrival_date", label: "Varış Tarihi", type: "date" },
+  { key: "passport_no", label: "Pasaport No" },
+  { key: "voucher", label: "Rezervasyon / Voucher" },
+  { key: "departure_date", label: "Sefer Tarihi (Gidiş)" },
+  { key: "arrival_date", label: "Varış Tarihi" },
   { key: "adult_fee", label: "Vize Ücreti Yetişkin" },
   { key: "child_fee", label: "Vize Ücreti Çocuk" },
 ];
@@ -63,19 +64,15 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
   if (!passenger) {
     return (
       <div className="sheet-overlay" onClick={onClose}>
-        <div className="sheet" onClick={(e) => e.stopPropagation()}>
-          <p className="muted">Yükleniyor...</p>
+        <div className="sheet ido-sheet" onClick={(e) => e.stopPropagation()}>
+          <AppHeaderScreen title="Yolcu Detayı" onBack={onClose} />
+          <div className="ido-content">
+            <p className="muted">Yükleniyor…</p>
+          </div>
         </div>
       </div>
     );
   }
-
-  const passportClean = form.passport_no?.replace(/[^A-Za-z0-9]/g, "") ?? "";
-  const passportHint = !form.passport_no
-    ? "Pasaport numarası girilmemiş"
-    : passportClean.length < 6
-      ? "Pasaport numarası çok kısa"
-      : "Pasaport formatı uygun";
 
   async function handleSave() {
     setSaving(true);
@@ -114,7 +111,8 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
       await setPassengerPhoto(id, file);
       notify("Fotoğraf güncellendi");
       bump();
-      onClose();
+      const list = await fetchPassengers();
+      setPassenger(list.find((p) => p.id === id) ?? null);
     } catch (err) {
       notify(err instanceof Error ? err.message : "Fotoğraf yüklenemedi", "error");
     } finally {
@@ -129,7 +127,8 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
       await removePassengerPhoto(id);
       notify("Fotoğraf silindi", "warn");
       bump();
-      onClose();
+      const list = await fetchPassengers();
+      setPassenger(list.find((p) => p.id === id) ?? null);
     } catch (err) {
       notify(err instanceof Error ? err.message : "Silinemedi", "error");
     } finally {
@@ -137,65 +136,115 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
     }
   }
 
+  const { tone, label } = passengerStatusTone(passenger);
+  const hasIssues = passenger.issues.length > 0;
+
   return (
     <div className="sheet-overlay" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-handle" />
-        <div className="sheet-head">
-          <button className="ghost-btn" onClick={onClose}>
-            Kapat
-          </button>
-          <span className="eyebrow">Yolcu detayı</span>
-        </div>
+      <div className="sheet ido-sheet" onClick={(e) => e.stopPropagation()}>
+        <AppHeaderScreen
+          title="Yolcu Detayı"
+          onBack={onClose}
+          action={
+            canWrite ? (
+              <button className="ido-header-action" onClick={handleDelete} disabled={busy} type="button">
+                SİL
+              </button>
+            ) : undefined
+          }
+        />
+        <div className="ido-content has-sticky">
+          <div className="ic-profile">
+            <div className="ic-profile-id">
+              <div className="ic-profile-photo">
+                <PassengerPhoto passenger={passenger} />
+              </div>
+              <div className="ic-profile-copy">
+                <p className="ic-profile-name">{passenger.full_name || "İsimsiz yolcu"}</p>
+                <p className="ic-profile-meta">{passenger.passport_no || "Pasaport yok"}</p>
+                {(passenger.departure_date || passenger.voucher) && (
+                  <p className="ic-profile-meta sm">
+                    {[passenger.voucher, passenger.departure_date && `Sefer ${passenger.departure_date}`]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
+              </div>
+            </div>
+            <span className={`ic-pill ic-pill-${tone}`}>{label === "HAZIR" ? "DOSYA HAZIR" : label}</span>
+          </div>
 
-        <div className="detail-hero">
-          <PassengerPhoto passenger={passenger} />
-          <div>
-            <h2>{passenger.full_name || "Yolcu"}</h2>
-            <p className="passport">{passenger.passport_no || "Pasaport yok"}</p>
+          <div className={`ic-verify${hasIssues ? " warn" : ""}`} style={hasIssues ? { background: "var(--ido-amber-tint)", color: "var(--ido-amber)" } : undefined}>
+            <span>
+              {hasIssues
+                ? `${passenger.issues.length} zorunlu alan/belge eksik`
+                : "Zorunlu alan ve belgeler doğrulandı"}
+            </span>
+            <span>{hasIssues ? "!" : "✓"}</span>
+          </div>
+
+          <div className="ic-detail-block">
+            <p className="ic-detail-title">Kimlik / Sefer Bilgileri</p>
+            {FIELDS.map((field) => (
+              <div className="ic-detail-line editable" key={field.key}>
+                <span>{field.label}</span>
+                <input
+                  type={field.type ?? "text"}
+                  value={form[field.key] ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
+                  disabled={!canWrite}
+                />
+              </div>
+            ))}
+            <div className="ic-detail-line">
+              <span>Kaynak Dosya</span>
+              <span>{passenger.source_file || "—"}</span>
+            </div>
+          </div>
+
+          <div className="ic-section-head">
+            <p className="ic-section-title">Biyometrik Fotoğraf</p>
+            <span className={passenger.photo ? "ic-pill ic-pill-ok" : "ic-pill ic-pill-bad"}>
+              {passenger.photo ? "1 / 1 MEVCUT" : "0 / 1 EKSİK"}
+            </span>
+          </div>
+          <div className="ic-row compact">
+            <div className="ic-row-id">
+              <span className="ic-filetype pdf">FOTO</span>
+              <div className="ic-row-copy">
+                <p className="ic-row-title">{passenger.photo ? "Biyometrik fotoğraf" : "Fotoğraf yüklenmedi"}</p>
+                <p className="ic-row-meta">{passenger.photo ? "Yolcu profilinde kullanılıyor" : "Kontrolden önce ekleyin"}</p>
+              </div>
+            </div>
+            {canWrite && (
+              <div style={{ display: "flex", gap: 8, flex: "0 0 auto" }}>
+                <label className="ic-pill ic-pill-info" style={{ cursor: "pointer" }}>
+                  {passenger.photo ? "DEĞİŞTİR" : "EKLE"}
+                  <input type="file" accept="image/*" onChange={handlePhoto} disabled={busy} style={{ display: "none" }} />
+                </label>
+                {passenger.photo && (
+                  <button
+                    className="ic-pill ic-pill-bad"
+                    style={{ border: 0, cursor: "pointer" }}
+                    onClick={handlePhotoRemove}
+                    disabled={busy}
+                    type="button"
+                  >
+                    SİL
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
-        {canWrite && <div className="photo-actions">
-          <label className="soft-btn">
-            {passenger.photo ? "Fotoğrafı değiştir" : "Fotoğraf ekle"}
-            <input type="file" accept="image/*" onChange={handlePhoto} disabled={busy} />
-          </label>
-          {passenger.photo && (
-            <button className="soft-btn danger" onClick={handlePhotoRemove} disabled={busy}>
-              Fotoğrafı sil
+        {canWrite && (
+          <div className="ic-sticky">
+            <button className="ic-btn-primary" onClick={handleSave} disabled={saving || busy} type="button">
+              {saving ? "KAYDEDİLİYOR…" : "DEĞİŞİKLİKLERİ KAYDET"}
             </button>
-          )}
-        </div>}
-
-        <div className="detail-form">
-          {FIELDS.map((field) => (
-            <label key={field.key} className="field">
-              <span>{field.label}</span>
-              <input
-                type={field.type ?? "text"}
-                className={field.mono ? "mono" : ""}
-                value={form[field.key] ?? ""}
-                onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
-                disabled={!canWrite}
-              />
-            </label>
-          ))}
-          <p className="hint">{passportHint}</p>
-          <label className="field">
-            <span>Kaynak Dosya</span>
-            <input type="text" value={passenger.source_file} disabled />
-          </label>
-        </div>
-
-        {canWrite && <div className="detail-actions">
-          <button className="primary-btn" onClick={handleSave} disabled={saving || busy}>
-            {saving ? "Kaydediliyor..." : "Kaydet"}
-          </button>
-          <button className="soft-btn danger" onClick={handleDelete} disabled={busy}>
-            Sil
-          </button>
-        </div>}
+          </div>
+        )}
       </div>
     </div>
   );
