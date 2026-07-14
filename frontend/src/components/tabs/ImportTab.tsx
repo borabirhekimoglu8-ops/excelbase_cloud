@@ -298,22 +298,23 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
       {step === "files" && (
         <>
           <label className="ic-upload-zone">
-            <span className="ic-upload-icon">DOSYA SEÇ</span>
-            <p className="ic-upload-title">Dosya Alım Modülü</p>
+            <span className="ic-upload-icon">ZIP / EXCEL SEÇ</span>
+            <p className="ic-upload-title">Toplu Liste Yükleme</p>
             <p className="ic-upload-hint">
               {deliveryProgress
                 ? `${deliveryProgress.processed}/${deliveryProgress.total} işlendi · ${deliveryProgress.delivered} teslim${deliveryProgress.failed ? ` · ${deliveryProgress.failed} hata` : ""}`
-                : "Sınırsız çoklu seçim · dosyalar tek tek anında teslim edilir"}
+                : "Önerilen: Excel dosyalarını tek ZIP yapıp yükleyin"}
             </p>
-            <p className="ic-upload-formats">XLSX, XLS, XLSM, CSV ve ODS</p>
+            <p className="ic-upload-formats">ZIP (önerilen) · XLSX · XLS · XLSM · CSV · ODS</p>
+            <p className="ic-upload-formats">iPhone: Dosyalar → Seç → (…) → Sıkıştır</p>
             <input
               className="ic-upload-input"
               type="file"
-              accept=".xlsx,.xls,.xlsm,.ods,.csv"
+              accept=".zip,.xlsx,.xls,.xlsm,.ods,.csv"
               multiple
               onChange={handleExcel}
               disabled={uploadLocked}
-              aria-label="Dosya seç"
+              aria-label="ZIP veya Excel listelerini seç"
             />
           </label>
 
