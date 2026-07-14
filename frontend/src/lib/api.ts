@@ -317,8 +317,15 @@ export async function uploadPassengerFiles(
   });
   return request<ImportResponse>(`/api/import?${qs.toString()}`, { method: "POST", body });
 }
-const IMPORT_QUEUE_CHUNK_FILES = 1;
+// Dosya başına 1 istek 49 dosyalık bir seçimde 49 ardışık ağ turu demekti;
+// sekme arka plana alındığında veya ağ kesintiye uğradığında bu uzun zincirin
+// herhangi bir halkası kalıcı olarak asılı kalabiliyordu. Daha az, daha büyük
+// istekle (bayt tavanı aynı kalır) toplam tur sayısı — dolayısıyla arıza
+// penceresi — büyük ölçüde küçülür.
+const IMPORT_QUEUE_CHUNK_FILES = 12;
 const IMPORT_QUEUE_CHUNK_BYTES = 15 * 1024 * 1024;
+const IMPORT_QUEUE_CHUNK_ATTEMPTS = 3;
+const IMPORT_QUEUE_RETRY_DELAY_MS = 2_000;
 
 function splitImportUpload(files: File[]): File[][] {
   const chunks: File[][] = [];
@@ -340,39 +347,59 @@ function splitImportUpload(files: File[]): File[][] {
   return chunks;
 }
 
+export type QueueImportResult = ImportQueueResponse & { failedFiles: string[] };
+
 export async function queueImportFiles(
   files: File[],
   replace: boolean,
   dupStrategy: string,
   onProgress?: (delivered: number, total: number) => void,
-): Promise<ImportQueueResponse> {
+): Promise<QueueImportResult> {
   const batchId = newId();
   const chunks = splitImportUpload(files);
   const jobs: ImportJob[] = [];
+  const failedFiles: string[] = [];
   let delivered = 0;
   let active = false;
+  let replaceApplied = false;
 
   onProgress?.(0, files.length);
-  for (let index = 0; index < chunks.length; index += 1) {
-    const body = new FormData();
-    for (const file of chunks[index]) await appendReadableFile(body, "files", file);
-    const qs = new URLSearchParams({
-      replace: String(replace && index === 0),
-      dup_strategy: dupStrategy,
-      batch_id: batchId,
-    });
-    const result = await request<ImportQueueResponse>(
-      `/api/import/queue?${qs.toString()}`,
-      { method: "POST", body },
-      300_000,
-    );
-    const known = new Set(jobs.map((job) => job.id));
-    jobs.push(...result.jobs.filter((job) => !known.has(job.id)));
-    active = active || result.active;
-    delivered += chunks[index].length;
+  for (const chunk of chunks) {
+    const applyReplace = replace && !replaceApplied;
+    let result: ImportQueueResponse | null = null;
+    for (let attempt = 1; attempt <= IMPORT_QUEUE_CHUNK_ATTEMPTS && !result; attempt += 1) {
+      if (attempt > 1) {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, IMPORT_QUEUE_RETRY_DELAY_MS * (attempt - 1)));
+      }
+      try {
+        const body = new FormData();
+        for (const file of chunk) await appendReadableFile(body, "files", file);
+        const qs = new URLSearchParams({
+          replace: String(applyReplace),
+          dup_strategy: dupStrategy,
+          batch_id: batchId,
+        });
+        result = await request<ImportQueueResponse>(
+          `/api/import/queue?${qs.toString()}`,
+          { method: "POST", body },
+          120_000,
+        );
+      } catch {
+        // Bu deneme başarısız oldu; sınıra kadar yeniden denenir.
+      }
+    }
+    if (result) {
+      const known = new Set(jobs.map((job) => job.id));
+      jobs.push(...result.jobs.filter((job) => !known.has(job.id)));
+      active = active || result.active;
+      if (applyReplace) replaceApplied = true;
+    } else {
+      failedFiles.push(...chunk.map((file) => file.name));
+    }
+    delivered += chunk.length;
     onProgress?.(delivered, files.length);
   }
-  return { jobs, active, batch_id: batchId };
+  return { jobs, active, batch_id: batchId, failedFiles };
 }
 export function fetchImportQueue(): Promise<ImportQueueResponse> {
   return request<ImportQueueResponse>("/api/import/queue");

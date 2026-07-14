@@ -48,7 +48,9 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [queueActive, setQueueActive] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [deliveryProgress, setDeliveryProgress] = useState<{ delivered: number; total: number } | null>(null);
+  const [deliveryProgress, setDeliveryProgress] = useState<
+    { delivered: number; total: number; phase: "reading" | "sending" } | null
+  >(null);
   const [unmatched, setUnmatched] = useState<UnmatchedPhoto[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
@@ -120,12 +122,13 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
       return;
     }
     setUploading(true);
-    setDeliveryProgress({ delivered: 0, total: sourceFiles.length });
+    setDeliveryProgress({ delivered: 0, total: sourceFiles.length, phase: "reading" });
     try {
       // iCloud sağlayıcısını onlarca eşzamanlı tam dosya okumasıyla
       // kilitlememek için dosyaları üçlü dalgalar hâlinde belleğe alırız.
       const files: File[] = [];
       const unreadable: string[] = [];
+      let read = 0;
       for (let start = 0; start < sourceFiles.length; start += 3) {
         const group = sourceFiles.slice(start, start + 3);
         const settled = await Promise.allSettled(group.map((source) => materializeUploadFile(source)));
@@ -137,12 +140,15 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             unreadable.push(error instanceof Error ? error.message : `${group[index].name}: dosya okunamadı.`);
           }
         });
+        read += group.length;
+        setDeliveryProgress({ delivered: read, total: sourceFiles.length, phase: "reading" });
       }
       input.value = "";
       if (unreadable.length) notify(`${unreadable.length} dosya okunamadı; yeniden seçin.`, "warn");
       if (!files.length) return;
+      setDeliveryProgress({ delivered: 0, total: files.length, phase: "sending" });
       const result = await queueImportFiles(files, replace, dupStrategy, (delivered, total) => {
-        setDeliveryProgress({ delivered, total });
+        setDeliveryProgress({ delivered, total, phase: "sending" });
       });
       setJobs((current) => {
         const known = new Set(current.map((job) => job.id));
@@ -150,7 +156,13 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
       });
       setQueueActive(result.active);
       doneCountRef.current = -1;
-      notify(`${result.jobs.length} dosya kuyruğa alındı`);
+      if (result.jobs.length) notify(`${result.jobs.length} dosya kuyruğa alındı`);
+      if (result.failedFiles.length) {
+        notify(
+          `${result.failedFiles.length} dosya sunucuya teslim edilemedi: ${result.failedFiles.slice(0, 3).join(", ")}${result.failedFiles.length > 3 ? "…" : ""}. Yeniden seçip tekrar deneyin.`,
+          "error",
+        );
+      }
       void refreshQueue();
     } catch (error) {
       notify(error instanceof Error ? error.message : "Dosyalar sunucuya teslim edilemedi.", "error");
@@ -283,7 +295,9 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             <p className="ic-upload-title">Dosya Alım Modülü</p>
             <p className="ic-upload-hint">
               {deliveryProgress
-                ? `${deliveryProgress.delivered}/${deliveryProgress.total} dosya sunucuya teslim edildi`
+                ? deliveryProgress.phase === "reading"
+                  ? `${deliveryProgress.delivered}/${deliveryProgress.total} dosya telefondan okunuyor…`
+                  : `${deliveryProgress.delivered}/${deliveryProgress.total} dosya sunucuya teslim edildi`
                 : "Sınırsız çoklu seçim · işlem sürerken yeni dosya eklenebilir"}
             </p>
             <p className="ic-upload-formats">XLSX, XLS, XLSM, CSV ve ODS</p>
