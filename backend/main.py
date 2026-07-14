@@ -95,6 +95,7 @@ app.add_middleware(
 ROOT_DIR = Path(__file__).resolve().parents[1]
 FRONTEND_OUT = ROOT_DIR / "frontend" / "out"
 NEXT_ASSETS = FRONTEND_OUT / "_next"
+FRONTEND_ASSET_PREFIX = "/assets/20260714-bulkfix"
 
 
 @app.middleware("http")
@@ -105,9 +106,13 @@ async def cache_headers(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
     content_type = response.headers.get("content-type", "")
-    if path.startswith("/_next/static/") and response.status_code == 200 and "text/html" not in content_type:
-        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif path.startswith("/api/") or "text/html" in content_type:
+    is_frontend_asset = path.startswith("/_next/static/") or path.startswith(
+        f"{FRONTEND_ASSET_PREFIX}/_next/static/"
+    )
+    if is_frontend_asset or path.startswith("/api/") or "text/html" in content_type:
+        # Turbopack dışa aktarımında chunk adları içerik değişse de aynı kalabiliyor.
+        # iOS Safari'nin eski uygulamayı bir yıl tutmaması için yeniden doğrulama
+        # yerine tamamen taze yanıt isteriz.
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -744,6 +749,13 @@ def api_not_found(path: str):
 if NEXT_ASSETS.exists():
     from fastapi.staticfiles import StaticFiles
 
+    app.mount(
+        f"{FRONTEND_ASSET_PREFIX}/_next",
+        StaticFiles(directory=str(NEXT_ASSETS)),
+        name="next-assets-versioned",
+    )
+    # Eski açık sekmeler kontrollü biçimde çalışmaya devam etsin; yeni HTML
+    # yalnızca sürümlü yolu kullanır.
     app.mount("/_next", StaticFiles(directory=str(NEXT_ASSETS)), name="next-assets")
 
 
