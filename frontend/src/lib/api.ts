@@ -317,7 +317,7 @@ export async function uploadPassengerFiles(
   });
   return request<ImportResponse>(`/api/import?${qs.toString()}`, { method: "POST", body });
 }
-const IMPORT_QUEUE_CHUNK_FILES = 3;
+const IMPORT_QUEUE_CHUNK_FILES = 1;
 const IMPORT_QUEUE_CHUNK_BYTES = 15 * 1024 * 1024;
 
 function splitImportUpload(files: File[]): File[][] {
