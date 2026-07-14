@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import os
+import threading
+import time
 import zipfile
 from email.message import EmailMessage
 
@@ -51,6 +53,73 @@ def test_composite_dedup_date_scope_package_and_undo(monkeypatch, tmp_path):
     ok, _, count = services.undo_import("batch-1")
     assert ok is True
     assert count == 0
+
+
+def test_import_parse_does_not_hold_mutation_lock(monkeypatch, tmp_path):
+    """Ayrıştırma adımı MUTATION_LOCK dışında çalışmalı.
+
+    Aksi halde bozuk/büyük tek bir dosyanın ayrıştırması takılırsa (ör.
+    openpyxl içinde asılı kalırsa), uygulamadaki TÜM diğer yazma işlemleri
+    de sonsuza dek bloklanır — üretimde gözlemlenen 'dosyalar İşleniyor'da
+    takılı kalıyor' hatasının kök nedeni buydu.
+    """
+    _isolate_store(monkeypatch, tmp_path)
+    from backend import services
+
+    parse_started = threading.Event()
+    release_parse = threading.Event()
+    original_parse = services._parse_import_files
+
+    def slow_parse(files):
+        parse_started.set()
+        assert release_parse.wait(timeout=5), "test sinyali zaman aşımına uğradı"
+        return original_parse(files)
+
+    monkeypatch.setattr(services, "_parse_import_files", slow_parse)
+
+    result_holder: dict = {}
+
+    def run_import():
+        result_holder["result"] = services.import_gate_visa_files(
+            [("slow.csv", _csv("P999999", "2026-07-15"))],
+            batch_id="slow-batch",
+            dup_strategy="skip",
+        )
+
+    thread = threading.Thread(target=run_import)
+    thread.start()
+    try:
+        assert parse_started.wait(timeout=5), "ayrıştırma başlamadı"
+
+        # Ayrıştırma hâlâ sürerken başka bir kilitli mutasyon HEMEN tamamlanmalı.
+        start = time.monotonic()
+        assert services.delete_import_job("does-not-exist") is False
+        elapsed = time.monotonic() - start
+        assert elapsed < 1.0, "ayrıştırma MUTATION_LOCK'ı tutuyor gibi görünüyor"
+    finally:
+        release_parse.set()
+        thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert result_holder["result"][0] == 1
+
+
+def test_import_parse_timeout_reports_error_without_hanging(monkeypatch, tmp_path):
+    """Sonsuza dek dönmeyen bir ayrıştırma, iş kuyruğunu asmak yerine zaman
+    aşımıyla hata vermeli."""
+    _isolate_store(monkeypatch, tmp_path)
+    from backend import services
+
+    def never_returns(files):
+        time.sleep(5)
+        raise AssertionError("zaman aşımından önce dönmemeliydi")
+
+    monkeypatch.setattr(services, "_parse_import_files", never_returns)
+
+    with pytest.raises(TimeoutError):
+        services._parse_import_files_with_timeout(
+            [("slow.csv", _csv("P111111", "2026-07-15"))],
+            timeout=0.2,
+        )
 
 
 def test_first_run_auth_roles_and_cookie(monkeypatch, tmp_path):

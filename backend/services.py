@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import json
 import logging
 import os
@@ -256,6 +257,34 @@ def _parse_import_files(files: Iterable[tuple[str, bytes]]) -> tuple[pd.DataFram
     return imported_df, loaded_names, validate_passenger_rows(imported_df)
 
 
+PARSE_IMPORT_TIMEOUT_SECONDS = 120
+
+
+def _parse_import_files_with_timeout(
+    files: Iterable[tuple[str, bytes]],
+    timeout: float = PARSE_IMPORT_TIMEOUT_SECONDS,
+) -> tuple[pd.DataFrame, list[str], list[str]]:
+    """Dosya ayrıştırmayı ayrı bir iş parçacığında sınırlı sürede çalıştırır.
+
+    Bozuk/aşırı büyük bir dosya openpyxl/pandas içinde asılı kalırsa bu
+    çağrı yine de zaman aşımıyla döner; ayrıştırma MUTATION_LOCK dışında
+    çalıştığı için diğer yazma işlemlerini bloklamaz.
+    """
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        future = pool.submit(_parse_import_files, files)
+        try:
+            result = future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError as exc:
+            raise TimeoutError(
+                "Dosya işlenemedi: ayrıştırma zaman aşımına uğradı. "
+                "Dosya çok büyük veya bozuk olabilir; daha küçük bir dosyayla tekrar deneyin."
+            ) from exc
+    finally:
+        pool.shutdown(wait=False)
+    return result
+
+
 def _critical_import_count(df: pd.DataFrame) -> int:
     if df.empty:
         return 0
@@ -346,14 +375,27 @@ def _update_import_history(extra: dict, batch: dict) -> None:
     extra["import_history"] = history[:50]
 
 
-@locked_mutation
 def import_gate_visa_files(
     files: Iterable[tuple[str, bytes]],
     replace: bool = False,
     dup_strategy: str = "add",
     batch_id: str = "",
 ) -> tuple[int, list[str], list[str], int, str, int, int]:
-    imported_df, loaded_names, warnings = _parse_import_files(files)
+    # Ayrıştırma (yavaş, dosya içeriğine bağlı) kilit DIŞINDA çalışır; böylece
+    # bozuk/büyük tek bir dosya tüm uygulamanın yazma işlemlerini kilitlemez.
+    imported_df, loaded_names, warnings = _parse_import_files_with_timeout(files)
+    return _merge_and_save_import(imported_df, loaded_names, warnings, replace, dup_strategy, batch_id)
+
+
+@locked_mutation
+def _merge_and_save_import(
+    imported_df: pd.DataFrame,
+    loaded_names: list[str],
+    warnings: list[str],
+    replace: bool = False,
+    dup_strategy: str = "add",
+    batch_id: str = "",
+) -> tuple[int, list[str], list[str], int, str, int, int]:
     current_df, current_loaded, extra = load_state()
     batch_id = batch_id.strip() or str(uuid.uuid4())
     mode = "Değiştir" if (replace or current_df.empty) else f"Ekle ({dup_strategy})"
