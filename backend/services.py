@@ -1299,10 +1299,22 @@ def _import_worker_loop() -> None:
 
 
 def ensure_import_worker() -> None:
-    """Bekleyen işler için tek arka plan işleyicisini (gerekiyorsa) başlatır."""
+    """Bekleyen işler için tek arka plan işleyicisini (gerekiyorsa) başlatır.
+
+    Önceki işleyici beklenmedik biçimde kapandıysa kalıcı depoda processing
+    kalan işi yeniden pending durumuna getirir.
+    """
     global _import_worker_alive
     with _IMPORT_WORKER_LOCK:
         if _import_worker_alive:
             return
         _import_worker_alive = True
-    threading.Thread(target=_import_worker_loop, name="gatevisa-import-worker", daemon=True).start()
+    try:
+        recovered = recover_stale_import_jobs()
+        if recovered:
+            logger.warning("%d yarım aktarım işi çalışma sırasında kuyruğa iade edildi", recovered)
+        threading.Thread(target=_import_worker_loop, name="gatevisa-import-worker", daemon=True).start()
+    except Exception:
+        with _IMPORT_WORKER_LOCK:
+            _import_worker_alive = False
+        raise

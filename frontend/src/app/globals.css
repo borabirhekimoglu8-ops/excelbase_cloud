@@ -719,7 +719,7 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ic-upload-title { margin: 0; color: var(--ido-ink); font-weight: 600; font-size: 16px; }
 .ic-upload-hint { margin: 0; color: var(--ido-primary); font-weight: 600; font-size: 10px; }
 .ic-upload-formats { margin: 0; color: var(--ido-muted); font-weight: 400; font-size: 10px; }
-.ic-upload-input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.ic-upload-zone .ic-upload-input { display: block; position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
 .ic-upload-zone { position: relative; cursor: pointer; }
 
 /* Alan eşleştirme satırı */

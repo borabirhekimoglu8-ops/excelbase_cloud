@@ -317,15 +317,62 @@ export async function uploadPassengerFiles(
   });
   return request<ImportResponse>(`/api/import?${qs.toString()}`, { method: "POST", body });
 }
+const IMPORT_QUEUE_CHUNK_FILES = 3;
+const IMPORT_QUEUE_CHUNK_BYTES = 15 * 1024 * 1024;
+
+function splitImportUpload(files: File[]): File[][] {
+  const chunks: File[][] = [];
+  let current: File[] = [];
+  let currentBytes = 0;
+
+  for (const file of files) {
+    const exceedsCount = current.length >= IMPORT_QUEUE_CHUNK_FILES;
+    const exceedsBytes = current.length > 0 && currentBytes + file.size > IMPORT_QUEUE_CHUNK_BYTES;
+    if (exceedsCount || exceedsBytes) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(file);
+    currentBytes += file.size;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
 export async function queueImportFiles(
   files: File[],
   replace: boolean,
   dupStrategy: string,
+  onProgress?: (delivered: number, total: number) => void,
 ): Promise<ImportQueueResponse> {
-  const body = new FormData();
-  for (const file of files) await appendReadableFile(body, "files", file);
-  const qs = new URLSearchParams({ replace: String(replace), dup_strategy: dupStrategy, batch_id: newId() });
-  return request<ImportQueueResponse>(`/api/import/queue?${qs.toString()}`, { method: "POST", body }, 300_000);
+  const batchId = newId();
+  const chunks = splitImportUpload(files);
+  const jobs: ImportJob[] = [];
+  let delivered = 0;
+  let active = false;
+
+  onProgress?.(0, files.length);
+  for (let index = 0; index < chunks.length; index += 1) {
+    const body = new FormData();
+    for (const file of chunks[index]) await appendReadableFile(body, "files", file);
+    const qs = new URLSearchParams({
+      replace: String(replace && index === 0),
+      dup_strategy: dupStrategy,
+      batch_id: batchId,
+    });
+    const result = await request<ImportQueueResponse>(
+      `/api/import/queue?${qs.toString()}`,
+      { method: "POST", body },
+      300_000,
+    );
+    const known = new Set(jobs.map((job) => job.id));
+    jobs.push(...result.jobs.filter((job) => !known.has(job.id)));
+    active = active || result.active;
+    delivered += chunks[index].length;
+    onProgress?.(delivered, files.length);
+  }
+  return { jobs, active, batch_id: batchId };
 }
 export function fetchImportQueue(): Promise<ImportQueueResponse> {
   return request<ImportQueueResponse>("/api/import/queue");
