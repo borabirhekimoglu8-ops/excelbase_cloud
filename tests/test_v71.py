@@ -358,9 +358,13 @@ def test_daily_backup_is_throttled(monkeypatch, tmp_path):
     monkeypatch.setattr(persistence, "_last_backup_at", 0.0)
 
     df = pd.DataFrame(columns=persistence.ALL_COLUMNS)
-    persistence.save_store(df, [], {})
-    persistence.save_store(df, [], {})
-    persistence.save_store(df, [], {})
+    # Aynı süreçte yaşayan arka plan aktarım işleyicisi de save_store'u
+    # çağırabilir (bkz. tests/conftest.py); kilidi burada tutmak bu testin
+    # üç çağrısını dışarıdan gelecek herhangi bir araya girmeden garanti eder.
+    with persistence._STORE_LOCK:
+        persistence.save_store(df, [], {})
+        persistence.save_store(df, [], {})
+        persistence.save_store(df, [], {})
     assert calls["backup"] == 1
 
 
