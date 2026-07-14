@@ -238,7 +238,9 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
     await refreshQueue();
   }
 
-  const uploadLocked = uploading || queueActive;
+  // Sunucuda işleme sürerken yeni dosyalar eklenebilmelidir. Yalnızca mevcut
+  // multipart teslimi devam ederken ikinci bir seçim başlatılmasını engelleriz.
+  const uploadLocked = uploading;
 
   return (
     <>
@@ -266,7 +268,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
           <label className="ic-upload-zone">
             <span className="ic-upload-icon">DOSYA SEÇ</span>
             <p className="ic-upload-title">Dosya Alım Modülü</p>
-            <p className="ic-upload-hint">Sınırsız çoklu dosya seçimi · otomatik satır tespiti</p>
+            <p className="ic-upload-hint">Sınırsız çoklu seçim · işlem sürerken yeni dosya eklenebilir</p>
             <p className="ic-upload-formats">XLSX, XLS, CSV, ODS ve ZIP</p>
             <input
               className="ic-upload-input"
