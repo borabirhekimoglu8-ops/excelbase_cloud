@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import threading
 import time
@@ -14,6 +16,7 @@ from fastapi import Header, HTTPException, Query, Request, status
 
 from .config import SESSION_COOKIE, SESSION_DAYS, api_key, require_auth
 from .state import load_state, save_state
+import db
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,11 +26,21 @@ class Actor:
     role: str
 
 
+@dataclass(slots=True)
+class _AuthSnapshot:
+    auth: dict
+    database_backed: bool
+    df: object | None = None
+    loaded_files: list[str] | None = None
+    extra: dict | None = None
+
+
 ROLE_LABELS = {"admin": "Yonetici", "operator": "Operasyon", "viewer": "Goruntuleme"}
 _LOGIN_WINDOW_SECONDS = 15 * 60
 _LOGIN_MAX_FAILURES = 6
 _LOGIN_FAILURES: dict[str, list[float]] = {}
 _LOGIN_LOCK = threading.Lock()
+_AUTH_STATE_LOCK = threading.RLock()
 
 
 def _b64(data: bytes) -> str:
@@ -53,39 +66,105 @@ def _validate_pin(pin: str) -> str:
     return normalized
 
 
-def _auth_state() -> tuple[dict, object, list[str], dict]:
+def _auth_database_required() -> bool:
+    return db.database_configured() or os.environ.get("APP_ENV", "development").lower() == "production"
+
+
+def _auth_service_unavailable(exc: Exception | None = None) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=(
+            "Kimlik dogrulama veritabanina su anda ulasilamiyor. "
+            "Lutfen kisa sure sonra yeniden deneyin."
+        ),
+    )
+
+
+def _database_auth_state() -> dict:
+    """Read the dedicated auth blob, lazily migrating the legacy extra value."""
+    try:
+        found, auth = db.load_auth_state()
+    except db.DatabaseUnavailableError as exc:
+        raise _auth_service_unavailable(exc) from exc
+    if found:
+        return dict(auth)
+
+    # One-time compatibility read.  Polling and token validation never touch
+    # the passenger blob again after even an empty auth state is materialized.
+    legacy = db.load_state()
+    if legacy is None:
+        raise _auth_service_unavailable()
+    legacy_dict = legacy if isinstance(legacy, dict) else {}
+    extra = dict(legacy_dict.get("extra", {}) or {})
+    auth = dict(extra.get("auth", legacy_dict.get("auth", {})) or {})
+    try:
+        return db.initialize_auth_state(auth)
+    except db.DatabaseUnavailableError as exc:
+        raise _auth_service_unavailable(exc) from exc
+
+
+def _auth_state() -> _AuthSnapshot:
+    if db.enabled():
+        return _AuthSnapshot(auth=_database_auth_state(), database_backed=True)
+    # Fail closed: a transient DB outage in production must never expose a
+    # local "first setup" screen or create credentials on ephemeral disk.
+    if _auth_database_required():
+        raise _auth_service_unavailable()
     df, loaded_files, extra = load_state()
-    return dict(extra.get("auth", {}) or {}), df, loaded_files, extra
+    return _AuthSnapshot(
+        auth=dict(extra.get("auth", {}) or {}),
+        database_backed=False,
+        df=df,
+        loaded_files=list(loaded_files),
+        extra=extra,
+    )
+
+
+def _save_auth_state(snapshot: _AuthSnapshot, auth: dict) -> None:
+    if snapshot.database_backed:
+        try:
+            saved = db.compare_and_swap_auth_state(snapshot.auth, auth)
+        except db.DatabaseUnavailableError as exc:
+            raise _auth_service_unavailable(exc) from exc
+        if not saved:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Erisim ayarlari baska bir islemde degisti; lutfen yeniden deneyin.",
+            )
+        return
+    extra = dict(snapshot.extra or {})
+    extra["auth"] = auth
+    save_state(snapshot.df, list(snapshot.loaded_files or []), extra)
 
 
 def setup_required() -> bool:
-    auth, _, _, _ = _auth_state()
-    return not bool(auth.get("users"))
+    return not bool(_auth_state().auth.get("users"))
 
 
 def setup_admin(display_name: str, pin: str) -> Actor:
-    auth, df, loaded_files, extra = _auth_state()
-    if auth.get("users"):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Kurulum daha once tamamlanmis.")
-    pin = _validate_pin(pin)
-    salt = secrets.token_bytes(16)
-    actor = Actor(id=str(uuid.uuid4()), name=display_name.strip() or "Yonetici", role="admin")
-    extra["auth"] = {
-        "session_secret": secrets.token_urlsafe(48),
-        "users": [
-            {
-                "id": actor.id,
-                "name": actor.name,
-                "role": actor.role,
-                "salt": _b64(salt),
-                "pin_hash": _pin_hash(pin, salt),
-                "active": True,
-                "created_at": int(time.time()),
-            }
-        ],
-    }
-    save_state(df, loaded_files, extra)
-    return actor
+    with _AUTH_STATE_LOCK:
+        snapshot = _auth_state()
+        if snapshot.auth.get("users"):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Kurulum daha once tamamlanmis.")
+        pin = _validate_pin(pin)
+        salt = secrets.token_bytes(16)
+        actor = Actor(id=str(uuid.uuid4()), name=display_name.strip() or "Yonetici", role="admin")
+        auth = {
+            "session_secret": secrets.token_urlsafe(48),
+            "users": [
+                {
+                    "id": actor.id,
+                    "name": actor.name,
+                    "role": actor.role,
+                    "salt": _b64(salt),
+                    "pin_hash": _pin_hash(pin, salt),
+                    "active": True,
+                    "created_at": int(time.time()),
+                }
+            ],
+        }
+        _save_auth_state(snapshot, auth)
+        return actor
 
 
 def authenticate(pin: str, client_key: str = "unknown") -> Actor:
@@ -99,7 +178,7 @@ def authenticate(pin: str, client_key: str = "unknown") -> Actor:
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Cok fazla hatali deneme. Lutfen daha sonra tekrar deneyin.",
             )
-    auth, _, _, _ = _auth_state()
+    auth = _auth_state().auth
     for user in auth.get("users", []):
         if not user.get("active", True):
             continue
@@ -117,7 +196,7 @@ def authenticate(pin: str, client_key: str = "unknown") -> Actor:
 
 
 def issue_session(actor: Actor) -> str:
-    auth, _, _, _ = _auth_state()
+    auth = _auth_state().auth
     secret = str(auth.get("session_secret", ""))
     if not secret:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Oturum anahtari bulunamadi.")
@@ -135,7 +214,7 @@ def _actor_from_token(token: str | None) -> Actor | None:
     if not token or "." not in token:
         return None
     encoded, signature = token.split(".", 1)
-    auth, _, _, _ = _auth_state()
+    auth = _auth_state().auth
     secret = str(auth.get("session_secret", ""))
     if not secret:
         return None
@@ -224,7 +303,7 @@ def require_admin_access(
 
 
 def list_users() -> list[dict[str, str | bool]]:
-    auth, _, _, _ = _auth_state()
+    auth = _auth_state().auth
     return [
         {
             "id": str(user.get("id", "")),
@@ -240,39 +319,41 @@ def create_user(name: str, pin: str, role: str) -> dict[str, str | bool]:
     if role not in ROLE_LABELS:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Gecersiz rol.")
     pin = _validate_pin(pin)
-    auth, df, loaded_files, extra = _auth_state()
-    for user in auth.get("users", []):
-        try:
-            if hmac.compare_digest(_pin_hash(pin, _unb64(str(user["salt"]))), str(user.get("pin_hash", ""))):
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Bu erisim kodu zaten kullaniliyor.")
-        except HTTPException:
-            raise
-        except Exception:
-            continue
-    salt = secrets.token_bytes(16)
-    user = {
-        "id": str(uuid.uuid4()),
-        "name": name.strip() or "Kullanici",
-        "role": role,
-        "salt": _b64(salt),
-        "pin_hash": _pin_hash(pin, salt),
-        "active": True,
-        "created_at": int(time.time()),
-    }
-    auth.setdefault("users", []).append(user)
-    extra["auth"] = auth
-    save_state(df, loaded_files, extra)
-    return {"id": user["id"], "name": user["name"], "role": role, "active": True}
+    with _AUTH_STATE_LOCK:
+        snapshot = _auth_state()
+        auth = copy.deepcopy(snapshot.auth)
+        for user in auth.get("users", []):
+            try:
+                if hmac.compare_digest(_pin_hash(pin, _unb64(str(user["salt"]))), str(user.get("pin_hash", ""))):
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Bu erisim kodu zaten kullaniliyor.")
+            except HTTPException:
+                raise
+            except Exception:
+                continue
+        salt = secrets.token_bytes(16)
+        user = {
+            "id": str(uuid.uuid4()),
+            "name": name.strip() or "Kullanici",
+            "role": role,
+            "salt": _b64(salt),
+            "pin_hash": _pin_hash(pin, salt),
+            "active": True,
+            "created_at": int(time.time()),
+        }
+        auth.setdefault("users", []).append(user)
+        _save_auth_state(snapshot, auth)
+        return {"id": user["id"], "name": user["name"], "role": role, "active": True}
 
 
 def deactivate_user(user_id: str, current_actor: Actor) -> None:
     if user_id == current_actor.id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Kendi hesabinizi devre disi birakamazsiniz.")
-    auth, df, loaded_files, extra = _auth_state()
-    for user in auth.get("users", []):
-        if str(user.get("id")) == user_id:
-            user["active"] = False
-            extra["auth"] = auth
-            save_state(df, loaded_files, extra)
-            return
+    with _AUTH_STATE_LOCK:
+        snapshot = _auth_state()
+        auth = copy.deepcopy(snapshot.auth)
+        for user in auth.get("users", []):
+            if str(user.get("id")) == user_id:
+                user["active"] = False
+                _save_auth_state(snapshot, auth)
+                return
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kullanici bulunamadi.")

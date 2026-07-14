@@ -13,6 +13,7 @@ import {
   fetchPassengers,
   fetchUnmatchedPhotos,
   importMail,
+  isRetryableTransportError,
   matchPhotos,
   queueImportFile,
   retryImportJob,
@@ -23,13 +24,42 @@ import { useStore } from "@/lib/store";
 import { materializeUploadFile, purgeLegacyUploadQueue } from "@/lib/uploadQueue";
 
 type Step = "files" | "mapping" | "result";
+type DeliveryStage = "waiting" | "sending" | "retrying" | "delivered" | "failed";
+type DeliveryItem = {
+  uploadId: string;
+  filename: string;
+  stage: DeliveryStage;
+  message: string;
+};
+
+const DELIVERY_LABELS: Record<DeliveryStage, string> = {
+  waiting: "SIRADA",
+  sending: "GÖNDERİLİYOR",
+  retrying: "TEKRAR DENENİYOR",
+  delivered: "TESLİM EDİLDİ",
+  failed: "HATA",
+};
 
 const STATUS_LABELS: Record<ImportJob["status"], string> = {
+  waiting: "DOSYALAR İŞLENİYOR",
   pending: "SIRADA",
   processing: "İŞLENİYOR",
   done: "HAZIR",
   error: "HATA",
 };
+
+function importJobMessage(job: ImportJob): string {
+  const progress = typeof job.total_files === "number" && job.total_files > 0
+    ? `${job.processed_files ?? 0}/${job.total_files} dosya · `
+    : "";
+  return `${progress}${job.message || job.stage || "Sırada"}`;
+}
+
+function importJobBadge(job: ImportJob): string {
+  if (job.filename.toLowerCase().endsWith(".zip")) return "ZIP";
+  const extension = job.filename.split(".").pop()?.toUpperCase() ?? "XLS";
+  return extension.slice(0, 4);
+}
 
 const TEMPLATE_FIELDS: { excel: string; app: string; keyword: string | null }[] = [
   { excel: "NAME SURNAME", app: "Ad Soyad", keyword: "yolcu adı" },
@@ -49,14 +79,24 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
   const [queueActive, setQueueActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deliveryProgress, setDeliveryProgress] = useState<
-    { processed: number; delivered: number; failed: number; total: number } | null
+    {
+      processed: number;
+      delivered: number;
+      failed: number;
+      total: number;
+      currentFilename: string;
+      currentStage: DeliveryStage;
+    } | null
   >(null);
+  const [deliveryItems, setDeliveryItems] = useState<DeliveryItem[]>([]);
+  const [queueLoadError, setQueueLoadError] = useState("");
   const [unmatched, setUnmatched] = useState<UnmatchedPhoto[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoLog, setPhotoLog] = useState<string[]>([]);
   const doneCountRef = useRef(-1);
+  const queueRefreshBusyRef = useRef(false);
 
   // Adım değiştiğinde önceki adımdan kalan kaydırma konumu yeni adımın
   // başlığını/adım göstergesini görünür alanın dışına itebiliyordu.
@@ -71,15 +111,25 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
   }, []);
 
   const refreshQueue = useCallback(async () => {
+    // Render/PostgreSQL kısa süreli yavaşladığında önceki sorgu bitmeden yeni
+    // polling isteği açmayız. Bu hem mobilde yanlış sırada UI güncellemesini
+    // hem de aynı oturumun DB'yi üst üste isteklerle boğmasını engeller.
+    if (queueRefreshBusyRef.current) return;
+    queueRefreshBusyRef.current = true;
     try {
       const state = await fetchImportQueue();
+      setQueueLoadError("");
       setJobs(state.jobs);
-      setQueueActive(state.active);
+      setQueueActive(
+        state.active || state.jobs.some((job) => job.status === "waiting" || job.status === "pending" || job.status === "processing"),
+      );
       const doneCount = state.jobs.filter((job) => job.status === "done" || job.status === "error").length;
       if (doneCountRef.current !== -1 && doneCount !== doneCountRef.current) bump();
       doneCountRef.current = doneCount;
-    } catch {
-      // Bağlantı yoksa mevcut görünüm korunur.
+    } catch (error) {
+      setQueueLoadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      queueRefreshBusyRef.current = false;
     }
   }, [bump]);
 
@@ -96,7 +146,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
 
   useEffect(() => {
     if (!queueActive) return;
-    const timer = window.setInterval(() => void refreshQueue(), 2500);
+    const timer = window.setInterval(() => void refreshQueue(), 4000);
     return () => window.clearInterval(timer);
   }, [queueActive, refreshQueue]);
 
@@ -104,78 +154,163 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
     void refreshUnmatched();
   }, [refreshUnmatched, summary.passenger_count]);
 
-  const finishedJobs = jobs.filter((j) => j.status === "done" || j.status === "error");
+  // ZIP parent satırı child toplamlarını zaten taşır. Sonuç toplamlarında
+  // parent ve child'ları birlikte toplamak yolcu sayısını iki kez sayardı.
+  const topLevelJobs = jobs.filter((job) => !job.parent_id);
+  const finishedJobs = topLevelJobs.filter((j) => j.status === "done" || j.status === "error");
   const failedJobs = jobs.filter((j) => j.status === "error");
-  const okJobs = jobs.filter((j) => j.status === "done");
+  const okJobs = topLevelJobs.filter((j) => j.status === "done");
   const totals = okJobs.reduce(
     (acc, j) => ({ imported: acc.imported + j.imported, duplicates: acc.duplicates + j.duplicates, invalid: acc.invalid + j.invalid }),
     { imported: 0, duplicates: 0, invalid: 0 },
   );
   const combinedMessage = jobs.map((j) => j.message).join(" ").toLowerCase();
-  const canReview = jobs.length > 0 && !queueActive;
+  const canReview = topLevelJobs.length > 0 && !queueActive;
 
   async function handleExcel(event: ChangeEvent<HTMLInputElement>) {
     const input = event.target;
     const sourceFiles = Array.from(input.files ?? []);
-    input.value = "";
-    if (!sourceFiles.length) return;
+    if (!sourceFiles.length) {
+      input.value = "";
+      return;
+    }
 
     setUploading(true);
     const batchId = newId();
+    const selected = sourceFiles.map((file) => ({ file, uploadId: newId() }));
     let processed = 0;
     let delivered = 0;
     let failed = 0;
-    let replaceApplied = false;
-    const failedNames: string[] = [];
-    setDeliveryProgress({ processed, delivered, failed, total: sourceFiles.length });
+    const failedDetails: string[] = [];
+    setDeliveryItems(
+      selected.map(({ file, uploadId }) => ({
+        uploadId,
+        filename: file.name,
+        stage: "waiting",
+        message: "Gönderim sırasını bekliyor.",
+      })),
+    );
+    setDeliveryProgress({
+      processed,
+      delivered,
+      failed,
+      total: selected.length,
+      currentFilename: selected[0]?.file.name ?? "",
+      currentStage: "waiting",
+    });
+
+    const setDelivery = (uploadId: string, stage: DeliveryStage, message: string) => {
+      setDeliveryItems((current) =>
+        current.map((item) => (item.uploadId === uploadId ? { ...item, stage, message } : item)),
+      );
+    };
 
     try {
-      // 49 dosyanın tamamını önce telefona kopyalamak iPhone belleğini
-      // kilitliyordu. Her dosya tek başına okunur, hemen sunucuya teslim
-      // edilir ve sonraki dosyaya geçmeden önce bellek serbest bırakılır.
-      for (const source of sourceFiles) {
+      // File nesneleri input üzerinde tutulur; input ancak bütün sıra bittikten
+      // sonra temizlenir. Böylece iOS/iCloud dosya sağlayıcısı, ikinci dosyada
+      // geçersizleşen bir tutamaç yerine özgün File'ı doğrudan fetch'e verir.
+      for (const [uploadIndex, { file: source, uploadId }] of selected.entries()) {
+        // Batch replace niyetini her dosya taşır; backend bunu yalnız ilk
+        // başarıyla ayrıştırılan dosyada tüketir. İlk dosyanın bozuk olması
+        // sonraki sağlam dosyanın eski listeyi değiştirmesini engellemez.
+        const applyReplace = replace;
+        let finalError: unknown;
+        let result: Awaited<ReturnType<typeof queueImportFile>> | null = null;
+        let retried = false;
+        let accepted = false;
+
+        setDelivery(uploadId, "sending", "Sunucuya gönderiliyor…");
+        setDeliveryProgress({
+          processed,
+          delivered,
+          failed,
+          total: selected.length,
+          currentFilename: source.name,
+          currentStage: "sending",
+        });
+
         try {
-          const file = await materializeUploadFile(source);
-          const result = await queueImportFile(
-            file,
-            replace && !replaceApplied,
-            dupStrategy,
-            batchId,
-          );
-          if (result.jobs.length) {
-            delivered += result.jobs.length;
-            if (replace && !replaceApplied) replaceApplied = true;
-            setJobs((current) => {
-              const known = new Set(current.map((job) => job.id));
-              return [...current, ...result.jobs.filter((job) => !known.has(job.id))];
+          result = await queueImportFile(source, applyReplace, dupStrategy, batchId, uploadId, uploadIndex);
+        } catch (error) {
+          finalError = error;
+          if (isRetryableTransportError(error)) {
+            retried = true;
+            setDelivery(
+              uploadId,
+              "retrying",
+              `${error.message} · Aynı güvenli aktarım kimliğiyle bir kez daha deneniyor…`,
+            );
+            setDeliveryProgress({
+              processed,
+              delivered,
+              failed,
+              total: selected.length,
+              currentFilename: source.name,
+              currentStage: "retrying",
             });
-            if (result.active) setQueueActive(true);
-            doneCountRef.current = -1;
-          } else {
-            failed += 1;
-            failedNames.push(source.name);
+            await new Promise((resolve) => globalThis.setTimeout(resolve, 1_000));
+            try {
+              // Yanıt kaybolmuş olsa bile aynı upload_id ikinci iş oluşturmaz.
+              result = await queueImportFile(source, applyReplace, dupStrategy, batchId, uploadId, uploadIndex);
+              finalError = undefined;
+            } catch (retryError) {
+              finalError = retryError;
+            }
           }
-        } catch {
+        }
+
+        try {
+          if (!result) throw finalError ?? new Error("Sunucudan aktarım kaydı dönmedi.");
+          if (!result.jobs.length) throw new Error("Sunucu dosyayı kabul etti ancak aktarım işi kimliği döndürmedi.");
+          const acceptedResult = result;
+
+          delivered += 1;
+          accepted = true;
+          setDelivery(
+            uploadId,
+            "delivered",
+            retried ? "Güvenli yeniden denemeyle sunucuya teslim edildi." : "Sunucuya teslim edildi; arka plan kuyruğuna alındı.",
+          );
+          setJobs((current) => {
+            const known = new Set(current.map((job) => job.id));
+            return [...current, ...acceptedResult.jobs.filter((job) => !known.has(job.id))];
+          });
+          if (
+            acceptedResult.active
+            || acceptedResult.jobs.some((job) => job.status === "waiting" || job.status === "pending" || job.status === "processing")
+          ) setQueueActive(true);
+          doneCountRef.current = -1;
+        } catch (error) {
+          finalError = error;
           failed += 1;
-          failedNames.push(source.name);
+          const exactMessage = error instanceof Error ? error.message : String(error);
+          failedDetails.push(`${source.name}: ${exactMessage}`);
+          setDelivery(uploadId, "failed", exactMessage);
         } finally {
           processed += 1;
-          setDeliveryProgress({ processed, delivered, failed, total: sourceFiles.length });
+          setDeliveryProgress({
+            processed,
+            delivered,
+            failed,
+            total: selected.length,
+            currentFilename: source.name,
+            currentStage: accepted ? "delivered" : "failed",
+          });
         }
       }
 
       if (delivered) notify(`${delivered} dosya sunucuya teslim edildi`);
       if (failed) {
-        notify(
-          `${failed} dosya teslim edilemedi: ${failedNames.slice(0, 3).join(", ")}${failed > 3 ? "…" : ""}. Bu dosyaları yeniden seçin.`,
-          "error",
-        );
+        notify(`${failed} dosya teslim edilemedi · ${failedDetails[0]}`, "error");
       }
       void refreshQueue();
     } catch (error) {
       notify(error instanceof Error ? error.message : "Dosya aktarımı beklenmedik biçimde durdu.", "error");
       void refreshQueue();
     } finally {
+      // iPhone dosya tutamaçlarını yükleme boyunca canlı tutan kritik sıra:
+      // input yalnızca bütün özgün File nesneleri gönderildikten sonra sıfırlanır.
+      input.value = "";
       setDeliveryProgress(null);
       setUploading(false);
     }
@@ -295,6 +430,17 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
         </div>
       )}
 
+      {queueLoadError && (
+        <div className="ic-callout amber" role="alert">
+          <div className="ic-callout-copy">
+            <p className="ic-callout-title">Aktarım kuyruğu okunamadı</p>
+            <p className="ic-callout-detail" style={{ whiteSpace: "normal", wordBreak: "break-word" }}>
+              {queueLoadError}
+            </p>
+          </div>
+        </div>
+      )}
+
       {step === "files" && (
         <>
           <label className="ic-upload-zone">
@@ -302,7 +448,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             <p className="ic-upload-title">Toplu Liste Yükleme</p>
             <p className="ic-upload-hint">
               {deliveryProgress
-                ? `${deliveryProgress.processed}/${deliveryProgress.total} işlendi · ${deliveryProgress.delivered} teslim${deliveryProgress.failed ? ` · ${deliveryProgress.failed} hata` : ""}`
+                ? `${deliveryProgress.processed}/${deliveryProgress.total} işlendi · ${deliveryProgress.delivered} teslim · ${deliveryProgress.failed} hata · ${deliveryProgress.currentFilename}: ${DELIVERY_LABELS[deliveryProgress.currentStage]}`
                 : "Önerilen: Excel dosyalarını tek ZIP yapıp yükleyin"}
             </p>
             <p className="ic-upload-formats">ZIP (önerilen) · XLSX · XLS · XLSM · CSV · ODS</p>
@@ -318,6 +464,48 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             />
           </label>
 
+          {deliveryItems.length > 0 && (
+            <>
+              <div className="ic-section-head">
+                <p className="ic-section-title">Sunucuya Teslim Durumu</p>
+                <span style={{ color: "var(--ido-muted)", fontWeight: 500, fontSize: 10 }}>
+                  {deliveryItems.filter((item) => item.stage === "delivered").length} teslim · {deliveryItems.filter((item) => item.stage === "failed").length} hata
+                </span>
+              </div>
+              <div style={{ display: "grid", gap: 8 }} aria-live="polite">
+                {deliveryItems.map((item) => (
+                  <div className="ic-row compact" key={item.uploadId} style={{ alignItems: "flex-start" }}>
+                    <div className="ic-row-id">
+                      <span className={`ic-filetype ${item.filename.toLowerCase().endsWith(".zip") ? "" : "xls"}`}>
+                        {item.filename.toLowerCase().endsWith(".zip") ? "ZIP" : "XLS"}
+                      </span>
+                      <div className="ic-row-copy">
+                        <p className="ic-row-title">{item.filename}</p>
+                        <p
+                          className="ic-row-meta"
+                          style={{ whiteSpace: "normal", overflow: "visible", textOverflow: "clip", wordBreak: "break-word" }}
+                        >
+                          {item.message}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={`ic-pill ${
+                        item.stage === "delivered"
+                          ? "ic-pill-ok"
+                          : item.stage === "failed"
+                            ? "ic-pill-bad"
+                            : "ic-pill-info"
+                      }`}
+                    >
+                      {DELIVERY_LABELS[item.stage]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
           {jobs.length > 0 && (
             <>
               <div className="ic-section-head">
@@ -328,10 +516,12 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
                 {jobs.map((job) => (
                   <div className="ic-row compact" key={job.id}>
                     <div className="ic-row-id">
-                      <span className="ic-filetype xls">XLS</span>
+                      <span className={`ic-filetype ${job.filename.toLowerCase().endsWith(".zip") ? "" : "xls"}`}>
+                        {importJobBadge(job)}
+                      </span>
                       <div className="ic-row-copy">
                         <p className="ic-row-title">{job.filename}</p>
-                        <p className="ic-row-meta">{job.message || "Sırada"}</p>
+                        <p className="ic-row-meta">{importJobMessage(job)}</p>
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto" }}>

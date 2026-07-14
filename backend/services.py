@@ -5,8 +5,10 @@ import concurrent.futures
 import json
 import logging
 import os
+import re
 import sys
 import threading
+import time
 import uuid
 import zipfile
 from datetime import datetime
@@ -94,6 +96,11 @@ _UPDATE_FIELDS = {
     "adult_fee": "Vize Ücreti Yetişkin",
     "child_fee": "Vize Ücreti Çocuk",
 }
+
+_AUDIT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="gatevisa-audit",
+)
 
 
 def _text(value: object) -> str:
@@ -347,6 +354,8 @@ def _ensure_import_batch(
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "status": "active",
         "mode": mode,
+        "replace_requested": mode == "Değiştir",
+        "replace_consumed": False,
         "files": [],
         "rows": 0,
         "before_passengers": safe.to_dict(orient="records"),
@@ -386,11 +395,20 @@ def import_gate_visa_files(
     replace: bool = False,
     dup_strategy: str = "add",
     batch_id: str = "",
+    job_id: str = "",
 ) -> tuple[int, list[str], list[str], int, str, int, int]:
     # Ayrıştırma (yavaş, dosya içeriğine bağlı) kilit DIŞINDA çalışır; böylece
     # bozuk/büyük tek bir dosya tüm uygulamanın yazma işlemlerini kilitlemez.
     imported_df, loaded_names, warnings = _parse_import_files_with_timeout(files)
-    return _merge_and_save_import(imported_df, loaded_names, warnings, replace, dup_strategy, batch_id)
+    return _merge_and_save_import(
+        imported_df,
+        loaded_names,
+        warnings,
+        replace,
+        dup_strategy,
+        batch_id,
+        job_id,
+    )
 
 
 @locked_mutation
@@ -401,11 +419,34 @@ def _merge_and_save_import(
     replace: bool = False,
     dup_strategy: str = "add",
     batch_id: str = "",
+    job_id: str = "",
 ) -> tuple[int, list[str], list[str], int, str, int, int]:
     current_df, current_loaded, extra = load_state()
     batch_id = batch_id.strip() or str(uuid.uuid4())
     mode = "Değiştir" if (replace or current_df.empty) else f"Ekle ({dup_strategy})"
     batch = _ensure_import_batch(extra, batch_id, current_df, current_loaded, mode)
+    prior_results = dict(batch.get("job_results", {}) or {})
+    if job_id and job_id in prior_results:
+        prior = dict(prior_results[job_id] or {})
+        return (
+            int(prior.get("imported", 0) or 0),
+            list(prior.get("warnings", []) or []),
+            list(current_loaded),
+            len(current_df),
+            batch_id,
+            int(prior.get("duplicates", 0) or 0),
+            int(prior.get("invalid", 0) or 0),
+        )
+    if replace:
+        batch["replace_requested"] = True
+    # `replace` artık "bu batch listeyi değiştirmek istiyor" niyetidir.
+    # Ayrıştırma bu fonksiyondan önce tamamlandığı için bozuk dosya buraya hiç
+    # ulaşmaz ve hakkı tüketmez. Kilit altında ilk başarılı dosya tüketir;
+    # aynı batch'in sonraki sağlam dosyaları normal ekleme olarak devam eder.
+    effective_replace = bool(batch.get("replace_requested")) and not bool(batch.get("replace_consumed"))
+    if effective_replace:
+        batch["replace_consumed"] = True
+        batch["mode"] = "Değiştir"
     existing_keys = set(passenger_identity_keys(current_df)) - {""}
     imported_keys = passenger_identity_keys(imported_df)
     seen_for_count = set(existing_keys)
@@ -418,7 +459,7 @@ def _merge_and_save_import(
     invalid_count = _critical_import_count(imported_df)
     accepted_count = len(imported_df)
 
-    if replace or current_df.empty:
+    if effective_replace or current_df.empty:
         next_df = imported_df
         next_loaded = loaded_names
     elif dup_strategy == "skip":
@@ -461,6 +502,14 @@ def _merge_and_save_import(
 
     batch["files"] = list(dict.fromkeys([*batch.get("files", []), *loaded_names]))
     batch["rows"] = int(batch.get("rows", 0)) + int(accepted_count)
+    if job_id:
+        prior_results[job_id] = {
+            "imported": int(accepted_count),
+            "duplicates": int(duplicate_count),
+            "invalid": int(invalid_count),
+            "warnings": list(warnings[:10]),
+        }
+        batch["job_results"] = prior_results
     _update_import_history(extra, batch)
 
     saved = save_state(next_df, next_loaded, extra)
@@ -497,28 +546,66 @@ def undo_import(batch_id: str = "") -> tuple[bool, str, int]:
     return True, "Son toplu aktarim geri alindi.", len(saved)
 
 
-@locked_mutation
 def record_audit(actor_name: str, role: str, action: str, path: str) -> None:
-    df, loaded_files, extra = load_state()
-    events = list(extra.get("audit_log", []))
-    events.insert(
-        0,
-        {
-            "id": str(uuid.uuid4()),
-            "time": datetime.now().isoformat(timespec="seconds"),
-            "actor": actor_name,
-            "role": role,
-            "action": action,
-            "path": path,
-        },
-    )
-    extra["audit_log"] = events[:MAX_AUDIT_EVENTS]
-    save_state(df, loaded_files, extra)
+    """Audit'i yolcu blob'undan ayrı yazar; aktarım kuyruğuyla kilit yarışmaz."""
+    event_id = str(uuid.uuid4())
+    occurred_at = datetime.now().isoformat(timespec="seconds")
+    if db.enabled() and hasattr(db, "insert_audit_event"):
+        db.insert_audit_event(
+            actor_name,
+            role,
+            action,
+            path,
+            event_id=event_id,
+            occurred_at=occurred_at,
+        )
+        return
+    audit_path = os.path.join(os.path.dirname(persistence.STORE_PATH), "audit.json")
+    with _LOCAL_QUEUE_LOCK:
+        try:
+            with open(audit_path, "r", encoding="utf-8") as handle:
+                events = list(json.load(handle))
+        except (FileNotFoundError, ValueError, OSError):
+            events = []
+        events.insert(
+            0,
+            {
+                "id": event_id,
+                "time": occurred_at,
+                "actor": actor_name,
+                "role": role,
+                "action": action,
+                "path": path,
+            },
+        )
+        os.makedirs(os.path.dirname(audit_path), exist_ok=True)
+        tmp = audit_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(events[:MAX_AUDIT_EVENTS], handle, ensure_ascii=False)
+        os.replace(tmp, audit_path)
 
 
 def get_audit(limit: int = 100) -> list[dict]:
-    _, _, extra = load_state()
-    return list(extra.get("audit_log", []))[: max(1, min(limit, 500))]
+    resolved = max(1, min(limit, 500))
+    if db.enabled() and hasattr(db, "list_audit_events"):
+        return list(db.list_audit_events(resolved) or [])
+    audit_path = os.path.join(os.path.dirname(persistence.STORE_PATH), "audit.json")
+    try:
+        with open(audit_path, "r", encoding="utf-8") as handle:
+            return list(json.load(handle))[:resolved]
+    except (FileNotFoundError, ValueError, OSError):
+        # Bir sürüm boyunca eski audit kayıtlarını okunabilir tut; yeni kayıtlar
+        # artık yolcu state'ine yazılmaz.
+        _, _, extra = load_state()
+        return list(extra.get("audit_log", []))[:resolved]
+
+
+def record_audit_async(actor_name: str, role: str, action: str, path: str) -> None:
+    """Sınırlı executor, yoğun mutasyonlarda sınırsız daemon thread oluşmasını önler."""
+    try:
+        _AUDIT_EXECUTOR.submit(record_audit, actor_name, role, action, path)
+    except RuntimeError:
+        logger.warning("Audit executor kapalı; olay yazılamadı path=%s", path)
 
 
 @locked_mutation
@@ -1127,280 +1214,830 @@ def expand_import_upload(filename: str, data: bytes) -> list[tuple[str, bytes]]:
     return expanded
 
 
-# ------------------------------------------------- arka plan aktarım kuyruğu
-# Dosyalar tek istekte sunucuya teslim edilir, ham baytları kalıcı depoya
-# yazılır ve bir işleyici iş parçacığı sırayla işler. Kullanıcı sekmeden
-# çıksa, telefon kilitlense, hatta konteyner yeniden başlasa bile (DB
-# modunda) kalan işler kaldığı yerden tamamlanır.
+# ------------------------------------------------- dayanıklı arka plan aktarım kuyruğu
+# İstek yolu yalnızca TOP-LEVEL yüklemeyi kalıcı kuyruğa yazar. ZIP açma,
+# Excel ayrıştırma ve yolcu durumunu güncelleme yanıt döndükten sonra tek bir
+# işleyicide yapılır. Kuyruk yolcu JSON blob'undan tamamen ayrıdır; bu sayede
+# her dosya tesliminde binlerce yolcu yeniden okunup/yazılmaz.
 
-MAX_IMPORT_JOBS = 40
-
+MAX_IMPORT_JOBS = 5000
+# Parser timeout'u 120 sn; büyük passenger state merge/yedek gecikmesi için
+# geniş pay bırakılır. Üretim Dockerfile tek uvicorn worker çalıştırır.
+IMPORT_JOB_LEASE_SECONDS = 30 * 60
+_ACTIVE_JOB_STATUSES = {"pending", "processing", "waiting"}
 _IMPORT_WORKER_LOCK = threading.Lock()
+_LOCAL_QUEUE_LOCK = threading.RLock()
 _import_worker_alive = False
+_IMPORT_WORKER_ID = f"{os.getpid()}-{uuid.uuid4()}"
+_SAFE_UPLOAD_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 
-def _job_ref(job_id: str) -> str:
-    return f"import-job://{job_id}"
+def _queue_uses_database() -> bool:
+    """Configured DB geçici kapalıyken sessiz yerel kuyruğa düşmeyi engeller."""
+    available = db.enabled()
+    configured = db.database_configured() if hasattr(db, "database_configured") else bool(
+        os.environ.get("DATABASE_URL", "").strip()
+    )
+    if not available and configured:
+        raise StorePersistenceError(
+            "Kalıcı veritabanına şu anda ulaşılamıyor; dosya yerel/geçici kuyruğa "
+            "alınmadı. Lütfen bağlantı düzeldikten sonra yeniden deneyin."
+        )
+    return available
+
+
+def _local_queue_dir() -> str:
+    return os.path.join(os.path.dirname(persistence.STORE_PATH), "import-queue")
+
+
+def _local_jobs_path() -> str:
+    return os.path.join(_local_queue_dir(), "jobs.json")
 
 
 def _local_job_path(job_id: str) -> str:
-    return os.path.join(os.path.dirname(persistence.STORE_PATH), "import-queue", f"{job_id}.bin")
+    safe_id = (
+        job_id
+        if re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", job_id)
+        else str(uuid.uuid5(uuid.NAMESPACE_URL, f"excelbase-local-payload:{job_id}"))
+    )
+    return os.path.join(_local_queue_dir(), f"{safe_id}.bin")
 
 
-def _store_job_bytes(job_id: str, filename: str, data: bytes) -> bool:
-    if db.enabled():
-        return db.save_document(_job_ref(job_id), filename, "application/octet-stream", data)
+def _read_local_jobs() -> list[dict]:
     try:
-        path = _local_job_path(job_id)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as handle:
-            handle.write(data)
-        return True
+        with open(_local_jobs_path(), "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return list(payload) if isinstance(payload, list) else []
+    except FileNotFoundError:
+        return []
     except Exception:
-        logger.exception("Aktarım dosyası yerel kuyruğa yazılamadı: %s", filename)
-        return False
+        logger.exception("Yerel aktarım kuyruğu okunamadı")
+        return []
 
 
-def _load_job_bytes(job_id: str) -> bytes | None:
-    if db.enabled():
-        data = db.load_document(_job_ref(job_id))
-        if data:
-            return data
+def _write_local_jobs(jobs: list[dict]) -> None:
+    os.makedirs(_local_queue_dir(), exist_ok=True)
+    path = _local_jobs_path()
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(jobs, handle, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def _created_at() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def _local_enqueue_job(
+    filename: str,
+    payload: bytes,
+    *,
+    job_id: str,
+    parent_id: str = "",
+    kind: str = "file",
+    mime: str = "",
+    batch_id: str = "",
+    ordinal: int = 0,
+    replace: bool = False,
+    dup_strategy: str = "skip",
+    message: str = "Sırada — sunucu arka planda işleyecek.",
+) -> dict:
+    with _LOCAL_QUEUE_LOCK:
+        jobs = _read_local_jobs()
+        existing = next((j for j in jobs if str(j.get("id")) == job_id), None)
+        if existing is not None:
+            return dict(existing)
+        if payload:
+            os.makedirs(_local_queue_dir(), exist_ok=True)
+            path = _local_job_path(job_id)
+            tmp = path + ".tmp"
+            with open(tmp, "wb") as handle:
+                handle.write(payload)
+            os.replace(tmp, path)
+        job = {
+            "id": job_id,
+            "parent_id": parent_id,
+            "kind": kind,
+            "filename": filename,
+            "mime": mime,
+            "status": "pending",
+            "batch_id": batch_id,
+            "ordinal": ordinal,
+            "replace": bool(replace),
+            "dup_strategy": dup_strategy,
+            "imported": 0,
+            "duplicates": 0,
+            "invalid": 0,
+            "message": message,
+            "created_at": _created_at(),
+            "finished_at": "",
+            "attempts": 0,
+        }
+        jobs.append(job)
+        _write_local_jobs(jobs)
+        return dict(job)
+
+
+def _queue_enqueue_job(filename: str, payload: bytes, **options) -> dict:
+    if _queue_uses_database():
+        row = db.enqueue_import_job(filename, payload, **options)
+        if row is None:
+            raise StorePersistenceError(
+                f"{filename}: dosya kalıcı aktarım kuyruğuna kaydedilemedi. "
+                "Veritabanı bağlantısını kontrol edip yeniden deneyin."
+            )
+        return dict(row)
+    return _local_enqueue_job(filename, payload, **options)
+
+
+def _queue_list(parent_id: str | None = None) -> list[dict]:
+    if _queue_uses_database():
+        rows = db.list_import_jobs(
+            limit=None if parent_id is not None else MAX_IMPORT_JOBS,
+            parent_id=parent_id,
+        )
+        if rows is None:
+            raise StorePersistenceError("Aktarım kuyruğu veritabanından okunamadı; lütfen yeniden deneyin.")
+        jobs = list(rows)
+        if parent_id is None:
+            # Çok büyük arşivlerde child'lar sorgu limitini doldursa bile parent
+            # ilerleme kartı kaybolmasın.
+            known = {str(job.get("id")) for job in jobs}
+            missing_parents = {
+                str(job.get("parent_id")) for job in jobs
+                if job.get("parent_id") and str(job.get("parent_id")) not in known
+            }
+            for missing_id in missing_parents:
+                parent = db.get_import_job(missing_id)
+                if parent:
+                    jobs.append(dict(parent))
+        return jobs
+    with _LOCAL_QUEUE_LOCK:
+        jobs = _read_local_jobs()
+        if parent_id is not None:
+            jobs = [j for j in jobs if str(j.get("parent_id", "")) == parent_id]
+            return [dict(j) for j in jobs]
+        return [dict(j) for j in jobs[-MAX_IMPORT_JOBS:]]
+
+
+def _queue_get(job_id: str, include_payload: bool = False) -> dict | None:
+    if _queue_uses_database():
+        row = db.get_import_job(job_id, include_payload=include_payload)
+        return dict(row) if row else None
+    with _LOCAL_QUEUE_LOCK:
+        job = next((j for j in _read_local_jobs() if str(j.get("id")) == job_id), None)
+        if job is None:
+            return None
+        result = dict(job)
+        if include_payload:
+            result["payload"] = _queue_load_payload(job_id)
+        return result
+
+
+def _queue_load_payload(job_id: str) -> bytes | None:
+    if _queue_uses_database():
+        return db.load_import_job_payload(job_id)
     try:
-        path = _local_job_path(job_id)
-        if os.path.exists(path):
-            with open(path, "rb") as handle:
-                return handle.read()
-    except Exception:
-        logger.exception("Aktarım dosyası yerel kuyruktan okunamadı: %s", job_id)
-    return None
+        with open(_local_job_path(job_id), "rb") as handle:
+            return handle.read()
+    except (FileNotFoundError, OSError):
+        return None
 
 
-def _delete_job_bytes(job_id: str) -> None:
-    if db.enabled():
-        db.delete_document(_job_ref(job_id))
+def _queue_delete_payload(job_id: str) -> None:
+    if _queue_uses_database():
+        db.delete_import_job_payload(job_id)
+        return
     try:
-        path = _local_job_path(job_id)
-        if os.path.exists(path):
-            os.remove(path)
-    except Exception:
+        os.remove(_local_job_path(job_id))
+    except FileNotFoundError:
         pass
 
 
-def _public_job(job: dict) -> dict:
-    return {
-        "id": str(job.get("id", "")),
-        "filename": str(job.get("filename", "")),
-        "status": str(job.get("status", "pending")),
-        "imported": int(job.get("imported", 0) or 0),
-        "duplicates": int(job.get("duplicates", 0) or 0),
-        "invalid": int(job.get("invalid", 0) or 0),
-        "message": str(job.get("message", "")),
-        "created_at": str(job.get("created_at", "")),
-        "finished_at": str(job.get("finished_at", "")),
-    }
+def _queue_finish(
+    job_id: str,
+    status: str,
+    *,
+    message: str = "",
+    imported: int = 0,
+    duplicates: int = 0,
+    invalid: int = 0,
+    delete_payload: bool = False,
+) -> bool:
+    if _queue_uses_database():
+        return bool(
+            db.finish_import_job(
+                job_id,
+                status,
+                message=message,
+                imported=imported,
+                duplicates=duplicates,
+                invalid=invalid,
+                worker_id=_IMPORT_WORKER_ID,
+                delete_payload=delete_payload,
+            )
+        )
+    with _LOCAL_QUEUE_LOCK:
+        jobs = _read_local_jobs()
+        found = False
+        for job in jobs:
+            if str(job.get("id")) != job_id:
+                continue
+            job.update(
+                status=status,
+                message=message,
+                imported=int(imported),
+                duplicates=int(duplicates),
+                invalid=int(invalid),
+            )
+            if status in {"done", "error", "cancelled"}:
+                job["finished_at"] = _created_at()
+            found = True
+            break
+        if found:
+            _write_local_jobs(jobs)
+        if delete_payload:
+            _queue_delete_payload(job_id)
+        return found
 
 
-def _trim_jobs(jobs: list[dict]) -> list[dict]:
-    active = [j for j in jobs if j.get("status") in ("pending", "processing")]
-    finished = [j for j in jobs if j.get("status") not in ("pending", "processing")]
-    overflow = len(active) + len(finished) - MAX_IMPORT_JOBS
-    if overflow > 0:
-        for dropped in finished[:overflow]:
-            _delete_job_bytes(str(dropped.get("id", "")))
-        dropped_ids = {id(j) for j in finished[:overflow]}
-        jobs = [j for j in jobs if id(j) not in dropped_ids]
-    return jobs
+def _queue_claim() -> dict | None:
+    if _queue_uses_database():
+        row = db.claim_next_import_job(_IMPORT_WORKER_ID, lease_seconds=IMPORT_JOB_LEASE_SECONDS)
+        return dict(row) if row else None
+    with _LOCAL_QUEUE_LOCK:
+        jobs = _read_local_jobs()
+        for job in jobs:
+            if job.get("status") != "pending":
+                continue
+            job["status"] = "processing"
+            job["message"] = "İşleniyor…"
+            job["attempts"] = int(job.get("attempts", 0) or 0) + 1
+            job["worker_id"] = _IMPORT_WORKER_ID
+            _write_local_jobs(jobs)
+            result = dict(job)
+            result["payload"] = _queue_load_payload(str(job.get("id", "")))
+            return result
+    return None
 
 
-@locked_mutation
+def _queue_has_pending() -> bool:
+    if _queue_uses_database():
+        pending = db.has_pending_import_jobs()
+        if pending is None:
+            raise StorePersistenceError("Aktarım kuyruğu durumu veritabanından okunamadı.")
+        return bool(pending)
+    return any(j.get("status") == "pending" for j in _queue_list())
+
+
+def _queue_recover(force: bool = False) -> int:
+    if _queue_uses_database():
+        return int(db.recover_expired_import_jobs(force=force) or 0)
+    with _LOCAL_QUEUE_LOCK:
+        jobs = _read_local_jobs()
+        recovered = 0
+        for job in jobs:
+            if job.get("status") == "processing":
+                job["status"] = "pending"
+                job["message"] = "Sunucu yeniden başladı; iş kuyruğa iade edildi."
+                job["worker_id"] = ""
+                recovered += 1
+        if recovered:
+            _write_local_jobs(jobs)
+        return recovered
+
+
+def _queue_retry(job_id: str) -> bool:
+    if _queue_uses_database():
+        return bool(db.retry_import_job(job_id))
+    with _LOCAL_QUEUE_LOCK:
+        jobs = _read_local_jobs()
+        for job in jobs:
+            if str(job.get("id")) == job_id and job.get("status") == "error":
+                if _queue_load_payload(job_id) is None:
+                    return False
+                job.update(status="pending", message="Yeniden sırada.", finished_at="")
+                _write_local_jobs(jobs)
+                return True
+    return False
+
+
+def _queue_delete(job_id: str) -> bool:
+    if _queue_uses_database():
+        target = db.get_import_job(job_id)
+        if target and target.get("status") in {"processing", "waiting"}:
+            return False
+        return bool(db.delete_import_job(job_id, include_children=True))
+    with _LOCAL_QUEUE_LOCK:
+        jobs = _read_local_jobs()
+        target = next((j for j in jobs if str(j.get("id")) == job_id), None)
+        if target is None or target.get("status") in {"processing", "waiting"}:
+            return False
+        ids = {
+            str(j.get("id"))
+            for j in jobs
+            if str(j.get("id")) == job_id or str(j.get("parent_id", "")) == job_id
+        }
+        if any(j.get("status") == "processing" and str(j.get("id")) in ids for j in jobs):
+            return False
+        _write_local_jobs([j for j in jobs if str(j.get("id")) not in ids])
+        for item_id in ids:
+            _queue_delete_payload(item_id)
+        return True
+
+
+def _cleanup_local_import_jobs(max_finished: int = 200) -> int:
+    """Yerel fallback'te eski terminal parentları ve orphan payloadları siler."""
+    with _LOCAL_QUEUE_LOCK:
+        jobs = _read_local_jobs()
+        terminal_parents = [
+            job for job in jobs
+            if not job.get("parent_id") and job.get("status") not in _ACTIVE_JOB_STATUSES
+        ]
+        terminal_parents.sort(key=lambda item: str(item.get("finished_at") or item.get("created_at") or ""), reverse=True)
+        dropped_parent_ids = {
+            str(job.get("id")) for job in terminal_parents[max(0, int(max_finished)):]
+        }
+        live_parent_ids = {
+            str(job.get("id")) for job in jobs if not job.get("parent_id")
+        }
+        dropped_ids = {
+            str(job.get("id"))
+            for job in jobs
+            if str(job.get("id")) in dropped_parent_ids
+            or str(job.get("parent_id", "")) in dropped_parent_ids
+            or (job.get("parent_id") and str(job.get("parent_id")) not in live_parent_ids)
+        }
+        if dropped_ids:
+            _write_local_jobs([job for job in jobs if str(job.get("id")) not in dropped_ids])
+        for item_id in dropped_ids:
+            _queue_delete_payload(item_id)
+
+        live_payload_names = {
+            os.path.basename(_local_job_path(str(job.get("id"))))
+            for job in jobs if str(job.get("id")) not in dropped_ids
+        }
+        try:
+            for name in os.listdir(_local_queue_dir()):
+                if name.endswith(".bin") and name not in live_payload_names:
+                    os.remove(os.path.join(_local_queue_dir(), name))
+        except OSError:
+            pass
+        return len(dropped_ids)
+
+
+def _job_stage(job: dict) -> str:
+    status = str(job.get("status", "pending"))
+    if status == "pending":
+        return "queued"
+    if status == "waiting":
+        return "processing_files"
+    if status == "processing":
+        return "expanding_zip" if job.get("kind") == "upload" and str(job.get("filename", "")).lower().endswith(".zip") else "parsing_file"
+    return status
+
+
+def _public_jobs(jobs: list[dict]) -> list[dict]:
+    children_by_parent: dict[str, list[dict]] = {}
+    for item in jobs:
+        parent = str(item.get("parent_id", ""))
+        if parent:
+            children_by_parent.setdefault(parent, []).append(item)
+    result: list[dict] = []
+    for job in jobs:
+        children = children_by_parent.get(str(job.get("id", "")), [])
+        is_parent = str(job.get("kind", "file")) == "upload"
+        processed = sum(j.get("status") in {"done", "error", "cancelled"} for j in children)
+        result.append(
+            {
+                "id": str(job.get("id", "")),
+                "parent_id": str(job.get("parent_id", "") or ""),
+                "kind": str(job.get("kind", "file") or "file"),
+                "filename": str(job.get("filename", "")),
+                "status": str(job.get("status", "pending")),
+                "stage": _job_stage(job),
+                "imported": int(job.get("imported", 0) or 0),
+                "duplicates": int(job.get("duplicates", 0) or 0),
+                "invalid": int(job.get("invalid", 0) or 0),
+                "total_files": (
+                    int(job.get("total_items", 0) or 0) or len(children)
+                ) if is_parent else 0,
+                "processed_files": (
+                    int(job.get("processed_items", 0) or 0) or int(processed)
+                ) if is_parent else 0,
+                "message": str(job.get("message", "")),
+                "created_at": str(job.get("created_at", "")),
+                "finished_at": str(job.get("finished_at", "") or ""),
+            }
+        )
+    return result
+
+
+def _resolved_upload_job_id(upload_id: str, index: int, total: int, filename: str) -> str:
+    upload_id = upload_id.strip()
+    if upload_id and not _SAFE_UPLOAD_ID.fullmatch(upload_id):
+        raise ValueError("Geçersiz upload_id; en fazla 128 harf, rakam, nokta, tire veya alt çizgi kullanın.")
+    if not upload_id:
+        return str(uuid.uuid4())
+    if total == 1:
+        return upload_id
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"excelbase-upload:{upload_id}:{index}:{filename}"))
+
+
+def enqueue_import_uploads(
+    files: list[tuple[str, bytes, str]],
+    *,
+    replace: bool = False,
+    dup_strategy: str = "skip",
+    batch_id: str = "",
+    upload_id: str = "",
+    upload_index: int = 0,
+) -> tuple[list[dict], str]:
+    """Top-level dosyaları genişletmeden, idempotent biçimde kalıcılaştırır."""
+    batch_id = batch_id.strip() or str(uuid.uuid4())
+    total = len(files)
+    job_ids = [
+        _resolved_upload_job_id(upload_id, index, total, filename)
+        for index, (filename, _, _) in enumerate(files)
+    ]
+    if _queue_uses_database():
+        rows = db.enqueue_import_jobs(
+            [(filename, data) for filename, data, _ in files],
+            job_ids=job_ids,
+            parent_id=None,
+            kind="upload",
+            mime="application/octet-stream",
+            batch_id=batch_id,
+            replace=replace,
+            dup_strategy=dup_strategy,
+            start_ordinal=max(0, int(upload_index)),
+            message="Sunucuya teslim edildi; arka planda işlenecek.",
+        )
+        if rows is None:
+            raise StorePersistenceError(
+                "Dosyalar kalıcı aktarım kuyruğuna kaydedilemedi. "
+                "Veritabanı bağlantısını kontrol edip yeniden deneyin."
+            )
+        created = [dict(row) for row in rows]
+        if created and upload_id:
+            batch_id = str(created[0].get("batch_id") or batch_id)
+        return _public_jobs(created), batch_id
+
+    created: list[dict] = []
+    for index, (filename, data, mime) in enumerate(files):
+        created.append(
+            _queue_enqueue_job(
+                filename,
+                data,
+                job_id=job_ids[index],
+                parent_id=None,
+                kind="upload",
+                mime=mime,
+                batch_id=batch_id,
+                ordinal=max(0, int(upload_index)) + index,
+                replace=bool(replace),
+                dup_strategy=dup_strategy,
+                message="Sunucuya teslim edildi; arka planda işlenecek.",
+            )
+        )
+    if created and upload_id:
+        batch_id = str(created[0].get("batch_id") or batch_id)
+    return _public_jobs(created), batch_id
+
+
+# Geriye dönük servis adı: yeni kod top-level semantiğiyle kullanır.
 def enqueue_import_files(
     files: list[tuple[str, bytes]],
     replace: bool = False,
     dup_strategy: str = "skip",
     batch_id: str = "",
+    upload_id: str = "",
+    upload_index: int = 0,
 ) -> tuple[list[dict], str]:
-    df, loaded_files, extra = load_state()
-    jobs = list(extra.get("import_jobs", []))
-    batch_id = batch_id.strip() or str(uuid.uuid4())
-    created: list[dict] = []
-    first = True
-    for filename, data in files:
-        job_id = str(uuid.uuid4())
-        if not _store_job_bytes(job_id, filename, data):
-            raise StorePersistenceError(
-                f"{filename}: dosya sunucu kuyruğuna kaydedilemedi. "
-                "Lütfen yeniden deneyin; sorun sürerse veritabanı bağlantısını kontrol edin."
-            )
-        job = {
-            "id": job_id,
-            "filename": filename,
-            "status": "pending",
-            "replace": bool(replace and first),
-            "dup_strategy": dup_strategy,
-            "batch_id": batch_id,
-            "imported": 0,
-            "duplicates": 0,
-            "invalid": 0,
-            "message": "Sırada — sunucu arka planda işleyecek.",
-            "created_at": datetime.now().isoformat(timespec="seconds"),
-            "finished_at": "",
-        }
-        first = False
-        jobs.append(job)
-        created.append(job)
-    extra["import_jobs"] = _trim_jobs(jobs)
-    save_state(df, loaded_files, extra)
-    return [_public_job(j) for j in created], batch_id
+    return enqueue_import_uploads(
+        [(name, data, "application/octet-stream") for name, data in files],
+        replace=replace,
+        dup_strategy=dup_strategy,
+        batch_id=batch_id,
+        upload_id=upload_id,
+        upload_index=upload_index,
+    )
 
 
 def get_import_jobs() -> tuple[list[dict], bool]:
-    _, _, extra = load_state()
-    jobs = [_public_job(j) for j in extra.get("import_jobs", [])]
-    active = any(j["status"] in ("pending", "processing") for j in jobs)
+    jobs = _public_jobs(_queue_list())
+    active = any(j["status"] in _ACTIVE_JOB_STATUSES for j in jobs)
+    if _queue_uses_database() and hasattr(db, "has_active_import_jobs"):
+        db_active = db.has_active_import_jobs()
+        if db_active is None:
+            raise StorePersistenceError("Aktarım kuyruğu durumu veritabanından okunamadı.")
+        active = bool(db_active)
+    elif not active:
+        active = _queue_has_pending()
     return jobs, active
 
 
-@locked_mutation
 def retry_import_job(job_id: str) -> bool:
-    df, loaded_files, extra = load_state()
-    jobs = list(extra.get("import_jobs", []))
-    for job in jobs:
-        if str(job.get("id")) == job_id and job.get("status") == "error":
-            job["status"] = "pending"
-            job["message"] = "Yeniden sırada."
-            job["finished_at"] = ""
-            extra["import_jobs"] = jobs
-            save_state(df, loaded_files, extra)
-            return True
-    return False
+    return _queue_retry(job_id)
 
 
-@locked_mutation
 def delete_import_job(job_id: str) -> bool:
-    df, loaded_files, extra = load_state()
-    jobs = list(extra.get("import_jobs", []))
-    for job in jobs:
-        if str(job.get("id")) == job_id:
-            if job.get("status") == "processing":
-                return False
-            remaining = [j for j in jobs if str(j.get("id")) != job_id]
-            extra["import_jobs"] = remaining
-            save_state(df, loaded_files, extra)
-            _delete_job_bytes(job_id)
-            return True
-    return False
+    return _queue_delete(job_id)
 
 
-@locked_mutation
-def recover_stale_import_jobs() -> int:
-    """Konteyner işleme sırasında öldüyse yarım kalan işleri kuyruğa iade eder."""
-    df, loaded_files, extra = load_state()
-    jobs = list(extra.get("import_jobs", []))
-    recovered = 0
-    for job in jobs:
-        if job.get("status") == "processing":
-            job["status"] = "pending"
-            job["message"] = "Sunucu yeniden başladı; iş kuyruğa iade edildi."
-            recovered += 1
-    if recovered:
-        extra["import_jobs"] = jobs
-        save_state(df, loaded_files, extra)
-    return recovered
+def recover_stale_import_jobs(force: bool = False) -> int:
+    """Runtime'da süresi dolmuş, startup'ta önceki process'e ait lease'leri geri alır."""
+    return _queue_recover(force=force)
 
 
-@locked_mutation
-def _claim_next_import_job() -> dict | None:
-    df, loaded_files, extra = load_state()
-    jobs = list(extra.get("import_jobs", []))
-    for job in jobs:
-        if job.get("status") == "pending":
-            job["status"] = "processing"
-            job["message"] = "İşleniyor…"
-            extra["import_jobs"] = jobs
-            save_state(df, loaded_files, extra)
-            return dict(job)
-    return None
+def _child_job_id(parent_id: str, ordinal: int, raw_name: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"excelbase-child:{parent_id}:{ordinal}:{raw_name}"))
 
 
-def _has_pending_import_jobs() -> bool:
-    _, _, extra = load_state()
-    return any(j.get("status") == "pending" for j in extra.get("import_jobs", []))
+def _enqueue_archive_child(
+    parent: dict,
+    *,
+    ordinal: int,
+    raw_name: str,
+    filename: str,
+    payload: bytes,
+    replace: bool,
+) -> dict:
+    return _queue_enqueue_job(
+        filename,
+        payload,
+        job_id=_child_job_id(str(parent.get("id", "")), ordinal, raw_name),
+        parent_id=str(parent.get("id", "")),
+        kind="file",
+        mime="application/octet-stream",
+        batch_id=str(parent.get("batch_id", "")),
+        ordinal=ordinal,
+        # Her child batch'in replace niyetini taşır; gerçek tüketim yalnız
+        # başarılı parse sonrasında `_merge_and_save_import` kilidinde olur.
+        replace=bool(parent.get("replace")),
+        dup_strategy=str(parent.get("dup_strategy") or "skip"),
+        message="ZIP içinden çıkarıldı; sırada.",
+    )
 
 
-@locked_mutation
-def _finish_import_job(
-    job_id: str,
-    status: str,
-    message: str = "",
-    imported: int = 0,
-    duplicates: int = 0,
-    invalid: int = 0,
-) -> None:
-    df, loaded_files, extra = load_state()
-    jobs = list(extra.get("import_jobs", []))
-    for job in jobs:
-        if str(job.get("id")) == job_id:
-            job.update(
-                status=status,
-                message=message,
-                imported=imported,
-                duplicates=duplicates,
-                invalid=invalid,
-                finished_at=datetime.now().isoformat(timespec="seconds"),
-            )
-    extra["import_jobs"] = jobs
-    save_state(df, loaded_files, extra)
-
-
-def _process_import_job(job: dict) -> None:
-    job_id = str(job.get("id", ""))
-    data = _load_job_bytes(job_id)
-    if not data:
-        _finish_import_job(job_id, "error", message="Dosya içeriği sunucuda bulunamadı; dosyayı yeniden seçin.")
+def _refresh_parent(parent_id: str) -> None:
+    # PostgreSQL/SQLite durable backend child finish transaction'ında sınırsız
+    # SQL aggregate ile parentı atomik günceller. Buradaki Python aggregate
+    # yalnız yerel fallback içindir.
+    if _queue_uses_database():
         return
+    parent = _queue_get(parent_id)
+    if parent is None:
+        return
+    children = _queue_list(parent_id=parent_id)
+    if not children:
+        return
+    terminal = [j for j in children if j.get("status") in {"done", "error", "cancelled"}]
+    imported = sum(int(j.get("imported", 0) or 0) for j in children)
+    duplicates = sum(int(j.get("duplicates", 0) or 0) for j in children)
+    invalid = sum(int(j.get("invalid", 0) or 0) for j in children)
+    if len(terminal) < len(children):
+        _queue_finish(
+            parent_id,
+            "waiting",
+            message=f"{len(terminal)}/{len(children)} dosya işlendi.",
+            imported=imported,
+            duplicates=duplicates,
+            invalid=invalid,
+        )
+        return
+    successes = sum(j.get("status") == "done" for j in children)
+    errors = sum(j.get("status") == "error" for j in children)
+    status = "done" if successes else "error"
+    _queue_finish(
+        parent_id,
+        status,
+        message=f"{successes}/{len(children)} dosya işlendi" + (f" · {errors} hata." if errors else "."),
+        imported=imported,
+        duplicates=duplicates,
+        invalid=invalid,
+        delete_payload=True,
+    )
+
+
+def _mark_bad_archive_child(
+    parent: dict,
+    ordinal: int,
+    raw_name: str,
+    filename: str,
+    message: str,
+    replace: bool,
+) -> None:
+    child = _enqueue_archive_child(
+        parent,
+        ordinal=ordinal,
+        raw_name=raw_name,
+        filename=filename,
+        payload=b"",
+        replace=replace,
+    )
+    if child.get("status") == "pending":
+        _queue_finish(str(child.get("id")), "error", message=message)
+
+
+def _expand_archive_job(parent: dict, data: bytes) -> None:
+    """Bir ZIP'i üye üye kalıcı child işlere çevirir.
+
+    Tek bir bozuk/boş/şifreli üye yalnız kendi child işini hataya düşürür;
+    daha önce veya sonra gelen sağlam listeler işlenmeye devam eder.
+    """
+    parent_id = str(parent.get("id", ""))
+    filename = str(parent.get("filename") or "listeler.zip")
+    try:
+        archive = zipfile.ZipFile(BytesIO(data))
+    except (zipfile.BadZipFile, OSError) as exc:
+        _queue_finish(parent_id, "error", message=f"{filename}: geçerli bir ZIP arşivi değil.")
+        return
+
+    supported = 0
+    total_uncompressed = 0
+    used_names: dict[str, int] = {}
+    limit_hit = False
+    try:
+        for source_ordinal, info in enumerate(archive.infolist()):
+            raw_name = info.filename.replace("\\", "/")
+            parts = [part for part in raw_name.split("/") if part not in ("", ".")]
+            if info.is_dir() or not parts or "__MACOSX" in parts or parts[-1].startswith("."):
+                continue
+            basename = parts[-1]
+            extension = os.path.splitext(basename)[1].lower()
+            if extension not in ALLOWED_IMPORT_EXTENSIONS:
+                continue
+            ordinal = supported
+            supported += 1
+            key = basename.casefold()
+            occurrence = used_names.get(key, 0) + 1
+            used_names[key] = occurrence
+            display_name = basename
+            if occurrence > 1:
+                stem, suffix = os.path.splitext(basename)
+                display_name = f"{stem} ({occurrence}){suffix}"
+            if raw_name.startswith("/") or any(part == ".." for part in parts):
+                _mark_bad_archive_child(
+                    parent, ordinal, raw_name, display_name,
+                    "ZIP içinde güvensiz dosya yolu; bu üye atlandı.", False,
+                )
+                continue
+            if info.flag_bits & 0x1:
+                _mark_bad_archive_child(
+                    parent, ordinal, raw_name, display_name,
+                    "Şifreli ZIP üyesi desteklenmiyor; bu dosya atlandı.", False,
+                )
+                continue
+            if info.file_size <= 0:
+                _mark_bad_archive_child(
+                    parent, ordinal, raw_name, display_name,
+                    "Arşiv içindeki dosya boş.", False,
+                )
+                continue
+            if info.file_size > MAX_UPLOAD_BYTES:
+                _mark_bad_archive_child(
+                    parent, ordinal, raw_name, display_name,
+                    f"Arşiv içindeki dosya {MAX_UPLOAD_BYTES // (1024 * 1024)} MB sınırını aşıyor.",
+                    False,
+                )
+                continue
+            total_uncompressed += int(info.file_size)
+            if total_uncompressed > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES:
+                _mark_bad_archive_child(
+                    parent, ordinal, raw_name, display_name,
+                    "ZIP açılmış toplam boyut güvenlik sınırını aştı; kalan üyeler okunmadı.",
+                    False,
+                )
+                limit_hit = True
+                break
+            try:
+                with archive.open(info) as source:
+                    member_data = source.read(MAX_UPLOAD_BYTES + 1)
+                if not member_data:
+                    raise ValueError("Arşiv içindeki dosya boş.")
+                if len(member_data) > MAX_UPLOAD_BYTES:
+                    raise ValueError(f"Dosya {MAX_UPLOAD_BYTES // (1024 * 1024)} MB sınırını aşıyor.")
+                _enqueue_archive_child(
+                    parent,
+                    ordinal=ordinal,
+                    raw_name=raw_name,
+                    filename=display_name,
+                    payload=member_data,
+                    replace=bool(parent.get("replace")),
+                )
+                del member_data
+            except (ValueError, RuntimeError, zipfile.BadZipFile, OSError) as exc:
+                _mark_bad_archive_child(
+                    parent, ordinal, raw_name, display_name,
+                    str(exc) or "ZIP üyesi okunamadı; diğer dosyalara devam edildi.",
+                    False,
+                )
+    except (RuntimeError, zipfile.BadZipFile, OSError) as exc:
+        logger.warning("ZIP kısmen okunabildi parent=%s error=%s", parent_id, exc)
+    finally:
+        archive.close()
+
+    if supported == 0:
+        _queue_finish(
+            parent_id,
+            "error",
+            message=f"{filename}: ZIP içinde desteklenen yolcu listesi bulunamadı.",
+        )
+        return
+    message = f"{supported} liste bulundu; sırayla işleniyor."
+    if limit_hit:
+        message += " Boyut sınırı sonrası kalan üyeler atlandı."
+    _queue_finish(parent_id, "waiting", message=message, delete_payload=True)
+    _refresh_parent(parent_id)
+
+
+def _process_file_job(job: dict, data: bytes) -> None:
+    job_id = str(job.get("id", ""))
+    parent_id = str(job.get("parent_id", "") or "")
     try:
         imported, warnings, _, _, _, duplicates, invalid = import_gate_visa_files(
             [(str(job.get("filename", "dosya.xlsx")), data)],
             replace=bool(job.get("replace")),
             dup_strategy=str(job.get("dup_strategy") or "skip"),
             batch_id=str(job.get("batch_id") or ""),
+            job_id=job_id,
         )
-    except ValueError as exc:
-        _finish_import_job(job_id, "error", message=str(exc))
-        return
-    except Exception as exc:  # StorePersistenceError dahil: iş yeniden denenebilir kalmalı
+    except (ValueError, TimeoutError) as exc:
+        _queue_finish(job_id, "error", message=str(exc))
+    except Exception as exc:  # Kalıcı hata dahil: payload retry için korunur.
         logger.exception("Aktarım işi başarısız: %s", job.get("filename"))
-        _finish_import_job(job_id, "error", message=str(exc) or "Dosya işlenemedi; yeniden deneyin.")
+        _queue_finish(job_id, "error", message=str(exc) or "Dosya işlenemedi; yeniden deneyin.")
+    else:
+        parts = [f"{imported} yolcu aktarıldı"]
+        if duplicates:
+            parts.append(f"{duplicates} tekrar")
+        if invalid:
+            parts.append(f"{invalid} kritik kontrol")
+        if warnings:
+            parts.append(warnings[0])
+        _queue_finish(
+            job_id,
+            "done",
+            message=" · ".join(parts) + ".",
+            imported=imported,
+            duplicates=duplicates,
+            invalid=invalid,
+            delete_payload=True,
+        )
+    finally:
+        if parent_id:
+            _refresh_parent(parent_id)
+
+
+def _process_import_job(job: dict) -> None:
+    job_id = str(job.get("id", ""))
+    data = job.pop("payload", None)
+    if data is None:
+        data = _queue_load_payload(job_id)
+    if not data:
+        _queue_finish(job_id, "error", message="Dosya içeriği sunucuda bulunamadı; dosyayı yeniden seçin.")
+        if job.get("parent_id"):
+            _refresh_parent(str(job.get("parent_id")))
         return
-    parts = [f"{imported} yolcu aktarıldı"]
-    if duplicates:
-        parts.append(f"{duplicates} tekrar")
-    if invalid:
-        parts.append(f"{invalid} kritik kontrol")
-    if warnings:
-        parts.append(warnings[0])
-    _finish_import_job(
-        job_id, "done", message=" · ".join(parts) + ".",
-        imported=imported, duplicates=duplicates, invalid=invalid,
-    )
-    _delete_job_bytes(job_id)
+    started = time.monotonic()
+    try:
+        if str(job.get("kind")) == "upload" and str(job.get("filename", "")).lower().endswith(".zip"):
+            _expand_archive_job(job, data)
+        else:
+            _process_file_job(job, data)
+    finally:
+        logger.info(
+            "import worker stage complete job_id=%s kind=%s filename=%r duration_ms=%d",
+            job_id,
+            job.get("kind"),
+            job.get("filename"),
+            round((time.monotonic() - started) * 1000),
+        )
+        del data
 
 
 def _import_worker_loop() -> None:
     global _import_worker_alive
+    read_failures = 0
     while True:
         try:
-            job = _claim_next_import_job()
+            job = _queue_claim()
+            read_failures = 0
         except Exception:
-            logger.exception("Aktarım kuyruğu okunamadı; işleyici duraklıyor")
-            job = None
+            read_failures += 1
+            delay = min(30.0, float(2 ** min(read_failures, 5)))
+            logger.exception(
+                "Aktarım kuyruğu okunamadı; işleyici %.0f sn sonra yeniden deneyecek",
+                delay,
+            )
+            time.sleep(delay)
+            continue
         if job is None:
             with _IMPORT_WORKER_LOCK:
                 _import_worker_alive = False
-            # İşleyici kapanırken eklenen iş varsa yenisini başlat.
             try:
-                if _has_pending_import_jobs():
+                if _queue_has_pending():
                     ensure_import_worker()
             except Exception:
                 pass
@@ -1410,26 +2047,83 @@ def _import_worker_loop() -> None:
         except Exception:
             logger.exception("Aktarım işi beklenmedik şekilde çöktü: %s", job.get("id"))
             try:
-                _finish_import_job(str(job.get("id", "")), "error", message="Beklenmedik sunucu hatası; yeniden deneyin.")
+                _queue_finish(str(job.get("id", "")), "error", message="Beklenmedik sunucu hatası; yeniden deneyin.")
+                if job.get("parent_id"):
+                    _refresh_parent(str(job.get("parent_id")))
             except Exception:
                 pass
 
 
-def ensure_import_worker() -> None:
-    """Bekleyen işler için tek arka plan işleyicisini (gerekiyorsa) başlatır.
+@locked_mutation
+def migrate_legacy_import_queue() -> int:
+    """Eski yolcu-state içindeki queue metadata'sını bir kez yeni kuyruğa taşır.
 
-    Önceki işleyici beklenmedik biçimde kapandıysa kalıcı depoda processing
-    kalan işi yeniden pending durumuna getirir.
+    Yolcu kayıtları ve app_state blob'u değiştirilmez. Yalnız payload'ı kesin
+    olarak okunan işler taşınır; kayıp/eski metadata veri kaybı riskiyle
+    topluca silinmez.
     """
+    _, _, extra = load_state()
+    if "import_jobs" not in extra or not extra.get("import_jobs"):
+        return 0
+    legacy = list(extra.get("import_jobs", []))
+    migrated = 0
+    for old in legacy:
+        old_id = str(old.get("id") or uuid.uuid4())
+        payload = None
+        if _queue_uses_database():
+            payload = db.load_document(f"import-job://{old_id}")
+        else:
+            try:
+                with open(_local_job_path(old_id), "rb") as handle:
+                    payload = handle.read()
+            except OSError:
+                payload = None
+        if not payload:
+            continue
+        row = _queue_enqueue_job(
+            str(old.get("filename") or "dosya.xlsx"),
+            payload,
+            job_id=old_id,
+            parent_id=None,
+            kind="upload",
+            mime="application/octet-stream",
+            batch_id=str(old.get("batch_id") or uuid.uuid4()),
+            ordinal=0,
+            replace=bool(old.get("replace")),
+            dup_strategy=str(old.get("dup_strategy") or "skip"),
+            message="Eski kuyruktan güvenle taşındı.",
+        )
+        if row:
+            migrated += 1
+            # Yeni import_jobs satırı payload'ı kendi transaction'ında güvenle
+            # aldıktan sonra yalnız o eski document ref'i silinir. Payload'ı
+            # okunamayan bir legacy iş yüzünden metadata veya diğer belgeler
+            # topluca silinmez. Passenger app_state migration için rewrite
+            # edilmez; boş/eskimiş metadata artık sadece okunmadan bırakılır.
+            if _queue_uses_database():
+                db.delete_document(f"import-job://{old_id}")
+    return migrated
+
+
+def ensure_import_worker() -> None:
+    """Bekleyen işleri tek işleyicide, lease korumasıyla sırayla işler."""
     global _import_worker_alive
+    # Önce süresi dolmuş processing kayıtlarını pending yap. Bu kontrol
+    # pending sorgusundan sonra olursa yalnız stale işi olan kuyruk hiç açılmaz.
+    recovered = recover_stale_import_jobs(force=False)
+    if recovered:
+        logger.warning("%d lease süresi dolmuş aktarım işi kuyruğa iade edildi", recovered)
     with _IMPORT_WORKER_LOCK:
         if _import_worker_alive:
             return
+        if not _queue_has_pending():
+            return
         _import_worker_alive = True
     try:
-        recovered = recover_stale_import_jobs()
-        if recovered:
-            logger.warning("%d yarım aktarım işi çalışma sırasında kuyruğa iade edildi", recovered)
+        if _queue_uses_database():
+            db.cleanup_import_jobs(older_than_days=7, max_finished=200)
+        else:
+            _cleanup_local_import_jobs(max_finished=200)
         threading.Thread(target=_import_worker_loop, name="gatevisa-import-worker", daemon=True).start()
     except Exception:
         with _IMPORT_WORKER_LOCK:

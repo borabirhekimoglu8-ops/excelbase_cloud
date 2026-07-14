@@ -1,9 +1,41 @@
 "use client";
 
-export class UnreadableUploadFileError extends Error {}
+function errorDetail(error: unknown): string {
+  if (error instanceof DOMException) return `${error.name}: ${error.message}`;
+  if (error instanceof Error) return error.message || error.name;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    return String(error);
+  }
+}
 
-function unreadableMessage(name: string): string {
-  return `${name || "Dosya"}: dosya içeriği telefondan okunamadı. Dosyayı yeniden seçin.`;
+export class UnreadableUploadFileError extends Error {
+  readonly fileName: string;
+  readonly originalError?: unknown;
+
+  constructor(fileName: string, detail?: string, originalError?: unknown) {
+    super(
+      `${fileName || "Dosya"}: dosya içeriği telefondan okunamadı${detail ? ` (${detail})` : ""}. Dosyayı yeniden seçin.`,
+    );
+    this.name = "UnreadableUploadFileError";
+    this.fileName = fileName;
+    this.originalError = originalError;
+  }
+}
+
+// Yolcu listeleri ve ZIP arşivleri için File nesnesini başka bir ArrayBuffer'a
+// kopyalamayız. Özellikle iPhone/iCloud'da özgün File tutamacının, onu üreten
+// input hâlâ doluyken doğrudan FormData'ya eklenmesi gerekir.
+export function assertOriginalUploadFile(source: File): void {
+  const filename = (source as File | undefined)?.name || "Dosya";
+  if (!(source instanceof Blob)) {
+    throw new UnreadableUploadFileError(filename, "geçerli bir dosya tutamacı değil");
+  }
+  if (source.size <= 0) {
+    throw new UnreadableUploadFileError(filename, "dosya 0 bayt");
+  }
 }
 
 const ICLOUD_READ_RETRY_DELAYS_MS = [0, 350, 1_200];
@@ -43,6 +75,7 @@ function readArrayBufferWithTimeout(source: File, timeoutMs: number): Promise<Ar
 // milisaniye gecikmeyle hazır edebilir. İlk 0 bayt/okuma hatasında dosyayı
 // kayıp saymak yerine kısa aralıklarla tekrar deneriz.
 export async function materializeUploadFile(source: File): Promise<File> {
+  let lastError: unknown;
   for (const delay of ICLOUD_READ_RETRY_DELAYS_MS) {
     if (delay) await new Promise((resolve) => globalThis.setTimeout(resolve, delay));
     try {
@@ -53,11 +86,16 @@ export async function materializeUploadFile(source: File): Promise<File> {
           lastModified: source.lastModified || Date.now(),
         });
       }
-    } catch {
+    } catch (error) {
+      lastError = error;
       // Sonraki denemede iCloud dosya tutamacı yeniden okunur.
     }
   }
-  throw new UnreadableUploadFileError(unreadableMessage(source.name));
+  throw new UnreadableUploadFileError(
+    source.name,
+    lastError ? errorDetail(lastError) : "dosya boş",
+    lastError,
+  );
 }
 
 // Eski sürümler seçilen dosyaları IndexedDB'de bekletip açılışta kendiliğinden
