@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import sys
+import threading
 import uuid
 import zipfile
 from datetime import datetime
@@ -17,6 +19,10 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 import db  # noqa: E402
+import persistence  # noqa: E402
+from persistence import StorePersistenceError  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 from excelbase_core import dataframe_to_csv, dataframe_to_xlsx  # noqa: E402
 from gate_visa_reader import read_gate_visa_file_bytes  # noqa: E402
@@ -55,6 +61,7 @@ from .models import (
 )
 from .state import (
     APP_VERSION,
+    locked_mutation,
     duplicate_passport_keys,
     issue_counts,
     load_state,
@@ -339,6 +346,7 @@ def _update_import_history(extra: dict, batch: dict) -> None:
     extra["import_history"] = history[:50]
 
 
+@locked_mutation
 def import_gate_visa_files(
     files: Iterable[tuple[str, bytes]],
     replace: bool = False,
@@ -419,6 +427,7 @@ def import_gate_visa_files(
     )
 
 
+@locked_mutation
 def undo_import(batch_id: str = "") -> tuple[bool, str, int]:
     df, loaded_files, extra = load_state()
     active = [batch for batch in extra.get("import_batches", []) if batch.get("status") == "active"]
@@ -440,6 +449,7 @@ def undo_import(batch_id: str = "") -> tuple[bool, str, int]:
     return True, "Son toplu aktarim geri alindi.", len(saved)
 
 
+@locked_mutation
 def record_audit(actor_name: str, role: str, action: str, path: str) -> None:
     df, loaded_files, extra = load_state()
     events = list(extra.get("audit_log", []))
@@ -463,6 +473,7 @@ def get_audit(limit: int = 100) -> list[dict]:
     return list(extra.get("audit_log", []))[: max(1, min(limit, 500))]
 
 
+@locked_mutation
 def update_passenger(passenger_id: int, updates: dict[str, str | None]) -> bool:
     df, loaded_files, extra = load_state()
     if passenger_id < 0 or passenger_id >= len(df):
@@ -479,6 +490,7 @@ def update_passenger(passenger_id: int, updates: dict[str, str | None]) -> bool:
     return True
 
 
+@locked_mutation
 def delete_passenger(passenger_id: int) -> int:
     df, loaded_files, extra = load_state()
     if passenger_id < 0 or passenger_id >= len(df):
@@ -489,6 +501,7 @@ def delete_passenger(passenger_id: int) -> int:
     return len(saved)
 
 
+@locked_mutation
 def bulk_delete(ids: list[int]) -> int:
     df, loaded_files, extra = load_state()
     if df.empty:
@@ -502,18 +515,21 @@ def bulk_delete(ids: list[int]) -> int:
     return len(saved)
 
 
+@locked_mutation
 def clear_all() -> int:
     _, _, extra = load_state()
     save_state(pd.DataFrame(columns=ALL_COLUMNS), [], extra)
     return 0
 
 
+@locked_mutation
 def load_demo() -> int:
     _, _, extra = load_state()
     saved = save_state(make_demo_passengers(), ["demo-gate-visa.xlsx"], extra)
     return len(saved)
 
 
+@locked_mutation
 def set_passenger_photo(passenger_id: int, filename: str, data: bytes) -> bool:
     df, loaded_files, extra = load_state()
     if passenger_id < 0 or passenger_id >= len(df):
@@ -529,6 +545,7 @@ def set_passenger_photo(passenger_id: int, filename: str, data: bytes) -> bool:
     return True
 
 
+@locked_mutation
 def remove_passenger_photo(passenger_id: int) -> bool:
     df, loaded_files, extra = load_state()
     if passenger_id < 0 or passenger_id >= len(df):
@@ -539,6 +556,7 @@ def remove_passenger_photo(passenger_id: int) -> bool:
     return True
 
 
+@locked_mutation
 def match_photos(files: Iterable[tuple[str, bytes]]) -> tuple[int, list[str], int, int, list[dict]]:
     df, loaded_files, extra = load_state()
     if df.empty:
@@ -598,6 +616,7 @@ def get_unmatched_photos(with_key: str = "") -> list[dict]:
     return items
 
 
+@locked_mutation
 def assign_unmatched_photo(item_id: str, passenger_id: int) -> tuple[bool, str]:
     df, loaded_files, extra = load_state()
     if passenger_id < 0 or passenger_id >= len(df):
@@ -613,6 +632,7 @@ def assign_unmatched_photo(item_id: str, passenger_id: int) -> tuple[bool, str]:
     return True, "Fotograf yolcuya atandi."
 
 
+@locked_mutation
 def delete_unmatched_photo(item_id: str) -> bool:
     df, loaded_files, extra = load_state()
     items = list(extra.get("unmatched_photos", []))
@@ -624,6 +644,7 @@ def delete_unmatched_photo(item_id: str) -> bool:
     return True
 
 
+@locked_mutation
 def merge_duplicates(passport_key: str | None = None) -> tuple[int, int]:
     df, loaded_files, extra = load_state()
     if df.empty:
@@ -716,6 +737,7 @@ def get_archive(range_choice: str = "Tümü", start: str = "", end: str = "") ->
     return ArchiveResponse(groups=out, total_count=int(len(scoped)))
 
 
+@locked_mutation
 def save_operation_meta(date_key: str, status: str, staff: str, note: str) -> None:
     df, loaded_files, extra = load_state()
     meta = dict(extra.get("date_meta", {}))
@@ -831,6 +853,7 @@ def build_backup() -> tuple[bytes, str]:
     return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"), f"gatevisa-yedek-{stamp}.json"
 
 
+@locked_mutation
 def restore_backup(data: bytes) -> tuple[bool, str, int]:
     try:
         payload = json.loads(data.decode("utf-8"))
@@ -899,6 +922,7 @@ def list_daily_backups() -> list[str]:
     return db.list_daily_backups()
 
 
+@locked_mutation
 def restore_daily_backup(snapshot_date: str) -> tuple[bool, str, int]:
     payload = db.load_daily_backup(snapshot_date)
     if payload is None:
@@ -914,6 +938,7 @@ def restore_daily_backup(snapshot_date: str) -> tuple[bool, str, int]:
     return True, f"{snapshot_date} tarihli yedek geri yuklendi.", len(saved)
 
 
+@locked_mutation
 def ingest_eml(filename: str, data: bytes, batch_id: str = "") -> dict:
     parsed = parse_eml(data)
     excel_files: list[tuple[str, bytes]] = []
@@ -983,3 +1008,301 @@ def ingest_eml(filename: str, data: bytes, batch_id: str = "") -> dict:
         "stored_documents": stored_documents,
         "warnings": warnings,
     }
+
+
+# ------------------------------------------------- arka plan aktarım kuyruğu
+# Dosyalar tek istekte sunucuya teslim edilir, ham baytları kalıcı depoya
+# yazılır ve bir işleyici iş parçacığı sırayla işler. Kullanıcı sekmeden
+# çıksa, telefon kilitlense, hatta konteyner yeniden başlasa bile (DB
+# modunda) kalan işler kaldığı yerden tamamlanır.
+
+MAX_IMPORT_JOBS = 40
+
+_IMPORT_WORKER_LOCK = threading.Lock()
+_import_worker_alive = False
+
+
+def _job_ref(job_id: str) -> str:
+    return f"import-job://{job_id}"
+
+
+def _local_job_path(job_id: str) -> str:
+    return os.path.join(os.path.dirname(persistence.STORE_PATH), "import-queue", f"{job_id}.bin")
+
+
+def _store_job_bytes(job_id: str, filename: str, data: bytes) -> bool:
+    if db.enabled():
+        return db.save_document(_job_ref(job_id), filename, "application/octet-stream", data)
+    try:
+        path = _local_job_path(job_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as handle:
+            handle.write(data)
+        return True
+    except Exception:
+        logger.exception("Aktarım dosyası yerel kuyruğa yazılamadı: %s", filename)
+        return False
+
+
+def _load_job_bytes(job_id: str) -> bytes | None:
+    if db.enabled():
+        data = db.load_document(_job_ref(job_id))
+        if data:
+            return data
+    try:
+        path = _local_job_path(job_id)
+        if os.path.exists(path):
+            with open(path, "rb") as handle:
+                return handle.read()
+    except Exception:
+        logger.exception("Aktarım dosyası yerel kuyruktan okunamadı: %s", job_id)
+    return None
+
+
+def _delete_job_bytes(job_id: str) -> None:
+    if db.enabled():
+        db.delete_document(_job_ref(job_id))
+    try:
+        path = _local_job_path(job_id)
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
+def _public_job(job: dict) -> dict:
+    return {
+        "id": str(job.get("id", "")),
+        "filename": str(job.get("filename", "")),
+        "status": str(job.get("status", "pending")),
+        "imported": int(job.get("imported", 0) or 0),
+        "duplicates": int(job.get("duplicates", 0) or 0),
+        "invalid": int(job.get("invalid", 0) or 0),
+        "message": str(job.get("message", "")),
+        "created_at": str(job.get("created_at", "")),
+        "finished_at": str(job.get("finished_at", "")),
+    }
+
+
+def _trim_jobs(jobs: list[dict]) -> list[dict]:
+    active = [j for j in jobs if j.get("status") in ("pending", "processing")]
+    finished = [j for j in jobs if j.get("status") not in ("pending", "processing")]
+    overflow = len(active) + len(finished) - MAX_IMPORT_JOBS
+    if overflow > 0:
+        for dropped in finished[:overflow]:
+            _delete_job_bytes(str(dropped.get("id", "")))
+        dropped_ids = {id(j) for j in finished[:overflow]}
+        jobs = [j for j in jobs if id(j) not in dropped_ids]
+    return jobs
+
+
+@locked_mutation
+def enqueue_import_files(
+    files: list[tuple[str, bytes]],
+    replace: bool = False,
+    dup_strategy: str = "skip",
+    batch_id: str = "",
+) -> tuple[list[dict], str]:
+    df, loaded_files, extra = load_state()
+    jobs = list(extra.get("import_jobs", []))
+    batch_id = batch_id.strip() or str(uuid.uuid4())
+    created: list[dict] = []
+    first = True
+    for filename, data in files:
+        job_id = str(uuid.uuid4())
+        if not _store_job_bytes(job_id, filename, data):
+            raise StorePersistenceError(
+                f"{filename}: dosya sunucu kuyruğuna kaydedilemedi. "
+                "Lütfen yeniden deneyin; sorun sürerse veritabanı bağlantısını kontrol edin."
+            )
+        job = {
+            "id": job_id,
+            "filename": filename,
+            "status": "pending",
+            "replace": bool(replace and first),
+            "dup_strategy": dup_strategy,
+            "batch_id": batch_id,
+            "imported": 0,
+            "duplicates": 0,
+            "invalid": 0,
+            "message": "Sırada — sunucu arka planda işleyecek.",
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "finished_at": "",
+        }
+        first = False
+        jobs.append(job)
+        created.append(job)
+    extra["import_jobs"] = _trim_jobs(jobs)
+    save_state(df, loaded_files, extra)
+    return [_public_job(j) for j in created], batch_id
+
+
+def get_import_jobs() -> tuple[list[dict], bool]:
+    _, _, extra = load_state()
+    jobs = [_public_job(j) for j in extra.get("import_jobs", [])]
+    active = any(j["status"] in ("pending", "processing") for j in jobs)
+    return jobs, active
+
+
+@locked_mutation
+def retry_import_job(job_id: str) -> bool:
+    df, loaded_files, extra = load_state()
+    jobs = list(extra.get("import_jobs", []))
+    for job in jobs:
+        if str(job.get("id")) == job_id and job.get("status") == "error":
+            job["status"] = "pending"
+            job["message"] = "Yeniden sırada."
+            job["finished_at"] = ""
+            extra["import_jobs"] = jobs
+            save_state(df, loaded_files, extra)
+            return True
+    return False
+
+
+@locked_mutation
+def delete_import_job(job_id: str) -> bool:
+    df, loaded_files, extra = load_state()
+    jobs = list(extra.get("import_jobs", []))
+    for job in jobs:
+        if str(job.get("id")) == job_id:
+            if job.get("status") == "processing":
+                return False
+            remaining = [j for j in jobs if str(j.get("id")) != job_id]
+            extra["import_jobs"] = remaining
+            save_state(df, loaded_files, extra)
+            _delete_job_bytes(job_id)
+            return True
+    return False
+
+
+@locked_mutation
+def recover_stale_import_jobs() -> int:
+    """Konteyner işleme sırasında öldüyse yarım kalan işleri kuyruğa iade eder."""
+    df, loaded_files, extra = load_state()
+    jobs = list(extra.get("import_jobs", []))
+    recovered = 0
+    for job in jobs:
+        if job.get("status") == "processing":
+            job["status"] = "pending"
+            job["message"] = "Sunucu yeniden başladı; iş kuyruğa iade edildi."
+            recovered += 1
+    if recovered:
+        extra["import_jobs"] = jobs
+        save_state(df, loaded_files, extra)
+    return recovered
+
+
+@locked_mutation
+def _claim_next_import_job() -> dict | None:
+    df, loaded_files, extra = load_state()
+    jobs = list(extra.get("import_jobs", []))
+    for job in jobs:
+        if job.get("status") == "pending":
+            job["status"] = "processing"
+            job["message"] = "İşleniyor…"
+            extra["import_jobs"] = jobs
+            save_state(df, loaded_files, extra)
+            return dict(job)
+    return None
+
+
+def _has_pending_import_jobs() -> bool:
+    _, _, extra = load_state()
+    return any(j.get("status") == "pending" for j in extra.get("import_jobs", []))
+
+
+@locked_mutation
+def _finish_import_job(
+    job_id: str,
+    status: str,
+    message: str = "",
+    imported: int = 0,
+    duplicates: int = 0,
+    invalid: int = 0,
+) -> None:
+    df, loaded_files, extra = load_state()
+    jobs = list(extra.get("import_jobs", []))
+    for job in jobs:
+        if str(job.get("id")) == job_id:
+            job.update(
+                status=status,
+                message=message,
+                imported=imported,
+                duplicates=duplicates,
+                invalid=invalid,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+            )
+    extra["import_jobs"] = jobs
+    save_state(df, loaded_files, extra)
+
+
+def _process_import_job(job: dict) -> None:
+    job_id = str(job.get("id", ""))
+    data = _load_job_bytes(job_id)
+    if not data:
+        _finish_import_job(job_id, "error", message="Dosya içeriği sunucuda bulunamadı; dosyayı yeniden seçin.")
+        return
+    try:
+        imported, warnings, _, _, _, duplicates, invalid = import_gate_visa_files(
+            [(str(job.get("filename", "dosya.xlsx")), data)],
+            replace=bool(job.get("replace")),
+            dup_strategy=str(job.get("dup_strategy") or "skip"),
+            batch_id=str(job.get("batch_id") or ""),
+        )
+    except ValueError as exc:
+        _finish_import_job(job_id, "error", message=str(exc))
+        return
+    except Exception as exc:  # StorePersistenceError dahil: iş yeniden denenebilir kalmalı
+        logger.exception("Aktarım işi başarısız: %s", job.get("filename"))
+        _finish_import_job(job_id, "error", message=str(exc) or "Dosya işlenemedi; yeniden deneyin.")
+        return
+    parts = [f"{imported} yolcu aktarıldı"]
+    if duplicates:
+        parts.append(f"{duplicates} tekrar")
+    if invalid:
+        parts.append(f"{invalid} kritik kontrol")
+    if warnings:
+        parts.append(warnings[0])
+    _finish_import_job(
+        job_id, "done", message=" · ".join(parts) + ".",
+        imported=imported, duplicates=duplicates, invalid=invalid,
+    )
+    _delete_job_bytes(job_id)
+
+
+def _import_worker_loop() -> None:
+    global _import_worker_alive
+    while True:
+        try:
+            job = _claim_next_import_job()
+        except Exception:
+            logger.exception("Aktarım kuyruğu okunamadı; işleyici duraklıyor")
+            job = None
+        if job is None:
+            with _IMPORT_WORKER_LOCK:
+                _import_worker_alive = False
+            # İşleyici kapanırken eklenen iş varsa yenisini başlat.
+            try:
+                if _has_pending_import_jobs():
+                    ensure_import_worker()
+            except Exception:
+                pass
+            return
+        try:
+            _process_import_job(job)
+        except Exception:
+            logger.exception("Aktarım işi beklenmedik şekilde çöktü: %s", job.get("id"))
+            try:
+                _finish_import_job(str(job.get("id", "")), "error", message="Beklenmedik sunucu hatası; yeniden deneyin.")
+            except Exception:
+                pass
+
+
+def ensure_import_worker() -> None:
+    """Bekleyen işler için tek arka plan işleyicisini (gerekiyorsa) başlatır."""
+    global _import_worker_alive
+    with _IMPORT_WORKER_LOCK:
+        if _import_worker_alive:
+            return
+        _import_worker_alive = True
+    threading.Thread(target=_import_worker_loop, name="gatevisa-import-worker", daemon=True).start()

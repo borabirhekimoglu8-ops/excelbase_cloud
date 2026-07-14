@@ -261,6 +261,87 @@ def test_cache_headers_prevent_stale_shell_and_api(monkeypatch, tmp_path):
         assert health.json()["database_writable"] is False
 
 
+def _wait_queue_idle(client, timeout_seconds: float = 15.0) -> dict:
+    import time as _time
+
+    deadline = _time.monotonic() + timeout_seconds
+    state = client.get("/api/import/queue").json()
+    while state["active"] and _time.monotonic() < deadline:
+        _time.sleep(0.1)
+        state = client.get("/api/import/queue").json()
+    return state
+
+
+def test_background_import_queue_processes_without_client(monkeypatch, tmp_path):
+    """Dosyalar teslim edildikten sonra işleme istemciden bağımsız sürmeli."""
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    with TestClient(app) as client:
+        enqueue = client.post(
+            "/api/import/queue?dup_strategy=skip",
+            files=[
+                ("files", ("one.csv", _csv("P444444", "2026-07-15"), "text/csv")),
+                ("files", ("two.csv", _csv("P555555", "2026-07-16"), "text/csv")),
+                ("files", ("broken.xlsx", b"gecersiz icerik", "application/octet-stream")),
+            ],
+        )
+        assert enqueue.status_code == 200
+        assert len(enqueue.json()["jobs"]) == 3
+
+        state = _wait_queue_idle(client)
+        statuses = {job["filename"]: job["status"] for job in state["jobs"]}
+        assert statuses["one.csv"] == "done"
+        assert statuses["two.csv"] == "done"
+        assert statuses["broken.xlsx"] == "error"
+        assert state["active"] is False
+        assert client.get("/api/summary").json()["passenger_count"] == 2
+
+        # Hatalı iş yeniden kuyruğa alınabilmeli ve yine hata vermeli
+        broken = next(job for job in state["jobs"] if job["filename"] == "broken.xlsx")
+        retry = client.post(f"/api/import/queue/{broken['id']}/retry")
+        assert retry.status_code == 200
+        state = _wait_queue_idle(client)
+        broken = next(job for job in state["jobs"] if job["filename"] == "broken.xlsx")
+        assert broken["status"] == "error"
+
+        # Kaldırma kuyruğu temizlemeli
+        assert client.delete(f"/api/import/queue/{broken['id']}").status_code == 200
+        names = [job["filename"] for job in client.get("/api/import/queue").json()["jobs"]]
+        assert "broken.xlsx" not in names
+
+
+def test_background_import_replace_applies_only_to_first_file(monkeypatch, tmp_path):
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    with TestClient(app) as client:
+        seeded = client.post(
+            "/api/import?dup_strategy=add&batch_id=seed",
+            files=[("files", ("seed.csv", _csv("P666666", "2026-07-14"), "text/csv"))],
+        )
+        assert seeded.status_code == 200
+        assert client.get("/api/summary").json()["passenger_count"] == 1
+
+        enqueue = client.post(
+            "/api/import/queue?replace=true&dup_strategy=skip",
+            files=[
+                ("files", ("r1.csv", _csv("P777777", "2026-07-15"), "text/csv")),
+                ("files", ("r2.csv", _csv("P888888", "2026-07-16"), "text/csv")),
+            ],
+        )
+        assert enqueue.status_code == 200
+        _wait_queue_idle(client)
+        # İlk dosya listeyi değiştirdi, ikincisi eklendi: eski kayıt gitti.
+        assert client.get("/api/summary").json()["passenger_count"] == 2
+
+
 def test_daily_backup_is_throttled(monkeypatch, tmp_path):
     """Art arda kayıtlar tüm veriyi her seferinde yeniden yedeklemesin."""
     import pandas as pd

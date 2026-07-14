@@ -80,6 +80,24 @@ export type ImportPreviewResponse = {
   invalid_count: number;
 };
 
+export type ImportJob = {
+  id: string;
+  filename: string;
+  status: "pending" | "processing" | "done" | "error";
+  imported: number;
+  duplicates: number;
+  invalid: number;
+  message: string;
+  created_at: string;
+  finished_at: string;
+};
+
+export type ImportQueueResponse = {
+  jobs: ImportJob[];
+  active: boolean;
+  batch_id: string;
+};
+
 export type ImportResponse = {
   imported: number;
   warnings: string[];
@@ -298,6 +316,25 @@ export async function uploadPassengerFiles(
     batch_id: newId(),
   });
   return request<ImportResponse>(`/api/import?${qs.toString()}`, { method: "POST", body });
+}
+export async function queueImportFiles(
+  files: File[],
+  replace: boolean,
+  dupStrategy: string,
+): Promise<ImportQueueResponse> {
+  const body = new FormData();
+  for (const file of files) await appendReadableFile(body, "files", file);
+  const qs = new URLSearchParams({ replace: String(replace), dup_strategy: dupStrategy, batch_id: newId() });
+  return request<ImportQueueResponse>(`/api/import/queue?${qs.toString()}`, { method: "POST", body }, 300_000);
+}
+export function fetchImportQueue(): Promise<ImportQueueResponse> {
+  return request<ImportQueueResponse>("/api/import/queue");
+}
+export function retryImportJob(jobId: string): Promise<SimpleResult> {
+  return request<SimpleResult>(`/api/import/queue/${encodeURIComponent(jobId)}/retry`, { method: "POST" });
+}
+export function deleteImportJob(jobId: string): Promise<SimpleResult> {
+  return request<SimpleResult>(`/api/import/queue/${encodeURIComponent(jobId)}`, { method: "DELETE" });
 }
 export function undoImport(batchId = ""): Promise<SimpleResult> {
   const suffix = batchId ? `?batch_id=${encodeURIComponent(batchId)}` : "";

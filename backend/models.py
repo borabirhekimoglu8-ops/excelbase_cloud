@@ -48,6 +48,24 @@ class OperationSummary(BaseModel):
     version: str = ""
 
 
+class ImportJobView(BaseModel):
+    id: str
+    filename: str
+    status: str
+    imported: int = 0
+    duplicates: int = 0
+    invalid: int = 0
+    message: str = ""
+    created_at: str = ""
+    finished_at: str = ""
+
+
+class ImportQueueResponse(BaseModel):
+    jobs: list[ImportJobView]
+    active: bool
+    batch_id: str = ""
+
+
 class ImportResponse(BaseModel):
     imported: int
     warnings: list[str]

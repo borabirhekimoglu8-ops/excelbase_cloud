@@ -326,4 +326,35 @@ def save_document(ref: str, filename: str, mime: str, data_bytes: bytes) -> bool
             )
         return True
     except Exception:
+        logger.exception("Belge veritabanına yazılamadı: %s", ref)
+        return False
+
+
+def load_document(ref: str) -> bytes | None:
+    engine = get_engine()
+    if engine is None:
+        return None
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT data FROM documents WHERE ref = :r"), {"r": ref}
+            ).fetchone()
+        if not row or not row[0]:
+            return None
+        return base64.b64decode(str(row[0]).encode("ascii"))
+    except Exception:
+        logger.exception("Belge veritabanından okunamadı: %s", ref)
+        return None
+
+
+def delete_document(ref: str) -> bool:
+    engine = get_engine()
+    if engine is None:
+        return False
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM documents WHERE ref = :r"), {"r": ref})
+        return True
+    except Exception:
+        logger.exception("Belge veritabanından silinemedi: %s", ref)
         return False
