@@ -221,9 +221,14 @@ def _create_tables(engine: "Engine") -> None:
                 "ON import_jobs(parent_id, ordinal)"
             )
         )
+        # V7 and V8 currently share the same Render PostgreSQL database.  V8
+        # already owns ``audit_events`` with a different relational schema;
+        # using that generic name here makes this entire bootstrap transaction
+        # fail when the V7-specific index references ``occurred_at``.  Keep the
+        # legacy application's append-only audit stream in its own namespace.
         conn.execute(
             text(
-                "CREATE TABLE IF NOT EXISTS audit_events ("
+                "CREATE TABLE IF NOT EXISTS v7_audit_events ("
                 "id VARCHAR(128) PRIMARY KEY, "
                 "occurred_at VARCHAR(40) NOT NULL, "
                 "actor VARCHAR(256) NOT NULL, "
@@ -234,8 +239,8 @@ def _create_tables(engine: "Engine") -> None:
         )
         conn.execute(
             text(
-                "CREATE INDEX IF NOT EXISTS idx_audit_events_time "
-                "ON audit_events(occurred_at DESC)"
+                "CREATE INDEX IF NOT EXISTS idx_v7_audit_events_time "
+                "ON v7_audit_events(occurred_at DESC)"
             )
         )
 
@@ -1310,7 +1315,7 @@ def insert_audit_event(
         with engine.begin() as conn:
             conn.execute(
                 text(
-                    "INSERT INTO audit_events (id, occurred_at, actor, role, action, path) "
+                    "INSERT INTO v7_audit_events (id, occurred_at, actor, role, action, path) "
                     "VALUES (:id, :occurred_at, :actor, :role, :action, :path) "
                     "ON CONFLICT (id) DO NOTHING"
                 ),
@@ -1324,7 +1329,7 @@ def insert_audit_event(
                 },
             )
             row = conn.execute(
-                text("SELECT * FROM audit_events WHERE id = :id"),
+                text("SELECT * FROM v7_audit_events WHERE id = :id"),
                 {"id": resolved_id},
             ).fetchone()
         return _row_to_audit_event(row)
@@ -1341,7 +1346,7 @@ def list_audit_events(limit: int = 100) -> list[dict]:
     try:
         with engine.begin() as conn:
             rows = conn.execute(
-                text("SELECT * FROM audit_events ORDER BY occurred_at DESC, id DESC LIMIT :limit"),
+                text("SELECT * FROM v7_audit_events ORDER BY occurred_at DESC, id DESC LIMIT :limit"),
                 {"limit": bounded_limit},
             ).fetchall()
         return [event for row in rows if (event := _row_to_audit_event(row)) is not None]
