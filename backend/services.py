@@ -74,7 +74,13 @@ from .state import (
     save_state,
     today_departures,
 )
-from .config import MAX_AUDIT_EVENTS, MAX_IMPORT_SNAPSHOTS
+from .config import (
+    ALLOWED_IMPORT_EXTENSIONS,
+    MAX_AUDIT_EVENTS,
+    MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES,
+    MAX_IMPORT_SNAPSHOTS,
+    MAX_UPLOAD_BYTES,
+)
 from .mail_ingest import parse_eml
 
 _UPDATE_FIELDS = {
@@ -1050,6 +1056,75 @@ def ingest_eml(filename: str, data: bytes, batch_id: str = "") -> dict:
         "stored_documents": stored_documents,
         "warnings": warnings,
     }
+
+
+def expand_import_upload(filename: str, data: bytes) -> list[tuple[str, bytes]]:
+    """ZIP içindeki yolcu listelerini diske çıkarmadan güvenle bellekte açar."""
+    if not filename.lower().endswith(".zip"):
+        return [(filename, data)]
+
+    try:
+        archive = zipfile.ZipFile(BytesIO(data))
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise ValueError(f"{filename}: geçerli bir ZIP arşivi değil.") from exc
+
+    expanded: list[tuple[str, bytes]] = []
+    total_uncompressed = 0
+    used_names: dict[str, int] = {}
+    try:
+        for info in archive.infolist():
+            raw_name = info.filename.replace("\\", "/")
+            parts = [part for part in raw_name.split("/") if part not in ("", ".")]
+            if info.is_dir() or not parts or "__MACOSX" in parts or parts[-1].startswith("."):
+                continue
+            if raw_name.startswith("/") or any(part == ".." for part in parts):
+                raise ValueError(f"{filename}: ZIP içinde güvensiz dosya yolu var.")
+            if info.flag_bits & 0x1:
+                raise ValueError(f"{filename}: şifreli ZIP dosyaları desteklenmiyor.")
+
+            basename = parts[-1]
+            extension = os.path.splitext(basename)[1].lower()
+            if extension not in ALLOWED_IMPORT_EXTENSIONS:
+                continue
+            if info.file_size > MAX_UPLOAD_BYTES:
+                raise ValueError(
+                    f"{basename}: arşiv içindeki dosya limiti "
+                    f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
+                )
+            total_uncompressed += int(info.file_size)
+            if total_uncompressed > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES:
+                raise ValueError(
+                    f"{filename}: açılmış ZIP toplamı "
+                    f"{MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES // (1024 * 1024)} MB sınırını aşıyor."
+                )
+
+            with archive.open(info) as source:
+                payload = source.read(MAX_UPLOAD_BYTES + 1)
+            if not payload:
+                raise ValueError(f"{basename}: arşiv içindeki dosya boş.")
+            if len(payload) > MAX_UPLOAD_BYTES:
+                raise ValueError(
+                    f"{basename}: arşiv içindeki dosya limiti "
+                    f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
+                )
+
+            key = basename.casefold()
+            occurrence = used_names.get(key, 0) + 1
+            used_names[key] = occurrence
+            if occurrence > 1:
+                stem, extension = os.path.splitext(basename)
+                basename = f"{stem} ({occurrence}){extension}"
+            expanded.append((basename, payload))
+    except (RuntimeError, zipfile.BadZipFile, OSError) as exc:
+        raise ValueError(f"{filename}: ZIP içeriği okunamadı.") from exc
+    finally:
+        archive.close()
+
+    if not expanded:
+        raise ValueError(
+            f"{filename}: ZIP içinde XLSX, XLS, XLSM, ODS veya CSV yolcu listesi bulunamadı."
+        )
+    return expanded
 
 
 # ------------------------------------------------- arka plan aktarım kuyruğu
