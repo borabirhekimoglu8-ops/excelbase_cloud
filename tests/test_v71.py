@@ -355,18 +355,19 @@ def test_daily_backup_is_throttled(monkeypatch, tmp_path):
         return True
 
     df = pd.DataFrame(columns=persistence.ALL_COLUMNS)
-    # Aynı süreçte yaşayan arka plan aktarım işleyicisi de save_store'u
-    # çağırabilir ve _STORE_LOCK'u kullanır (bkz. tests/conftest.py). Kilidi
-    # monkeypatch'lerden ÖNCE alıp asserte kadar bırakmamak zorunlu: yalnızca
-    # 3 çağrının etrafını sarmak yetmiyor — kilit alınmadan önce mock'lar
-    # zaten aktif olduğundan, kilidi bekleyen bir arka plan çağrısı tam o
-    # aralıkta devreye girip _last_backup_at'i kendi payına güncelleyebiliyor
-    # (CI'da tekrarlayan 'assert 0 == 1' hatasının kök nedeni buydu).
+    # NOT: _last_backup_at'i 0.0'a sıfırlamak YANLIŞTI — time.monotonic()'in
+    # mutlak taban değeri platforma göre değişir (taze bir CI konteynerinde
+    # birkaç saniye, uzun süredir çalışan bir makinede binlerce saniye
+    # olabilir); "now - 0.0 >= 600" karşılaştırması konteyner henüz 600 sn
+    # ayakta değilse yanlışlıkla False dönüp testi CI'da ara sıra
+    # başarısız kılıyordu (yerelde hep geçiyordu çünkü sandbox'ın monotonic
+    # tabanı zaten binlerce saniyeydi). -inf, mutlak tabandan tamamen
+    # bağımsız olarak "süre her zaman aşıldı" anlamına gelir.
     with persistence._STORE_LOCK:
         monkeypatch.setattr(db, "enabled", lambda: True)
         monkeypatch.setattr(db, "save_state", lambda payload: True)
         monkeypatch.setattr(db, "save_daily_backup", fake_backup)
-        monkeypatch.setattr(persistence, "_last_backup_at", 0.0)
+        monkeypatch.setattr(persistence, "_last_backup_at", float("-inf"))
         persistence.save_store(df, [], {})
         persistence.save_store(df, [], {})
         persistence.save_store(df, [], {})

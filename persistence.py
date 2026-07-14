@@ -41,7 +41,16 @@ _STORE_LOCK = threading.RLock()
 # dosya aktarımlarında bu maliyet kaydın kendisini geçiyordu. Yedek zaten günlük
 # granülerlikte olduğu için en fazla 10 dakikada bir tazelenmesi yeterli.
 _BACKUP_INTERVAL_SECONDS = 600.0
-_last_backup_at = 0.0
+# time.monotonic()'in mutlak taban değeri platforma göre değişir: uzun süredir
+# çalışan bir makinede kolayca binlerce saniyedir, ama taze başlatılmış bir
+# konteynerde (ör. CI çalıştırıcısı, yeni deploy) birkaç saniye bile olabilir.
+# Başlangıç değeri 0.0 olsaydı "now - 0.0 >= 600" karşılaştırması konteyner
+# henüz 600 saniyedir ayakta değilse YANLIŞLIKLA False dönüp ilk yedeği
+# atlayabilirdi (CI'da ara sıra gözlenen kırılganlığın gerçek kök nedeni
+# buydu — iş parçacığı sızıntısıyla ilgisizdi). -inf, mutlak tabandan bağımsız
+# olarak "henüz hiç yedeklenmedi" anlamına gelir ve ilk çağrıda her zaman
+# tetiklenir.
+_last_backup_at = float("-inf")
 
 _EXTRA_DEFAULTS = {
     "import_history": [],
