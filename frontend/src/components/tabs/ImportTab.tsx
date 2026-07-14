@@ -48,6 +48,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [queueActive, setQueueActive] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [deliveryProgress, setDeliveryProgress] = useState<{ delivered: number; total: number } | null>(null);
   const [unmatched, setUnmatched] = useState<UnmatchedPhoto[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
@@ -119,32 +120,41 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
       return;
     }
     setUploading(true);
+    setDeliveryProgress({ delivered: 0, total: sourceFiles.length });
     try {
+      // iOS, dosya seçici kapandıktan sonra bazı geçici dosya tutamaçlarını
+      // geçersizleştirebilir. Tüm okumaları seçim anında başlatırız.
+      const settled = await Promise.allSettled(sourceFiles.map((source) => materializeUploadFile(source)));
       const files: File[] = [];
       const unreadable: string[] = [];
-      for (const source of sourceFiles) {
-        try {
-          files.push(await materializeUploadFile(source));
-        } catch (error) {
-          unreadable.push(error instanceof Error ? error.message : `${source.name}: dosya okunamadı.`);
+      settled.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          files.push(result.value);
+        } else {
+          const error = result.reason;
+          unreadable.push(error instanceof Error ? error.message : `${sourceFiles[index].name}: dosya okunamadı.`);
         }
-      }
+      });
       input.value = "";
       if (unreadable.length) notify(`${unreadable.length} dosya okunamadı; yeniden seçin.`, "warn");
       if (!files.length) return;
-      const result = await queueImportFiles(files, replace, dupStrategy);
+      const result = await queueImportFiles(files, replace, dupStrategy, (delivered, total) => {
+        setDeliveryProgress({ delivered, total });
+      });
       setJobs((current) => {
         const known = new Set(current.map((job) => job.id));
         return [...current, ...result.jobs.filter((job) => !known.has(job.id))];
       });
-      setQueueActive(true);
+      setQueueActive(result.active);
       doneCountRef.current = -1;
       notify(`${result.jobs.length} dosya kuyruğa alındı`);
       void refreshQueue();
     } catch (error) {
       notify(error instanceof Error ? error.message : "Dosyalar sunucuya teslim edilemedi.", "error");
+      void refreshQueue();
     } finally {
       input.value = "";
+      setDeliveryProgress(null);
       setUploading(false);
     }
   }
@@ -268,8 +278,12 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
           <label className="ic-upload-zone">
             <span className="ic-upload-icon">DOSYA SEÇ</span>
             <p className="ic-upload-title">Dosya Alım Modülü</p>
-            <p className="ic-upload-hint">Sınırsız çoklu seçim · işlem sürerken yeni dosya eklenebilir</p>
-            <p className="ic-upload-formats">XLSX, XLS, CSV, ODS ve ZIP</p>
+            <p className="ic-upload-hint">
+              {deliveryProgress
+                ? `${deliveryProgress.delivered}/${deliveryProgress.total} dosya sunucuya teslim edildi`
+                : "Sınırsız çoklu seçim · işlem sürerken yeni dosya eklenebilir"}
+            </p>
+            <p className="ic-upload-formats">XLSX, XLS, XLSM, CSV ve ODS</p>
             <input
               className="ic-upload-input"
               type="file"
