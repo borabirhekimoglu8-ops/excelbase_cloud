@@ -126,6 +126,48 @@ def test_expired_lease_recovery_delete_and_append_only_audit(queue_db):
     assert db.list_audit_events(10) == [event]
 
 
+def test_v7_bootstrap_does_not_collide_with_existing_v8_audit_table(monkeypatch, tmp_path):
+    """V7 and V8 share Render PostgreSQL but own different audit schemas."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'shared.sqlite'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE audit_events ("
+                "id VARCHAR(128) PRIMARY KEY, organization_id VARCHAR(128) NOT NULL, "
+                "request_id VARCHAR(80) NOT NULL, created_at VARCHAR(40) NOT NULL)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO audit_events (id, organization_id, request_id, created_at) "
+                "VALUES ('v8-event', 'org-1', 'request-1', '2026-07-14')"
+            )
+        )
+
+    db._create_tables(engine)
+    monkeypatch.setattr(db, "get_engine", lambda: engine)
+    event = db.insert_audit_event(
+        "Admin", "admin", "POST", "/api/import/queue", event_id="v7-event"
+    )
+
+    with engine.begin() as conn:
+        v8_columns = {
+            str(row[1]) for row in conn.execute(text("PRAGMA table_info(audit_events)"))
+        }
+        v7_columns = {
+            str(row[1]) for row in conn.execute(text("PRAGMA table_info(v7_audit_events)"))
+        }
+        v8_row_count = conn.execute(text("SELECT COUNT(*) FROM audit_events")).scalar_one()
+        v7_row_count = conn.execute(text("SELECT COUNT(*) FROM v7_audit_events")).scalar_one()
+
+    assert v8_columns == {"id", "organization_id", "request_id", "created_at"}
+    assert v8_row_count == 1
+    assert {"id", "occurred_at", "actor", "role", "action", "path"} <= v7_columns
+    assert v7_row_count == 1
+    assert event is not None
+    assert db.list_audit_events(10) == [event]
+
+
 def test_replace_intent_is_carried_by_every_row_and_force_recovery(queue_db):
     rows = db.enqueue_import_jobs(
         [("bad-first.xlsx", b"bad"), ("good-second.csv", b"good")],

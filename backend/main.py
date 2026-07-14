@@ -104,7 +104,7 @@ app.add_middleware(
 ROOT_DIR = Path(__file__).resolve().parents[1]
 FRONTEND_OUT = ROOT_DIR / "frontend" / "out"
 NEXT_ASSETS = FRONTEND_OUT / "_next"
-FRONTEND_ASSET_PREFIX = "/assets/20260714-durablequeue"
+FRONTEND_ASSET_PREFIX = "/assets/20260714-durablequeue-dbfix"
 
 
 @app.middleware("http")
