@@ -12,6 +12,7 @@ import { ArchiveTab } from "@/components/tabs/ArchiveTab";
 import { ImportTab } from "@/components/tabs/ImportTab";
 import { PackageTab } from "@/components/tabs/PackageTab";
 import { ManagementTab } from "@/components/tabs/ManagementTab";
+import { UI_VERSION } from "@/lib/version";
 
 type TabKey = "home" | "passengers" | "issues" | "gallery" | "archive" | "import" | "package" | "management";
 
@@ -82,6 +83,11 @@ function Shell() {
         <span>{summary.passenger_count} yolcu</span>
         <span className="status-divider" />
         <span>%{summary.readiness_percent} hazır</span>
+        <span className="status-divider" />
+        <span>
+          v{UI_VERSION}
+          {summary.version && summary.version !== UI_VERSION ? ` · sunucu v${summary.version} — sayfayı yenileyin` : ""}
+        </span>
       </div>
 
       <DateScopeBar />

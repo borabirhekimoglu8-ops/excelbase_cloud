@@ -219,8 +219,68 @@ def test_import_fails_loudly_when_db_write_fails(monkeypatch, tmp_path):
 def test_summary_reports_local_fallback_persistence(monkeypatch, tmp_path):
     _isolate_store(monkeypatch, tmp_path)
     from backend import services
+    from backend.state import APP_VERSION
 
-    assert services.get_summary().persistence == "local-fallback"
+    summary = services.get_summary()
+    assert summary.persistence == "local-fallback"
+    assert summary.version == APP_VERSION
+
+
+def test_ui_and_backend_versions_match():
+    from pathlib import Path
+    from backend.state import APP_VERSION
+
+    version_ts = (Path(__file__).parents[1] / "frontend" / "src" / "lib" / "version.ts").read_text(encoding="utf-8")
+    assert f'"{APP_VERSION}"' in version_ts
+
+
+def test_cache_headers_prevent_stale_shell_and_api(monkeypatch, tmp_path):
+    """iOS Safari eski uygulama kabuğunu/API yanıtını önbelleklemesin."""
+    _isolate_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
+
+    import backend.main as backend_main
+    from fastapi.testclient import TestClient
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    (out_dir / "index.html").write_text("<!doctype html><title>GV</title>", encoding="utf-8")
+    monkeypatch.setattr(backend_main, "FRONTEND_OUT", out_dir)
+
+    with TestClient(backend_main.app) as client:
+        page = client.get("/")
+        assert page.status_code == 200
+        assert page.headers["cache-control"] == "no-store"
+
+        api = client.get("/api/summary")
+        assert api.status_code == 200
+        assert api.headers["cache-control"] == "no-store"
+
+        health = client.get("/health")
+        assert health.json()["version"]
+        assert health.json()["database_writable"] is False
+
+
+def test_daily_backup_is_throttled(monkeypatch, tmp_path):
+    """Art arda kayıtlar tüm veriyi her seferinde yeniden yedeklemesin."""
+    import pandas as pd
+
+    calls = {"backup": 0}
+
+    def fake_backup(payload):
+        calls["backup"] += 1
+        return True
+
+    monkeypatch.setattr(db, "enabled", lambda: True)
+    monkeypatch.setattr(db, "save_state", lambda payload: True)
+    monkeypatch.setattr(db, "save_daily_backup", fake_backup)
+    monkeypatch.setattr(persistence, "_last_backup_at", 0.0)
+
+    df = pd.DataFrame(columns=persistence.ALL_COLUMNS)
+    persistence.save_store(df, [], {})
+    persistence.save_store(df, [], {})
+    persistence.save_store(df, [], {})
+    assert calls["backup"] == 1
 
 
 def test_db_engine_retries_after_transient_failure(monkeypatch, tmp_path):
