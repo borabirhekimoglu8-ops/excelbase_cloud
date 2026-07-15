@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   output: "export",
   // Eski iPhone kurulumları aynı Turbopack dosya adını bir yıl önbellekte
   // tuttuğu için bu sürüm yeni bir asset yolu kullanır.
-  assetPrefix: "/assets/20260714-durablequeue-dbfix",
+  assetPrefix: "/assets/20260715-slowfix",
 };
 
 export default nextConfig;

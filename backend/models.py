@@ -25,6 +25,13 @@ class PassengerRecord(BaseModel):
     duplicate: bool = False
 
 
+class PassengerPage(BaseModel):
+    items: list[PassengerRecord]
+    total: int
+    offset: int
+    limit: int
+
+
 class OperationSummary(BaseModel):
     passenger_count: int
     adult_total: float
@@ -36,6 +43,8 @@ class OperationSummary(BaseModel):
     missing_voucher: int
     missing_fee: int
     duplicates: int
+    ready_count: int = 0
+    missing_count: int = 0
     readiness_percent: int
     issue_counts: dict[str, int]
     loaded_files: list[str]

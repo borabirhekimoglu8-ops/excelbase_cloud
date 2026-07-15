@@ -139,15 +139,23 @@ def _record(idx: int, row: pd.Series, dup_keys: set[str], with_key: str = "") ->
     )
 
 
-def dataframe_to_records(df: pd.DataFrame, with_key: str = "") -> list[PassengerRecord]:
+def dataframe_to_records(
+    df: pd.DataFrame,
+    with_key: str = "",
+    duplicate_keys: set[str] | None = None,
+) -> list[PassengerRecord]:
     if df.empty:
         return []
-    dup_keys = duplicate_passport_keys(df)
+    dup_keys = duplicate_passport_keys(df) if duplicate_keys is None else duplicate_keys
     return [_record(int(i), row, dup_keys, with_key) for i, row in df.iterrows()]
 
 
-def _status_mask(df: pd.DataFrame, status: str) -> pd.Series:
-    dup = duplicate_passport_keys(df)
+def _status_mask(
+    df: pd.DataFrame,
+    status: str,
+    duplicate_keys: set[str] | None = None,
+) -> pd.Series:
+    dup = duplicate_passport_keys(df) if duplicate_keys is None else duplicate_keys
     if status == "Fotosuz":
         return df["Foto"].astype(str).str.strip().eq("")
     if status == "Pasaportsuz":
@@ -205,16 +213,59 @@ def get_passengers(
     start: str = "",
     end: str = "",
 ) -> list[PassengerRecord]:
+    df, dup_keys = _filtered_passengers(search, status, sort, range_choice, start, end)
+    return dataframe_to_records(df, with_key, dup_keys)
+
+
+def _filtered_passengers(
+    search: str = "",
+    status: str = "",
+    sort: str = "",
+    range_choice: str = "Tümü",
+    start: str = "",
+    end: str = "",
+) -> tuple[pd.DataFrame, set[str]]:
     df, _, _ = load_state()
     if df.empty:
-        return []
+        return df, set()
     df = _scoped_df(df, range_choice, start, end)
+    # Duplicate state belongs to the whole selected date scope, not merely the
+    # current search result or 20-row page. Otherwise matching copies split
+    # across pages appear clean even though the status filter selected them as
+    # duplicates.
+    dup_keys = duplicate_passport_keys(df)
     if search:
         df = apply_filters(df, search, {})
     if status:
-        df = df[_status_mask(df, status)]
+        df = df[_status_mask(df, status, dup_keys)]
     df = _sort_df(df, sort)
-    return dataframe_to_records(df, with_key)
+    return df, dup_keys
+
+
+def get_passenger_page(
+    search: str = "",
+    status: str = "",
+    sort: str = "",
+    with_key: str = "",
+    offset: int = 0,
+    limit: int = 20,
+    range_choice: str = "Tümü",
+    start: str = "",
+    end: str = "",
+) -> tuple[list[PassengerRecord], int]:
+    """Return only the visible rows while preserving stable dataframe IDs."""
+    df, dup_keys = _filtered_passengers(search, status, sort, range_choice, start, end)
+    total = len(df)
+    start_at = max(0, int(offset))
+    page_size = max(1, min(int(limit), 100))
+    return (
+        dataframe_to_records(
+            df.iloc[start_at : start_at + page_size],
+            with_key,
+            dup_keys,
+        ),
+        total,
+    )
 
 
 def get_summary(range_choice: str = "Tümü", start: str = "", end: str = "") -> OperationSummary:
@@ -222,6 +273,7 @@ def get_summary(range_choice: str = "Tümü", start: str = "", end: str = "") ->
     df = _scoped_df(df, range_choice, start, end)
     summary = summarize_group(df)
     metrics = readiness_metrics(df)
+    missing_count = int(_status_mask(df, "Eksik").sum()) if not df.empty else 0
     active_batches = [b for b in extra.get("import_batches", []) if b.get("status") == "active"]
     last_batch = active_batches[0] if active_batches else None
     return OperationSummary(
@@ -235,6 +287,8 @@ def get_summary(range_choice: str = "Tümü", start: str = "", end: str = "") ->
         missing_voucher=metrics["voucher_missing"],
         missing_fee=metrics["fee_missing"],
         duplicates=metrics["duplicates"],
+        ready_count=max(0, len(df) - missing_count),
+        missing_count=missing_count,
         readiness_percent=metrics["pct"],
         issue_counts=issue_counts(df),
         loaded_files=list(loaded_files),
@@ -1780,6 +1834,204 @@ def _enqueue_archive_child(
     )
 
 
+_ARCHIVE_CHILD_CHUNK_FILES = 16
+_ARCHIVE_CHILD_CHUNK_BYTES = 32 * 1024 * 1024
+
+
+def _enqueue_archive_children_chunk(
+    parent: dict,
+    members: list[tuple[int, str, str, bytes]],
+) -> list[dict]:
+    """Persist consecutive valid ZIP members in one durable transaction.
+
+    IDs are derived from the parent, source ordinal and original archive name,
+    so retrying an interrupted expansion cannot duplicate child jobs.  Bad
+    members are flushed as barriers by the caller; consequently every chunk's
+    ordinals are consecutive and ``start_ordinal`` preserves archive order.
+    """
+    if not members:
+        return []
+    parent_id = str(parent.get("id", ""))
+    first_ordinal = int(members[0][0])
+    if any(int(item[0]) != first_ordinal + index for index, item in enumerate(members)):
+        raise ValueError("ZIP child chunk ordinals must be consecutive.")
+
+    if _queue_uses_database():
+        rows = db.enqueue_import_jobs(
+            [(display_name, payload) for _, _, display_name, payload in members],
+            job_ids=[
+                _child_job_id(parent_id, int(ordinal), raw_name)
+                for ordinal, raw_name, _, _ in members
+            ],
+            parent_id=parent_id,
+            kind="file",
+            mime="application/octet-stream",
+            batch_id=str(parent.get("batch_id", "")),
+            replace=bool(parent.get("replace")),
+            dup_strategy=str(parent.get("dup_strategy") or "skip"),
+            start_ordinal=first_ordinal,
+            message="ZIP içinden çıkarıldı; sırada.",
+        )
+        if rows is None:
+            raise StorePersistenceError(
+                "ZIP üyeleri kalıcı aktarım kuyruğuna kaydedilemedi. "
+                "Veritabanı bağlantısını kontrol edip yeniden deneyin."
+            )
+        return [dict(row) for row in rows]
+
+    return [
+        _enqueue_archive_child(
+            parent,
+            ordinal=ordinal,
+            raw_name=raw_name,
+            filename=display_name,
+            payload=payload,
+            replace=bool(parent.get("replace")),
+        )
+        for ordinal, raw_name, display_name, payload in members
+    ]
+
+
+def _process_archive_children_chunk(
+    parent: dict,
+    members: list[tuple[int, str, str, bytes]],
+) -> None:
+    """Parse and persist a bounded archive chunk with one passenger-state write.
+
+    In the database inline path child rows do not exist while parsing.  Once
+    the deterministic passenger-state marker is durable, every fresh child is
+    inserted directly in its final state in one transaction.  Consequently a
+    second worker can never lease a transient ``pending`` row from this path.
+
+    Children left pending by an older deployment are intentionally excluded
+    here and remain available to the ordinary queue worker.  Terminal rows are
+    also left untouched on replay.
+    """
+    if not members:
+        return
+    parent_id = str(parent.get("id", ""))
+    child_meta = [
+        {
+            "id": _child_job_id(parent_id, int(ordinal), raw_name),
+            "ordinal": int(ordinal),
+            "filename": display_name,
+            "payload": payload,
+        }
+        for ordinal, raw_name, display_name, payload in members
+    ]
+    existing = db.get_import_jobs_by_ids([str(item["id"]) for item in child_meta])
+    if existing is None:
+        raise StorePersistenceError(
+            "ZIP alt işlerinin durumu okunamadı. Veritabanı bağlantısını kontrol edip yeniden deneyin."
+        )
+    fresh = [
+        (member, child)
+        for member, child in zip(members, child_meta, strict=True)
+        if str(child["id"]) not in existing
+    ]
+    if not fresh:
+        return
+
+    parsed: list[tuple[dict, pd.DataFrame, list[str], list[str]]] = []
+    results: list[dict] = []
+    for member, child in fresh:
+        _, _, display_name, payload = member
+        try:
+            imported_df, loaded_names, warnings = _parse_import_files_with_timeout(
+                [(display_name, payload)]
+            )
+        except (ValueError, TimeoutError) as exc:
+            results.append(
+                {
+                    "id": str(child.get("id", "")),
+                    "ordinal": int(child.get("ordinal", 0)),
+                    "filename": str(child.get("filename", display_name)),
+                    "status": "error",
+                    "message": str(exc),
+                    # Hatalı payload manuel yeniden deneme için korunur.
+                    "payload": payload,
+                }
+            )
+        except Exception as exc:
+            logger.exception("ZIP üyesi ayrıştırılamadı: %s", display_name)
+            results.append(
+                {
+                    "id": str(child.get("id", "")),
+                    "ordinal": int(child.get("ordinal", 0)),
+                    "filename": str(child.get("filename", display_name)),
+                    "status": "error",
+                    "message": str(exc) or "Dosya işlenemedi; yeniden deneyin.",
+                    "payload": payload,
+                }
+            )
+        else:
+            parsed.append((child, imported_df, loaded_names, warnings))
+
+    if parsed:
+        combined_df = pd.concat([item[1] for item in parsed], ignore_index=True)
+        combined_names = [name for item in parsed for name in item[2]]
+        combined_warnings = [warning for item in parsed for warning in item[3]]
+        first_ordinal = int(fresh[0][0][0])
+        last_ordinal = int(fresh[-1][0][0])
+        marker = f"archive-chunk:{parent_id}:{first_ordinal}:{last_ordinal}"
+        imported, _, _, _, _, duplicates, _ = _merge_and_save_import(
+            combined_df,
+            combined_names,
+            combined_warnings,
+            replace=bool(parent.get("replace")),
+            dup_strategy=str(parent.get("dup_strategy") or "skip"),
+            batch_id=str(parent.get("batch_id") or ""),
+            job_id=marker,
+        )
+        remaining_imported = int(imported)
+        for index, (child, imported_df, _, warnings) in enumerate(parsed):
+            row_count = len(imported_df)
+            accepted = min(row_count, max(0, remaining_imported))
+            remaining_imported -= accepted
+            invalid = _critical_import_count(imported_df)
+            message_parts = [f"{accepted} yolcu aktarıldı"]
+            # Combined duplicate count belongs to the whole deterministic
+            # chunk.  Store it once so the parent aggregate remains exact.
+            child_duplicates = int(duplicates) if index == 0 else 0
+            if child_duplicates:
+                message_parts.append(f"{child_duplicates} tekrar")
+            if invalid:
+                message_parts.append(f"{invalid} kritik kontrol")
+            if warnings:
+                message_parts.append(warnings[0])
+            results.append(
+                {
+                    "id": str(child.get("id", "")),
+                    "ordinal": int(child.get("ordinal", 0)),
+                    "filename": str(child.get("filename", "dosya")),
+                    "status": "done",
+                    "message": " · ".join(message_parts) + ".",
+                    "imported": accepted,
+                    "duplicates": child_duplicates,
+                    "invalid": invalid,
+                    "payload": None,
+                }
+            )
+
+    if results:
+        try:
+            stored = db.store_finished_import_children(parent_id, results)
+        except db.DatabaseUnavailableError as exc:
+            raise StorePersistenceError(str(exc)) from exc
+        if stored is None:
+            raise StorePersistenceError("ZIP alt işleri kalıcı olarak kaydedilemedi.")
+        expected = {str(item.get("id", "")) for item in results}
+        terminal = {
+            str(item.get("id", ""))
+            for item in stored
+            if str(item.get("status", "")) in {"done", "error", "cancelled"}
+        }
+        if not expected.issubset(terminal):
+            raise StorePersistenceError(
+                "ZIP alt işlerinin terminal durumu doğrulanamadı; aktarım güvenle yeniden denenecek."
+            )
+
+
 def _refresh_parent(parent_id: str) -> None:
     # PostgreSQL/SQLite durable backend child finish transaction'ında sınırsız
     # SQL aggregate ile parentı atomik günceller. Buradaki Python aggregate
@@ -1827,7 +2079,39 @@ def _mark_bad_archive_child(
     filename: str,
     message: str,
     replace: bool,
+    *,
+    process_inline: bool = False,
+    payload: bytes = b"",
 ) -> None:
+    if process_inline and _queue_uses_database():
+        parent_id = str(parent.get("id", ""))
+        child_id = _child_job_id(parent_id, ordinal, raw_name)
+        existing = db.get_import_jobs_by_ids([child_id])
+        if existing is None:
+            raise StorePersistenceError("ZIP alt işinin durumu okunamadı.")
+        # Pending children from an older release stay on the ordinary queue;
+        # terminal rows are immutable replay results.
+        if child_id in existing:
+            return
+        try:
+            stored = db.store_finished_import_children(
+                parent_id,
+                [
+                    {
+                        "id": child_id,
+                        "ordinal": ordinal,
+                        "filename": filename,
+                        "status": "error",
+                        "message": message,
+                        "payload": payload,
+                    }
+                ],
+            )
+        except db.DatabaseUnavailableError as exc:
+            raise StorePersistenceError(str(exc)) from exc
+        if not stored or str(stored[0].get("status")) != "error":
+            raise StorePersistenceError("ZIP alt işi hata durumunda kaydedilemedi.")
+        return
     child = _enqueue_archive_child(
         parent,
         ordinal=ordinal,
@@ -1840,7 +2124,7 @@ def _mark_bad_archive_child(
         _queue_finish(str(child.get("id")), "error", message=message)
 
 
-def _expand_archive_job(parent: dict, data: bytes) -> None:
+def _expand_archive_job(parent: dict, data: bytes, *, process_children: bool = False) -> None:
     """Bir ZIP'i üye üye kalıcı child işlere çevirir.
 
     Tek bir bozuk/boş/şifreli üye yalnız kendi child işini hataya düşürür;
@@ -1858,6 +2142,21 @@ def _expand_archive_job(parent: dict, data: bytes) -> None:
     total_uncompressed = 0
     used_names: dict[str, int] = {}
     limit_hit = False
+    pending_members: list[tuple[int, str, str, bytes]] = []
+    pending_bytes = 0
+    process_children_now = bool(process_children and _queue_uses_database())
+
+    def flush_pending() -> None:
+        nonlocal pending_bytes
+        if not pending_members:
+            return
+        if process_children_now:
+            _process_archive_children_chunk(parent, pending_members)
+        else:
+            _enqueue_archive_children_chunk(parent, pending_members)
+        pending_members.clear()
+        pending_bytes = 0
+
     try:
         for source_ordinal, info in enumerate(archive.infolist()):
             raw_name = info.filename.replace("\\", "/")
@@ -1878,36 +2177,46 @@ def _expand_archive_job(parent: dict, data: bytes) -> None:
                 stem, suffix = os.path.splitext(basename)
                 display_name = f"{stem} ({occurrence}){suffix}"
             if raw_name.startswith("/") or any(part == ".." for part in parts):
+                flush_pending()
                 _mark_bad_archive_child(
                     parent, ordinal, raw_name, display_name,
                     "ZIP içinde güvensiz dosya yolu; bu üye atlandı.", False,
+                    process_inline=process_children_now,
                 )
                 continue
             if info.flag_bits & 0x1:
+                flush_pending()
                 _mark_bad_archive_child(
                     parent, ordinal, raw_name, display_name,
                     "Şifreli ZIP üyesi desteklenmiyor; bu dosya atlandı.", False,
+                    process_inline=process_children_now,
                 )
                 continue
             if info.file_size <= 0:
+                flush_pending()
                 _mark_bad_archive_child(
                     parent, ordinal, raw_name, display_name,
                     "Arşiv içindeki dosya boş.", False,
+                    process_inline=process_children_now,
                 )
                 continue
             if info.file_size > MAX_UPLOAD_BYTES:
+                flush_pending()
                 _mark_bad_archive_child(
                     parent, ordinal, raw_name, display_name,
                     f"Arşiv içindeki dosya {MAX_UPLOAD_BYTES // (1024 * 1024)} MB sınırını aşıyor.",
                     False,
+                    process_inline=process_children_now,
                 )
                 continue
             total_uncompressed += int(info.file_size)
             if total_uncompressed > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES:
+                flush_pending()
                 _mark_bad_archive_child(
                     parent, ordinal, raw_name, display_name,
                     "ZIP açılmış toplam boyut güvenlik sınırını aştı; kalan üyeler okunmadı.",
                     False,
+                    process_inline=process_children_now,
                 )
                 limit_hit = True
                 break
@@ -1918,22 +2227,33 @@ def _expand_archive_job(parent: dict, data: bytes) -> None:
                     raise ValueError("Arşiv içindeki dosya boş.")
                 if len(member_data) > MAX_UPLOAD_BYTES:
                     raise ValueError(f"Dosya {MAX_UPLOAD_BYTES // (1024 * 1024)} MB sınırını aşıyor.")
-                _enqueue_archive_child(
-                    parent,
-                    ordinal=ordinal,
-                    raw_name=raw_name,
-                    filename=display_name,
-                    payload=member_data,
-                    replace=bool(parent.get("replace")),
-                )
-                del member_data
+                if pending_members and pending_bytes + len(member_data) > _ARCHIVE_CHILD_CHUNK_BYTES:
+                    flush_pending()
+                pending_members.append((ordinal, raw_name, display_name, member_data))
+                pending_bytes += len(member_data)
+                if (
+                    len(pending_members) >= _ARCHIVE_CHILD_CHUNK_FILES
+                    or pending_bytes >= _ARCHIVE_CHILD_CHUNK_BYTES
+                ):
+                    flush_pending()
+            except StorePersistenceError:
+                raise
             except (ValueError, RuntimeError, zipfile.BadZipFile, OSError) as exc:
+                flush_pending()
                 _mark_bad_archive_child(
                     parent, ordinal, raw_name, display_name,
                     str(exc) or "ZIP üyesi okunamadı; diğer dosyalara devam edildi.",
                     False,
+                    process_inline=process_children_now,
                 )
+        flush_pending()
+    except StorePersistenceError:
+        raise
     except (RuntimeError, zipfile.BadZipFile, OSError) as exc:
+        # Preserve valid members decoded before a later corrupt central entry.
+        # The chunk insert is atomic and deterministic, so a worker retry is
+        # safe even if this flush succeeds immediately before a process crash.
+        flush_pending()
         logger.warning("ZIP kısmen okunabildi parent=%s error=%s", parent_id, exc)
     finally:
         archive.close()
@@ -2003,7 +2323,7 @@ def _process_import_job(job: dict) -> None:
     started = time.monotonic()
     try:
         if str(job.get("kind")) == "upload" and str(job.get("filename", "")).lower().endswith(".zip"):
-            _expand_archive_job(job, data)
+            _expand_archive_job(job, data, process_children=True)
         else:
             _process_file_job(job, data)
     finally:
