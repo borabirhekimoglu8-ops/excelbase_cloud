@@ -10,6 +10,7 @@ import {
   deleteUnmatchedPhoto,
   downloadUrl,
   fetchImportQueue,
+  fetchPassengerPage,
   fetchPassengers,
   fetchUnmatchedPhotos,
   importMail,
@@ -91,12 +92,20 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
   const [deliveryItems, setDeliveryItems] = useState<DeliveryItem[]>([]);
   const [queueLoadError, setQueueLoadError] = useState("");
   const [unmatched, setUnmatched] = useState<UnmatchedPhoto[]>([]);
-  const [passengers, setPassengers] = useState<Passenger[]>([]);
+  const [previewPassengers, setPreviewPassengers] = useState<Passenger[]>([]);
+  const [assignmentPassengers, setAssignmentPassengers] = useState<Passenger[]>([]);
+  const [assignmentPassengersLoading, setAssignmentPassengersLoading] = useState(false);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoLog, setPhotoLog] = useState<string[]>([]);
   const doneCountRef = useRef(-1);
   const queueRefreshBusyRef = useRef(false);
+  const queueWasActiveRef = useRef(false);
+  const trackedJobIdsRef = useRef<Set<string>>(new Set());
+  const previewPassengerTotalRef = useRef(0);
+  const assignmentPassengerCountRef = useRef(-1);
+  const assignmentLoadPromiseRef = useRef<Promise<void> | null>(null);
+  const assignmentAutoLoadAttemptedRef = useRef(false);
 
   // Adım değiştiğinde önceki adımdan kalan kaydırma konumu yeni adımın
   // başlığını/adım göstergesini görünür alanın dışına itebiliyordu.
@@ -104,11 +113,42 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
     window.scrollTo({ top: 0 });
   }, [step]);
 
+  const ensureAssignmentPassengers = useCallback(async (expectedTotal = previewPassengerTotalRef.current) => {
+    if (assignmentPassengerCountRef.current === expectedTotal) return;
+    if (assignmentLoadPromiseRef.current) return assignmentLoadPromiseRef.current;
+
+    setAssignmentPassengersLoading(true);
+    const request = fetchPassengers({ sort: "name" })
+      .then((rows) => {
+        setAssignmentPassengers(rows);
+        assignmentPassengerCountRef.current = rows.length;
+      })
+      .catch((error) => {
+        notify(error instanceof Error ? error.message : "Yolcu seçim listesi yüklenemedi.", "error");
+      })
+      .finally(() => {
+        assignmentLoadPromiseRef.current = null;
+        setAssignmentPassengersLoading(false);
+      });
+    assignmentLoadPromiseRef.current = request;
+    return request;
+  }, [notify]);
+
   const refreshUnmatched = useCallback(async () => {
-    const [photos, rows] = await Promise.all([fetchUnmatchedPhotos(), fetchPassengers({ sort: "name" })]);
+    const [photos, page] = await Promise.all([
+      fetchUnmatchedPhotos(),
+      fetchPassengerPage({ sort: "name", offset: 0, limit: 3 }),
+    ]);
     setUnmatched(photos);
-    setPassengers(rows);
-  }, []);
+    setPreviewPassengers(page.items);
+    previewPassengerTotalRef.current = page.total;
+    // Tam yolcu listesi normal aktarım/polling akışında indirilmez. Yalnızca
+    // eşleşmemiş fotoğraf atama arayüzü gerçekten görünürse bir defa hazırlanır.
+    if (photos.length > 0 && !assignmentAutoLoadAttemptedRef.current) {
+      assignmentAutoLoadAttemptedRef.current = true;
+      void ensureAssignmentPassengers(page.total);
+    }
+  }, [ensureAssignmentPassengers]);
 
   const refreshQueue = useCallback(async () => {
     // Render/PostgreSQL kısa süreli yavaşladığında önceki sorgu bitmeden yeni
@@ -120,12 +160,25 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
       const state = await fetchImportQueue();
       setQueueLoadError("");
       setJobs(state.jobs);
-      setQueueActive(
-        state.active || state.jobs.some((job) => job.status === "waiting" || job.status === "pending" || job.status === "processing"),
+      const nextActive = (
+        state.active
+        || state.jobs.some((job) => job.status === "waiting" || job.status === "pending" || job.status === "processing")
       );
+      setQueueActive(nextActive);
       const doneCount = state.jobs.filter((job) => job.status === "done" || job.status === "error").length;
-      if (doneCountRef.current !== -1 && doneCount !== doneCountRef.current) bump();
+      const trackedIds = trackedJobIdsRef.current;
+      const trackedJobs = state.jobs.filter((job) => trackedIds.has(job.id));
+      const trackedFinished = (
+        trackedIds.size > 0
+        && trackedJobs.length === trackedIds.size
+        && trackedJobs.every((job) => job.status === "done" || job.status === "error")
+      );
+      const becameIdle = queueWasActiveRef.current && !nextActive;
+      const terminalCountChanged = doneCountRef.current !== -1 && doneCount !== doneCountRef.current;
+      if (terminalCountChanged || trackedFinished || becameIdle) bump();
+      if (trackedFinished || becameIdle) trackedJobIdsRef.current.clear();
       doneCountRef.current = doneCount;
+      queueWasActiveRef.current = nextActive;
     } catch (error) {
       setQueueLoadError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -275,6 +328,8 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             const known = new Set(current.map((job) => job.id));
             return [...current, ...acceptedResult.jobs.filter((job) => !known.has(job.id))];
           });
+          for (const job of acceptedResult.jobs) trackedJobIdsRef.current.add(job.id);
+          queueWasActiveRef.current = true;
           if (
             acceptedResult.active
             || acceptedResult.jobs.some((job) => job.status === "waiting" || job.status === "pending" || job.status === "processing")
@@ -319,6 +374,8 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
   async function handleRetry(job: ImportJob) {
     try {
       await retryImportJob(job.id);
+      trackedJobIdsRef.current.add(job.id);
+      queueWasActiveRef.current = true;
       setQueueActive(true);
       await refreshQueue();
     } catch (error) {
@@ -338,6 +395,8 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
   function startNewUpload() {
     setJobs([]);
     doneCountRef.current = -1;
+    trackedJobIdsRef.current.clear();
+    queueWasActiveRef.current = false;
     setStep("files");
   }
 
@@ -606,13 +665,13 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             );
           })}
 
-          {passengers.length > 0 && (
+          {previewPassengers.length > 0 && (
             <div className="ic-preview-dark">
               <div className="ic-preview-head">
                 <strong>KAYIT ÖNİZLEMESİ</strong>
-                <span>İlk {Math.min(3, passengers.length)} yolcu</span>
+                <span>İlk {previewPassengers.length} yolcu</span>
               </div>
-              {passengers.slice(0, 3).map((p) => (
+              {previewPassengers.map((p) => (
                 <p className="ic-preview-row" key={p.id}>
                   {p.full_name || "İsimsiz"} · {p.passport_no || "—"}
                 </p>
@@ -768,10 +827,12 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
                       <select
                         value={assignments[item.id] ?? ""}
                         onChange={(e) => setAssignments((cur) => ({ ...cur, [item.id]: e.target.value }))}
+                        onFocus={() => void ensureAssignmentPassengers()}
+                        disabled={assignmentPassengersLoading}
                         style={{ border: "1px solid var(--ido-border)", borderRadius: 4, fontSize: 10, padding: "2px 4px", marginTop: 2 }}
                       >
-                        <option value="">Yolcu seçin</option>
-                        {passengers.map((p) => (
+                        <option value="">{assignmentPassengersLoading ? "Yolcular yükleniyor…" : "Yolcu seçin"}</option>
+                        {assignmentPassengers.map((p) => (
                           <option key={p.id} value={p.id}>{p.full_name} · {p.passport_no}</option>
                         ))}
                       </select>

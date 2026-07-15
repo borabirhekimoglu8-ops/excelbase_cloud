@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Passenger, bulkDelete, fetchPassengers } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { Passenger, bulkDelete, fetchImportQueue, fetchPassengerPage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
 import { PassengerCard } from "@/components/PassengerCard";
@@ -22,26 +22,86 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>(initialStatus);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [retryNonce, setRetryNonce] = useState(0);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
-  const [chipCounts, setChipCounts] = useState<{ ready: number; missing: number }>({ ready: 0, missing: 0 });
 
   useEffect(() => {
     setStatus(initialStatus);
   }, [initialStatus]);
 
   useEffect(() => {
+    setPage(0);
+  }, [search, status, dateScope]);
+
+  useEffect(() => {
+    // Kullanıcı aktarım sürerken bu sekmeye geçerse ImportTab unmount olur ve
+    // onun poll'u durur. Kuyruğu burada yalnız aktif olduğu sürece izleyip son
+    // kayıt tamamlanınca hem özeti hem görünür sayfayı kesin olarak yenileriz.
+    let mounted = true;
+    let timer: number | undefined;
+    let sawActive = false;
+    let firstCheck = true;
+    const checkQueue = async () => {
+      try {
+        const state = await fetchImportQueue();
+        if (!mounted) return;
+        const nextActive = state.active || state.jobs.some(
+          (job) => job.status === "waiting" || job.status === "pending" || job.status === "processing",
+        );
+        if (firstCheck) {
+          // İlk yolcu sorgusu ile yarışan hızlı tamamlanmayı da yakala.
+          firstCheck = false;
+          setRetryNonce((value) => value + 1);
+        }
+        if (sawActive && !nextActive) {
+          bump();
+          setRetryNonce((value) => value + 1);
+        }
+        sawActive = sawActive || nextActive;
+        if (nextActive) timer = window.setTimeout(() => void checkQueue(), 4_000);
+      } catch {
+        if (mounted) timer = window.setTimeout(() => void checkQueue(), 6_000);
+      }
+    };
+    void checkQueue();
+    return () => {
+      mounted = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [bump]);
+
+  useEffect(() => {
     let active = true;
     setLoading(true);
+    setLoadError("");
     const timer = window.setTimeout(() => {
-      fetchPassengers({ search, status, sort: "name", scope: dateScope })
+      fetchPassengerPage({
+        search,
+        status,
+        sort: "name",
+        scope: dateScope,
+        offset: page * PAGE_SIZE,
+        limit: PAGE_SIZE,
+      })
         .then((data) => {
           if (!active) return;
-          setPassengers(data);
-          setPage(0);
+          const lastPage = Math.max(0, Math.ceil(data.total / PAGE_SIZE) - 1);
+          if (page > lastPage) {
+            setPage(lastPage);
+            return;
+          }
+          setPassengers(data.items);
+          setTotal(data.total);
+        })
+        .catch((error) => {
+          if (!active) return;
+          setLoadError(error instanceof Error ? error.message : "Yolcular yüklenemedi.");
         })
         .finally(() => active && setLoading(false));
     }, 220);
@@ -49,33 +109,15 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
       active = false;
       window.clearTimeout(timer);
     };
-  }, [search, status, version, dateScope]);
+  }, [search, status, version, dateScope, page, retryNonce]);
 
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      fetchPassengers({ status: "Hazır", scope: dateScope }),
-      fetchPassengers({ status: "Eksik", scope: dateScope }),
-    ]).then(([ready, missing]) => {
-      if (!active) return;
-      setChipCounts({ ready: ready.length, missing: missing.length });
-    });
-    return () => {
-      active = false;
-    };
-  }, [version, dateScope]);
-
-  const pages = Math.max(1, Math.ceil(passengers.length / PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const current = Math.min(page, pages - 1);
-  const chunk = useMemo(
-    () => passengers.slice(current * PAGE_SIZE, current * PAGE_SIZE + PAGE_SIZE),
-    [passengers, current],
-  );
 
   const chipCount = (key: string) => {
-    if (key === "") return summary.passenger_count;
-    if (key === "Hazır") return chipCounts.ready;
-    if (key === "Eksik") return chipCounts.missing;
+    if (key === "") return summary.passenger_count || (!search && !status ? total : 0);
+    if (key === "Hazır") return summary.ready_count ?? 0;
+    if (key === "Eksik") return summary.missing_count ?? 0;
     return 0;
   };
 
@@ -97,7 +139,7 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
     bump();
   }
 
-  if (summary.passenger_count === 0) {
+  if (!loading && !loadError && !search && !status && total === 0) {
     return (
       <div className="ic-empty">
         <h3>Henüz yolcu kaydı yok</h3>
@@ -171,14 +213,27 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
       )}
 
       {loading && <p className="muted">Yükleniyor…</p>}
-      {!loading && passengers.length === 0 && (
+      {loadError && (
+        <div className="ic-callout amber" role="alert">
+          <div className="ic-callout-copy">
+            <p className="ic-callout-title">Yolcular yüklenemedi</p>
+            <p className="ic-callout-detail" style={{ whiteSpace: "normal", wordBreak: "break-word" }}>
+              {loadError}
+            </p>
+          </div>
+          <button className="ic-callout-action" onClick={() => setRetryNonce((value) => value + 1)} type="button">
+            Tekrar dene
+          </button>
+        </div>
+      )}
+      {!loading && !loadError && passengers.length === 0 && (
         <div className="ic-card ic-card-pad" style={{ textAlign: "center", color: "var(--ido-muted)" }}>
           Sonuç bulunamadı.
         </div>
       )}
 
       <div style={{ display: "grid", gap: 9 }}>
-        {chunk.map((p) => (
+        {passengers.map((p) => (
           <PassengerCard
             key={p.id}
             passenger={p}
@@ -206,7 +261,7 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
 
       <div className="ic-actions-row">
         <span style={{ color: "var(--ido-muted)", fontWeight: 600, fontSize: 9, letterSpacing: ".02em" }}>
-          TOPLAM {summary.passenger_count} KAYIT
+          TOPLAM {summary.passenger_count || (!search && !status ? total : 0)} KAYIT
         </span>
         {canWrite && (
           <button type="button" onClick={() => setSelectMode((v) => !v)}>

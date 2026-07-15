@@ -253,9 +253,11 @@ def save_state(payload: dict) -> bool:
     try:
         value = json.dumps(payload, ensure_ascii=False)
         with engine.begin() as conn:
-            conn.execute(text("DELETE FROM app_state WHERE key = 'passengers'"))
             conn.execute(
-                text("INSERT INTO app_state (key, value) VALUES ('passengers', :v)"),
+                text(
+                    "INSERT INTO app_state (key, value) VALUES ('passengers', :v) "
+                    "ON CONFLICT (key) DO UPDATE SET value = :v"
+                ),
                 {"v": value},
             )
         return True
@@ -840,6 +842,126 @@ def enqueue_import_jobs(
         return None
 
 
+def store_finished_import_children(
+    parent_id: str,
+    results: list[dict],
+) -> list[dict] | None:
+    """Atomically materialise already-processed archive members.
+
+    Inline ZIP processing deliberately parses members *before* creating their
+    queue rows.  That prevents another worker from leasing a transient
+    ``pending`` child while the archive worker is still preparing the same
+    member.  Stable child IDs and ``ON CONFLICT`` make a replay safe when the
+    passenger-state write committed immediately before a process crash.
+
+    Successful members never retain their payload.  Failed members keep the
+    original bytes so the existing manual retry flow remains available.
+    """
+    engine = get_engine()
+    if engine is None:
+        raise DatabaseUnavailableError("Aktarım kuyruğu veritabanı kullanılamıyor.")
+    if not results:
+        return []
+
+    # Last entry wins for duplicate IDs, matching the other batch helpers and
+    # keeping direct callers deterministic.
+    items_by_id: dict[str, dict] = {}
+    for item in results:
+        job_id = str(item.get("id") or "")
+        if job_id:
+            items_by_id[job_id] = item
+    if not items_by_id:
+        return []
+
+    now = _utc_now()
+    try:
+        with engine.begin() as conn:
+            parent = _select_import_job(conn, str(parent_id))
+            if parent is None:
+                return None
+
+            params: list[dict] = []
+            for job_id, item in items_by_id.items():
+                status = str(item.get("status") or "error")
+                if status not in _TERMINAL_IMPORT_STATUSES:
+                    raise ValueError("Arşiv alt işi yalnız terminal durumda yazılabilir.")
+                raw_payload = item.get("payload")
+                if raw_payload is not None and not isinstance(
+                    raw_payload, (bytes, bytearray, memoryview)
+                ):
+                    raise TypeError("Arşiv alt işi payload değeri bytes olmalıdır.")
+                # A successful parse no longer needs source bytes.  For an
+                # error, retain exactly what was read for manual retry.
+                payload = (
+                    bytes(raw_payload)
+                    if status != "done" and raw_payload is not None
+                    else None
+                )
+                params.append(
+                    {
+                        "id": job_id,
+                        "parent_id": str(parent_id),
+                        "batch_id": str(parent.get("batch_id") or ""),
+                        "kind": "file",
+                        "filename": str(item.get("filename") or "dosya"),
+                        "mime": str(item.get("mime") or "application/octet-stream"),
+                        "payload": payload,
+                        "payload_size": len(payload) if payload is not None else 0,
+                        "status": status,
+                        "ordinal": max(0, int(item.get("ordinal", 0) or 0)),
+                        "replace_existing": 1 if parent.get("replace") else 0,
+                        "dup_strategy": str(parent.get("dup_strategy") or "skip"),
+                        "imported": max(0, int(item.get("imported", 0) or 0)),
+                        "duplicates": max(0, int(item.get("duplicates", 0) or 0)),
+                        "invalid": max(0, int(item.get("invalid", 0) or 0)),
+                        "message": str(item.get("message") or ""),
+                        "created_at": now,
+                        "updated_at": now,
+                        "finished_at": now,
+                    }
+                )
+
+            conn.execute(
+                text(
+                    "INSERT INTO import_jobs ("
+                    "id, parent_id, batch_id, kind, filename, mime, payload, payload_size, "
+                    "status, ordinal, replace_existing, dup_strategy, imported, duplicates, "
+                    "invalid, message, created_at, updated_at, finished_at"
+                    ") VALUES ("
+                    ":id, :parent_id, :batch_id, :kind, :filename, :mime, :payload, :payload_size, "
+                    ":status, :ordinal, :replace_existing, :dup_strategy, :imported, :duplicates, "
+                    ":invalid, :message, :created_at, :updated_at, :finished_at"
+                    ") ON CONFLICT (id) DO NOTHING"
+                ),
+                params,
+            )
+
+            select_params = {
+                f"job_{index}": job_id
+                for index, job_id in enumerate(items_by_id)
+            }
+            placeholders = ", ".join(f":{name}" for name in select_params)
+            rows = conn.execute(
+                text(
+                    f"SELECT {_IMPORT_JOB_PUBLIC_COLUMNS} FROM import_jobs "
+                    f"WHERE id IN ({placeholders})"
+                ),
+                select_params,
+            ).fetchall()
+            _refresh_parent_progress(conn, str(parent_id), now)
+            stored = [
+                job
+                for row in rows
+                if (job := _row_to_import_job(row)) is not None
+            ]
+        return stored
+    except (DatabaseUnavailableError, ValueError, TypeError):
+        raise
+    except Exception as exc:
+        logger.exception("Tamamlanan arşiv alt işleri kaydedilemedi: %s", parent_id)
+        raise DatabaseUnavailableError("Arşiv alt işleri kaydedilemedi.") from exc
+
+
 def create_import_child_jobs(
     parent_id: str,
     files: list[tuple[str, bytes]],
@@ -893,6 +1015,38 @@ def get_import_job(job_id: str, include_payload: bool = False) -> dict | None:
             return _select_import_job(conn, job_id, include_payload=include_payload)
     except Exception:
         logger.exception("Aktarım işi okunamadı: %s", job_id)
+        return None
+
+
+def get_import_jobs_by_ids(job_ids: list[str]) -> dict[str, dict] | None:
+    """Return existing queue rows for deterministic archive child IDs."""
+    engine = get_engine()
+    if engine is None:
+        return None
+    unique_ids = list(dict.fromkeys(str(job_id) for job_id in job_ids if job_id))
+    if not unique_ids:
+        return {}
+    try:
+        with engine.begin() as conn:
+            params = {
+                f"job_{index}": job_id
+                for index, job_id in enumerate(unique_ids)
+            }
+            placeholders = ", ".join(f":{name}" for name in params)
+            rows = conn.execute(
+                text(
+                    f"SELECT {_IMPORT_JOB_PUBLIC_COLUMNS} FROM import_jobs "
+                    f"WHERE id IN ({placeholders})"
+                ),
+                params,
+            ).fetchall()
+        return {
+            job["id"]: job
+            for row in rows
+            if (job := _row_to_import_job(row)) is not None
+        }
+    except Exception:
+        logger.exception("Aktarım işleri topluca okunamadı")
         return None
 
 
@@ -1133,6 +1287,104 @@ def finish_import_job(
     except Exception:
         logger.exception("Aktarım işi tamamlanamadı: %s", job_id)
         return False
+
+
+def finish_import_jobs_batch(results: list[dict]) -> int:
+    """Finish several archive children in one transaction.
+
+    The single worker may parse a bounded ZIP chunk in memory.  Committing the
+    child states together avoids one PostgreSQL transaction and one parent
+    aggregate query per file while preserving each member's independent
+    status, payload retry policy and UI message.
+    """
+    engine = get_engine()
+    if engine is None:
+        raise DatabaseUnavailableError("Aktarım kuyruğu veritabanı kullanılamıyor.")
+    if not results:
+        return 0
+    now = _utc_now()
+    # Last result wins for a duplicate id while preserving deterministic
+    # insertion order. Archive expansion normally supplies unique child IDs,
+    # but normalising here keeps the database batch safe for direct callers.
+    items_by_id: dict[str, dict] = {}
+    for item in results:
+        job_id = str(item.get("id") or "")
+        if job_id:
+            items_by_id[job_id] = item
+    if not items_by_id:
+        return 0
+    try:
+        with engine.begin() as conn:
+            # One round trip replaces one SELECT per archive member. Dynamic
+            # bind names are generated locally; IDs remain bound parameters.
+            select_params = {
+                f"job_{index}": job_id
+                for index, job_id in enumerate(items_by_id)
+            }
+            placeholders = ", ".join(f":{name}" for name in select_params)
+            rows = conn.execute(
+                text(
+                    "SELECT id, parent_id, status, lease_owner FROM import_jobs "
+                    f"WHERE id IN ({placeholders})"
+                ),
+                select_params,
+            ).fetchall()
+            eligible: dict[str, str] = {}
+            parent_ids: set[str] = set()
+            for row in rows:
+                values = _row_mapping(row)
+                job_id = str(values.get("id") or "")
+                if (
+                    job_id
+                    and str(values.get("status") or "") == "pending"
+                    and not values.get("lease_owner")
+                ):
+                    parent_id = str(values.get("parent_id") or "")
+                    eligible[job_id] = parent_id
+                    if parent_id:
+                        parent_ids.add(parent_id)
+
+            update_params: list[dict] = []
+            for job_id, parent_id in eligible.items():
+                item = items_by_id[job_id]
+                status = str(item.get("status") or "error")
+                terminal = status in _TERMINAL_IMPORT_STATUSES
+                update_params.append(
+                    {
+                        "id": job_id,
+                        "status": status,
+                        "message": str(item.get("message") or ""),
+                        "imported": max(0, int(item.get("imported", 0) or 0)),
+                        "duplicates": max(0, int(item.get("duplicates", 0) or 0)),
+                        "invalid": max(0, int(item.get("invalid", 0) or 0)),
+                        "now": now,
+                        "finished_at": now if terminal else None,
+                        "delete_payload": 1 if item.get("delete_payload") else 0,
+                    }
+                )
+            if not update_params:
+                return 0
+            result = conn.execute(
+                text(
+                    "UPDATE import_jobs SET status = :status, message = :message, "
+                    "imported = :imported, duplicates = :duplicates, invalid = :invalid, "
+                    "lease_owner = NULL, lease_until = NULL, updated_at = :now, "
+                    "finished_at = :finished_at, "
+                    "payload = CASE WHEN :delete_payload = 1 THEN NULL ELSE payload END, "
+                    "payload_size = CASE WHEN :delete_payload = 1 THEN 0 ELSE payload_size END "
+                    "WHERE id = :id AND status = 'pending' AND lease_owner IS NULL"
+                ),
+                update_params,
+            )
+            for parent_id in parent_ids:
+                _refresh_parent_progress(conn, parent_id, now)
+        rowcount = int(result.rowcount or 0)
+        return rowcount if rowcount >= 0 else len(update_params)
+    except DatabaseUnavailableError:
+        raise
+    except Exception as exc:
+        logger.exception("Aktarım işleri topluca tamamlanamadı")
+        raise DatabaseUnavailableError("Aktarım işleri tamamlanamadı.") from exc
 
 
 def retry_import_job(job_id: str) -> bool:

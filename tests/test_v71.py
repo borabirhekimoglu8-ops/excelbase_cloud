@@ -329,8 +329,8 @@ def test_ui_and_backend_versions_match():
     assert f'"{APP_VERSION}"' in version_ts
 
 
-def test_cache_headers_prevent_stale_shell_and_api(monkeypatch, tmp_path):
-    """iOS Safari eski uygulama kabuğunu/API yanıtını önbelleklemesin."""
+def test_cache_headers_keep_shell_and_api_fresh_but_cache_versioned_assets(monkeypatch, tmp_path):
+    """HTML/API taze kalırken deploy'a özel statikler yeniden indirilmesin."""
     _isolate_store(monkeypatch, tmp_path)
     monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "0")
 
@@ -350,6 +350,34 @@ def test_cache_headers_prevent_stale_shell_and_api(monkeypatch, tmp_path):
         api = client.get("/api/summary")
         assert api.status_code == 200
         assert api.headers["cache-control"] == "no-store"
+
+        async def asset_response(_request):
+            from fastapi.responses import Response
+
+            return Response("console.log('ok')", media_type="text/javascript")
+
+        import asyncio
+        from starlette.requests import Request
+
+        for asset_path in (
+            f"{backend_main.FRONTEND_ASSET_PREFIX}/_next/static/chunks/app.js",
+            "/_next/static/chunks/app.js",
+        ):
+            asset_request = Request(
+                {
+                    "type": "http",
+                    "method": "GET",
+                    "path": asset_path,
+                    "headers": [],
+                    "query_string": b"",
+                    "scheme": "http",
+                    "server": ("testserver", 80),
+                    "client": ("testclient", 50000),
+                    "root_path": "",
+                }
+            )
+            asset = asyncio.run(backend_main.cache_headers(asset_request, asset_response))
+            assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
 
         health = client.get("/health")
         assert health.json()["version"]

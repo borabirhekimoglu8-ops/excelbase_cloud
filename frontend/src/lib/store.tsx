@@ -14,6 +14,8 @@ import { DateScope, OperationSummary, fetchSummary } from "@/lib/api";
 
 const emptySummary: OperationSummary = {
   passenger_count: 0,
+  ready_count: 0,
+  missing_count: 0,
   adult_total: 0,
   child_total: 0,
   total_fee: 0,
@@ -41,7 +43,7 @@ type StoreValue = {
   summary: OperationSummary;
   connected: boolean;
   version: number;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<boolean>;
   bump: () => void;
   notify: (text: string, tone?: Toast["tone"]) => void;
   toasts: Toast[];
@@ -58,15 +60,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dateScope, setDateScope] = useState<DateScope>({ range: "Tümü", start: "", end: "" });
   const toastId = useRef(1);
+  const refreshSequence = useRef(0);
+  const inFlightRefresh = useRef<{ key: string; promise: Promise<boolean> } | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      const data = await fetchSummary(dateScope);
-      setSummary(data);
-      setConnected(true);
-    } catch {
-      setConnected(false);
-    }
+  const refresh = useCallback((): Promise<boolean> => {
+    const key = `${dateScope.range}\u0000${dateScope.start}\u0000${dateScope.end}`;
+    if (inFlightRefresh.current?.key === key) return inFlightRefresh.current.promise;
+
+    const sequence = ++refreshSequence.current;
+    const promise = (async () => {
+      try {
+        const data = await fetchSummary(dateScope);
+        if (sequence === refreshSequence.current) {
+          setSummary(data);
+          setConnected(true);
+        }
+        return true;
+      } catch {
+        if (sequence === refreshSequence.current) setConnected(false);
+        return false;
+      } finally {
+        if (inFlightRefresh.current?.key === key) inFlightRefresh.current = null;
+      }
+    })();
+    inFlightRefresh.current = { key, promise };
+    return promise;
   }, [dateScope]);
 
   const bump = useCallback(() => {
@@ -84,7 +102,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void refresh();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [refresh]);
+
+  useEffect(() => {
+    if (connected) return;
+    const timer = window.setInterval(() => void refresh(), 3_000);
+    return () => window.clearInterval(timer);
+  }, [connected, refresh]);
 
   const value = useMemo(
     () => ({ summary, connected, version, refresh, bump, notify, toasts, dateScope, setDateScope }),

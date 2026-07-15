@@ -41,6 +41,7 @@ from .models import (
     MergeResponse,
     OperationMetaUpdate,
     OperationSummary,
+    PassengerPage,
     PassengerRecord,
     PassengerUpdate,
     SimpleResult,
@@ -104,7 +105,7 @@ app.add_middleware(
 ROOT_DIR = Path(__file__).resolve().parents[1]
 FRONTEND_OUT = ROOT_DIR / "frontend" / "out"
 NEXT_ASSETS = FRONTEND_OUT / "_next"
-FRONTEND_ASSET_PREFIX = "/assets/20260714-durablequeue-dbfix"
+FRONTEND_ASSET_PREFIX = "/assets/20260715-slowfix"
 
 
 @app.middleware("http")
@@ -118,10 +119,12 @@ async def cache_headers(request: Request, call_next):
     is_frontend_asset = path.startswith("/_next/static/") or path.startswith(
         f"{FRONTEND_ASSET_PREFIX}/_next/static/"
     )
-    if is_frontend_asset or path.startswith("/api/") or "text/html" in content_type:
-        # Turbopack dışa aktarımında chunk adları içerik değişse de aynı kalabiliyor.
-        # iOS Safari'nin eski uygulamayı bir yıl tutmaması için yeniden doğrulama
-        # yerine tamamen taze yanıt isteriz.
+    if is_frontend_asset:
+        # Deploy'a özel asset prefix'i eski ve yeni paketleri birbirinden ayırır;
+        # aynı URL'nin içeriği değişmediği için mobil istemci ve CDN güvenle
+        # uzun süre önbellekleyebilir.
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path.startswith("/api/") or "text/html" in content_type:
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -294,6 +297,31 @@ def passengers(
         start=start,
         end=end,
     )
+
+
+@app.get("/api/passengers/page", response_model=PassengerPage, dependencies=[Depends(require_api_key)])
+def passengers_page(
+    search: str = Query(default=""),
+    status_filter: str = Query(default="", alias="status"),
+    sort: str = Query(default=""),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    range_choice: str = Query(default="Tümü", alias="range"),
+    start: str = Query(default=""),
+    end: str = Query(default=""),
+) -> PassengerPage:
+    items, total = services.get_passenger_page(
+        search=search,
+        status=status_filter,
+        sort=sort,
+        with_key=_key_qs(),
+        offset=offset,
+        limit=limit,
+        range_choice=range_choice,
+        start=start,
+        end=end,
+    )
+    return PassengerPage(items=items, total=total, offset=offset, limit=limit)
 
 
 @app.patch("/api/passengers/{passenger_id}", response_model=SimpleResult, dependencies=[Depends(require_write_access)])

@@ -39,6 +39,8 @@ export type ImportHistoryItem = {
 
 export type OperationSummary = {
   passenger_count: number;
+  ready_count: number;
+  missing_count: number;
   adult_total: number;
   child_total: number;
   total_fee: number;
@@ -102,6 +104,11 @@ export type ImportQueueResponse = {
   jobs: ImportJob[];
   active: boolean;
   batch_id: string;
+};
+
+export type PassengerPage = {
+  items: Passenger[];
+  total: number;
 };
 
 export type ImportResponse = {
@@ -232,6 +239,7 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = 45_000):
   try {
     response = await fetch(`${API_BASE}${path}`, {
       ...init,
+      cache: init?.cache ?? "no-store",
       credentials: "include",
       headers: authHeaders(init?.headers),
       signal: controller.signal,
@@ -319,6 +327,26 @@ export function fetchPassengers(
   if (params.sort) qs.set("sort", params.sort);
   appendScope(qs, params.scope);
   return request<Passenger[]>(`/api/passengers${qs.size ? `?${qs.toString()}` : ""}`);
+}
+export function fetchPassengerPage(
+  params: {
+    search?: string;
+    status?: string;
+    sort?: string;
+    scope?: DateScope;
+    offset?: number;
+    limit?: number;
+  } = {},
+): Promise<PassengerPage> {
+  const qs = new URLSearchParams({
+    offset: String(Math.max(0, params.offset ?? 0)),
+    limit: String(Math.max(1, params.limit ?? 20)),
+  });
+  if (params.search) qs.set("search", params.search);
+  if (params.status) qs.set("status", params.status);
+  if (params.sort) qs.set("sort", params.sort);
+  appendScope(qs, params.scope);
+  return request<PassengerPage>(`/api/passengers/page?${qs.toString()}`);
 }
 export function fetchArchive(scope: DateScope = { range: "Tümü", start: "", end: "" }): Promise<ArchiveResponse> {
   const qs = new URLSearchParams();
