@@ -55,9 +55,9 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Build Rust XCFramework
-        run: ios/scripts/build-rust-xcframework.sh
+        run: bash ios/scripts/build-rust-xcframework.sh
       - name: Generate Xcode project
-        run: ios/scripts/generate-project.sh --skip-rust
+        run: bash ios/scripts/generate-project.sh --skip-rust
       - name: Build and run iOS tests without signing
         run: >-
           xcodebuild

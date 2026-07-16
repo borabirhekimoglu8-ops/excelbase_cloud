@@ -25,7 +25,7 @@ if [[ ! -f "${APP_ICON}" ]]; then
 fi
 
 if [[ ${SKIP_RUST} -eq 0 && ! -d "${IOS_DIR}/Generated/ExcelbaseCore.xcframework" ]]; then
-  "${SCRIPT_DIR}/build-rust-xcframework.sh"
+  bash "${SCRIPT_DIR}/build-rust-xcframework.sh"
 fi
 
 if [[ ! -d "${IOS_DIR}/Generated/ExcelbaseCore.xcframework" ]]; then

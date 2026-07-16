@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IOS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-"${SCRIPT_DIR}/generate-project.sh"
+bash "${SCRIPT_DIR}/generate-project.sh"
 
 xcodebuild \
   -project "${IOS_DIR}/ExcelbaseOffline.xcodeproj" \

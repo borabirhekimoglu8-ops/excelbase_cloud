@@ -92,7 +92,7 @@ Gereksinimler: macOS, Swift 6.1 araç zincirini içeren Xcode 16.3 veya sonrası
 
 ```bash
 brew install xcodegen
-ios/scripts/build-ios.sh
+bash ios/scripts/build-ios.sh
 ```
 
 Betik sırasıyla Rust UniFFI bağlarını ve XCFramework'ü üretir, Xcode projesini oluşturur ve kod imzası olmadan simülatör derlemesi alır. Gerçek iPhone kurulumu için Xcode'da bir Apple Development takımı seçilmelidir.
