@@ -34,14 +34,16 @@ export CARGO_TARGET_DIR="${TARGET_DIR}"
 
 # Host dylib, UniFFI metadatasını okuyup Swift bağlarını üretir.
 cargo build --locked --release --manifest-path "${MANIFEST}"
+pushd "$(dirname "${MANIFEST}")" >/dev/null
 cargo run --locked --release \
-  --manifest-path "${MANIFEST}" \
+  --manifest-path Cargo.toml \
   --features bindgen \
   --bin uniffi-bindgen -- \
   generate \
   --library "${TARGET_DIR}/release/libexcelbase_core.dylib" \
   --language swift \
   --out-dir "${GENERATED}"
+popd >/dev/null
 
 cargo build --locked --release --manifest-path "${MANIFEST}" --target aarch64-apple-ios
 cargo build --locked --release --manifest-path "${MANIFEST}" --target aarch64-apple-ios-sim
