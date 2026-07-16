@@ -33,7 +33,7 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
   if (summary.passenger_count === 0) {
     return (
       <div className="ic-empty">
-        <h3>Henüz operasyon yok</h3>
+        <h3>Henüz yolcu listesi yok</h3>
         <p>Yükle sekmesinden yolcu listelerini içeri aktararak başlayın.</p>
         <button className="ic-btn-primary" style={{ width: "auto", padding: "0 20px" }} onClick={() => onNavigate("import")} type="button">
           Yüklemeye Başla
@@ -61,7 +61,7 @@ export function HomeTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
             {today} · {scopeLabel}
           </p>
         </div>
-        <span className="ic-pill ic-pill-info">SİSTEM AKTİF</span>
+        <span className="ic-pill ic-pill-info">ÇEVRİMDIŞI HAZIR</span>
       </div>
 
       <div className="ic-card ic-metrics">

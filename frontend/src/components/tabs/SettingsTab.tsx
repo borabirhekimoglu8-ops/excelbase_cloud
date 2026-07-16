@@ -7,7 +7,7 @@ import { UI_VERSION } from "@/lib/version";
 export type SettingsSub = "issues" | "gallery" | "archive" | "package" | "management";
 
 const ROLE_LABELS: Record<string, string> = {
-  admin: "Yönetici",
+  admin: "Yerel yönetici",
   operator: "Operasyon",
   viewer: "Görüntüleme",
 };
@@ -21,8 +21,8 @@ export function SettingsTab({ onOpen }: { onOpen: (sub: SettingsSub) => void }) 
     { key: "issues", title: "Kontrol Merkezi", sub: "Eksik alan ve belgeleri düzelt", badge: issueTotal },
     { key: "gallery", title: "Fotoğraf Galerisi", sub: "Yüklenen biyometrik fotoğraflar" },
     { key: "archive", title: "Tarih Arşivi", sub: "Gün bazında dosyalar ve çıktılar" },
-    { key: "package", title: "Teslim Paketi", sub: "Excel, manifest ve fotoğraf paketleri" },
-    { key: "management", title: "Yönetim", sub: "Kullanıcılar, yedekler, denetim kaydı", roles: ["admin"] },
+    { key: "package", title: "Çıktılar ve Yedek", sub: "Excel, CSV, fotoğraf paketi ve cihaz yedeği" },
+    { key: "management", title: "Cihaz ve Güvenlik", sub: "Depolama, çevrimdışı durum ve şifreli yedek", roles: ["admin"] },
   ];
 
   return (
@@ -43,7 +43,7 @@ export function SettingsTab({ onOpen }: { onOpen: (sub: SettingsSub) => void }) 
       </div>
 
       <div className="ic-section-head">
-        <p className="ic-section-title">Operasyon Araçları</p>
+        <p className="ic-section-title">Veri Araçları</p>
       </div>
 
       <div style={{ display: "grid", gap: 8 }}>
@@ -65,11 +65,9 @@ export function SettingsTab({ onOpen }: { onOpen: (sub: SettingsSub) => void }) 
       <div className="ic-info-note">
         <span className="ic-info-mark">i</span>
         <div className="ic-info-note-copy">
-          <p className="ic-info-note-title">İDO Ege Adaları Vize Operasyon Portalı · v{UI_VERSION}</p>
+          <p className="ic-info-note-title">Excelbase Çevrimdışı Yolcu Yönetimi · v{UI_VERSION}</p>
           <p className="ic-info-note-detail">
-            {connected ? "Sunucu bağlantısı aktif" : "Sunucu bağlantısı yok"} · Veriler{" "}
-            {summary.persistence === "database" ? "kalıcı veritabanında" : "geçici bellekte"} saklanıyor
-            {summary.version && summary.version !== UI_VERSION ? ` · sunucu v${summary.version}, sayfayı yenileyin` : ""}.
+            {connected ? "Çevrimdışı kullanıma hazır" : "Yerel kasa okunamadı"} · Veriler bu cihazda şifreli saklanıyor.
           </p>
         </div>
       </div>

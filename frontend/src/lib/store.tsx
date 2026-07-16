@@ -33,7 +33,7 @@ const emptySummary: OperationSummary = {
   can_undo: false,
   last_batch_id: "",
   unmatched_photo_count: 0,
-  persistence: "database",
+  persistence: "device-encrypted",
   version: "",
 };
 
@@ -60,6 +60,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dateScope, setDateScope] = useState<DateScope>({ range: "Tümü", start: "", end: "" });
   const toastId = useRef(1);
+  const changeRefreshTimer = useRef<number | null>(null);
   const refreshSequence = useRef(0);
   const inFlightRefresh = useRef<{ key: string; promise: Promise<boolean> } | null>(null);
 
@@ -105,19 +106,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") void refresh();
     };
+    const refreshWhenChanged = () => {
+      if (changeRefreshTimer.current !== null) window.clearTimeout(changeRefreshTimer.current);
+      changeRefreshTimer.current = window.setTimeout(() => {
+        changeRefreshTimer.current = null;
+        void refresh();
+      }, 180);
+    };
     window.addEventListener("focus", refreshWhenVisible);
+    window.addEventListener("excelbase:vault-change", refreshWhenChanged);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       window.removeEventListener("focus", refreshWhenVisible);
+      window.removeEventListener("excelbase:vault-change", refreshWhenChanged);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
+      if (changeRefreshTimer.current !== null) window.clearTimeout(changeRefreshTimer.current);
     };
   }, [refresh]);
-
-  useEffect(() => {
-    if (connected) return;
-    const timer = window.setInterval(() => void refresh(), 3_000);
-    return () => window.clearInterval(timer);
-  }, [connected, refresh]);
 
   const value = useMemo(
     () => ({ summary, connected, version, refresh, bump, notify, toasts, dateScope, setDateScope }),

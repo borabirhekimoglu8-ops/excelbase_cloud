@@ -34,9 +34,9 @@ This package establishes a production-oriented V8 foundation without modifying t
 | Timestamp-only audit ordering | Per-organization locked sequence and hash chain |
 | Direct Excel mutation | Staging, redacted preview and atomic commit |
 
-## Frontend pilot
+## Frontend pilot status
 
-A separate Next.js `/v8` route and `api-v8.ts` client are included. V7 routes and state management remain unchanged. The pilot supports operation creation, passenger creation, staged import preview and commit.
+The former Next.js `/v8` pilot route and `api-v8.ts` client have been retired from the main application. The isolated V8 API, relational model, migrations and security controls remain available for direct API validation; the offline PWA does not depend on them.
 
 ## Included acceptance checks
 

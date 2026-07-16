@@ -27,8 +27,8 @@ const SETTINGS_TITLES: Record<SettingsSub, string> = {
   issues: "Kontrol Merkezi",
   gallery: "Fotoğraf Galerisi",
   archive: "Tarih Arşivi",
-  package: "Teslim Paketi",
-  management: "Yönetim",
+  package: "Çıktılar ve Yedek",
+  management: "Cihaz ve Güvenlik",
 };
 
 function Shell() {

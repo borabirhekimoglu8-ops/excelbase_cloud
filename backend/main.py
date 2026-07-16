@@ -105,7 +105,6 @@ app.add_middleware(
 ROOT_DIR = Path(__file__).resolve().parents[1]
 FRONTEND_OUT = ROOT_DIR / "frontend" / "out"
 NEXT_ASSETS = FRONTEND_OUT / "_next"
-FRONTEND_ASSET_PREFIX = "/assets/20260715-slowfix"
 
 
 @app.middleware("http")
@@ -116,13 +115,10 @@ async def cache_headers(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
     content_type = response.headers.get("content-type", "")
-    is_frontend_asset = path.startswith("/_next/static/") or path.startswith(
-        f"{FRONTEND_ASSET_PREFIX}/_next/static/"
-    )
+    is_frontend_asset = path.startswith("/_next/static/")
     if is_frontend_asset:
-        # Deploy'a özel asset prefix'i eski ve yeni paketleri birbirinden ayırır;
-        # aynı URL'nin içeriği değişmediği için mobil istemci ve CDN güvenle
-        # uzun süre önbellekleyebilir.
+        # Next.js statik dosya adları içerik özeti taşır; aynı URL'nin içeriği
+        # değişmediği için mobil istemci ve CDN güvenle uzun süre önbellekleyebilir.
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     elif path.startswith("/api/") or "text/html" in content_type:
         response.headers["Cache-Control"] = "no-store"
@@ -860,13 +856,6 @@ def api_not_found(path: str):
 if NEXT_ASSETS.exists():
     from fastapi.staticfiles import StaticFiles
 
-    app.mount(
-        f"{FRONTEND_ASSET_PREFIX}/_next",
-        StaticFiles(directory=str(NEXT_ASSETS)),
-        name="next-assets-versioned",
-    )
-    # Eski açık sekmeler kontrollü biçimde çalışmaya devam etsin; yeni HTML
-    # yalnızca sürümlü yolu kullanır.
     app.mount("/_next", StaticFiles(directory=str(NEXT_ASSETS)), name="next-assets")
 
 
@@ -880,7 +869,7 @@ def serve_frontend(path: str = ""):
     requested = (FRONTEND_OUT / path).resolve()
     if requested.is_file() and FRONTEND_OUT in requested.parents:
         return FileResponse(str(requested))
-    # Next static export "/v8" rotasını v8/index.html değil v8.html olarak yazar.
+    # Next static export bazı rotaları route/index.html yerine route.html olarak yazabilir.
     page_file = (FRONTEND_OUT / f"{path.rstrip('/')}.html").resolve() if path else None
     if page_file and page_file.is_file() and FRONTEND_OUT in page_file.parents:
         return FileResponse(str(page_file))

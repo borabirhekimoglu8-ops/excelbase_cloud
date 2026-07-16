@@ -1,11 +1,41 @@
 import { newId } from "@/lib/id";
-import { assertOriginalUploadFile } from "@/lib/uploadQueue";
+import {
+  localArchive,
+  localAssignUnmatched,
+  localAudit,
+  localAuthStatus,
+  localBackups,
+  localBulkDelete,
+  localClearAll,
+  localDeleteJob,
+  localDeletePassenger,
+  localDeleteUnmatched,
+  localImportMail,
+  localLogin,
+  localLogout,
+  localMatchPhotos,
+  localMergeDuplicates,
+  localPassengerPage,
+  localPassengers,
+  localPreview,
+  localQueueImportFile,
+  localQueueState,
+  localRemovePassengerPhoto,
+  localRetryJob,
+  localRestoreEncryptedBackup,
+  localSaveOperationMeta,
+  localSetPassengerPhoto,
+  localSetup,
+  localSummary,
+  localUndoImport,
+  localUnmatchedPhotos,
+  localUpdatePassenger,
+  localUploadPassengerFile,
+  localUploadPassengerFiles,
+  localUsers,
+} from "@/lib/offline/localApi";
 
-export type DateScope = {
-  range: string;
-  start: string;
-  end: string;
-};
+export type DateScope = { range: string; start: string; end: string };
 
 export type Passenger = {
   id: number;
@@ -100,17 +130,8 @@ export type ImportJob = {
   processed_files?: number;
 };
 
-export type ImportQueueResponse = {
-  jobs: ImportJob[];
-  active: boolean;
-  batch_id: string;
-};
-
-export type PassengerPage = {
-  items: Passenger[];
-  total: number;
-};
-
+export type ImportQueueResponse = { jobs: ImportJob[]; active: boolean; batch_id: string };
+export type PassengerPage = { items: Passenger[]; total: number };
 export type ImportResponse = {
   imported: number;
   warnings: string[];
@@ -152,11 +173,11 @@ export type MailImportResponse = {
   warnings: string[];
 };
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
+export const API_BASE = "";
 
 type ApiErrorKind = "http" | "timeout" | "network";
 
+/** Kept for compatibility with old UI branches; the offline path never emits transport errors. */
 export class ApiRequestError extends Error {
   readonly kind: ApiErrorKind;
   readonly status: number | null;
@@ -171,9 +192,7 @@ export class ApiRequestError extends Error {
     requestId?: string;
     originalError?: unknown;
   }) {
-    const statusPrefix = options.status ? `HTTP ${options.status}: ` : "";
-    const requestSuffix = options.requestId ? ` · İstek kimliği: ${options.requestId}` : "";
-    super(`${statusPrefix}${options.detail}${requestSuffix}`);
+    super(options.detail);
     this.name = "ApiRequestError";
     this.kind = options.kind;
     this.status = options.status ?? null;
@@ -183,94 +202,8 @@ export class ApiRequestError extends Error {
   }
 }
 
-// Yalnızca sunucudan hiçbir HTTP yanıtı alınamadığında yeniden göndermek
-// güvenlidir; çağıran aynı upload_id değerini koruyarak sunucu tarafındaki
-// idempotency kaydından yararlanır. 4xx/5xx yanıtları burada tekrar edilmez.
 export function isRetryableTransportError(error: unknown): error is ApiRequestError {
   return error instanceof ApiRequestError && (error.kind === "network" || error.kind === "timeout");
-}
-
-function authHeaders(extra?: HeadersInit): HeadersInit {
-  return { ...(API_KEY ? { "x-api-key": API_KEY } : {}), ...(extra ?? {}) };
-}
-
-function appendReadableFile(body: FormData, field: string, file: File): void {
-  assertOriginalUploadFile(file);
-  body.append(field, file, file.name);
-}
-
-function errorText(error: unknown): string {
-  if (error instanceof DOMException) return `${error.name}: ${error.message}`;
-  if (error instanceof Error) return error.message || error.name;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error) ?? String(error);
-  } catch {
-    return String(error);
-  }
-}
-
-function responseRequestId(response: Response): string {
-  return response.headers.get("x-request-id") ?? response.headers.get("request-id") ?? "";
-}
-
-function responseDetail(rawBody: string, fallback: string): string {
-  if (!rawBody) return fallback;
-  try {
-    const parsed = JSON.parse(rawBody) as { detail?: unknown; message?: unknown } | unknown;
-    if (parsed && typeof parsed === "object") {
-      const candidate = "detail" in parsed
-        ? parsed.detail
-        : "message" in parsed
-          ? parsed.message
-          : parsed;
-      return typeof candidate === "string" ? candidate : JSON.stringify(candidate);
-    }
-    return typeof parsed === "string" ? parsed : JSON.stringify(parsed);
-  } catch {
-    return rawBody;
-  }
-}
-
-async function request<T>(path: string, init?: RequestInit, timeoutMs = 45_000): Promise<T> {
-  const controller = new AbortController();
-  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      cache: init?.cache ?? "no-store",
-      credentials: "include",
-      headers: authHeaders(init?.headers),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new ApiRequestError({
-        kind: "timeout",
-        detail: `İstek ${Math.round(timeoutMs / 1_000)} saniye içinde yanıtlanmadı: ${errorText(error)}`,
-        originalError: error,
-      });
-    }
-    throw new ApiRequestError({
-      kind: "network",
-      detail: `Ağ veya dosya okuma hatası: ${errorText(error)}`,
-      originalError: error,
-    });
-  } finally {
-    globalThis.clearTimeout(timeout);
-  }
-  if (!response.ok) {
-    const rawBody = await response.text();
-    throw new ApiRequestError({
-      kind: "http",
-      status: response.status,
-      detail: responseDetail(rawBody, response.statusText || "Sunucu isteği reddetti"),
-      requestId: responseRequestId(response),
-    });
-  }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
 }
 
 function appendScope(qs: URLSearchParams, scope?: DateScope): void {
@@ -288,135 +221,37 @@ export function scopedPath(path: string, scope?: DateScope): string {
   return `${base}?${qs.toString()}`;
 }
 
+/** Legacy helper; main offline UI uses local Blob export buttons instead. */
 export function downloadUrl(path: string): string {
-  if (!API_KEY) return `${API_BASE}${path}`;
-  const sep = path.includes("?") ? "&" : "?";
-  return `${API_BASE}${path}${sep}k=${encodeURIComponent(API_KEY)}`;
+  return path;
 }
 
-export function fetchAuthStatus(): Promise<AuthStatus> {
-  return request<AuthStatus>("/api/auth/status");
-}
-export function setupAuth(displayName: string, pin: string): Promise<AuthStatus> {
-  return request<AuthStatus>("/api/auth/setup", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ display_name: displayName, pin }),
-  });
-}
-export function login(pin: string): Promise<AuthStatus> {
-  return request<AuthStatus>("/api/auth/login", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ pin }),
-  });
-}
-export function logout(): Promise<SimpleResult> {
-  return request<SimpleResult>("/api/auth/logout", { method: "POST" });
-}
-
-export function fetchSummary(scope?: DateScope): Promise<OperationSummary> {
-  return request<OperationSummary>(scopedPath("/api/summary", scope));
-}
-export function fetchPassengers(
-  params: { search?: string; status?: string; sort?: string; scope?: DateScope } = {},
-): Promise<Passenger[]> {
-  const qs = new URLSearchParams();
-  if (params.search) qs.set("search", params.search);
-  if (params.status) qs.set("status", params.status);
-  if (params.sort) qs.set("sort", params.sort);
-  appendScope(qs, params.scope);
-  return request<Passenger[]>(`/api/passengers${qs.size ? `?${qs.toString()}` : ""}`);
-}
-export function fetchPassengerPage(
-  params: {
-    search?: string;
-    status?: string;
-    sort?: string;
-    scope?: DateScope;
-    offset?: number;
-    limit?: number;
-  } = {},
-): Promise<PassengerPage> {
-  const qs = new URLSearchParams({
-    offset: String(Math.max(0, params.offset ?? 0)),
-    limit: String(Math.max(1, params.limit ?? 20)),
-  });
-  if (params.search) qs.set("search", params.search);
-  if (params.status) qs.set("status", params.status);
-  if (params.sort) qs.set("sort", params.sort);
-  appendScope(qs, params.scope);
-  return request<PassengerPage>(`/api/passengers/page?${qs.toString()}`);
-}
+export const fetchAuthStatus = localAuthStatus;
+export const setupAuth = localSetup;
+export const login = localLogin;
+export const logout = localLogout;
+export const fetchSummary = localSummary;
+export const fetchPassengers = localPassengers;
+export const fetchPassengerPage = localPassengerPage;
 export function fetchArchive(scope: DateScope = { range: "Tümü", start: "", end: "" }): Promise<ArchiveResponse> {
-  const qs = new URLSearchParams();
-  appendScope(qs, scope);
-  return request<ArchiveResponse>(`/api/archive?${qs.toString()}`);
+  return localArchive(scope);
 }
+export const updatePassenger = localUpdatePassenger;
+export const deletePassenger = localDeletePassenger;
+export const bulkDelete = localBulkDelete;
+export const clearAll = localClearAll;
+export const mergeDuplicates = localMergeDuplicates;
+export const saveOperationMeta = localSaveOperationMeta;
+export const previewPassengerFile = localPreview;
+export const uploadPassengerFile = localUploadPassengerFile;
 
-export function updatePassenger(id: number, updates: Partial<Passenger>): Promise<SimpleResult> {
-  return request<SimpleResult>(`/api/passengers/${id}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(updates),
-  });
-}
-export function deletePassenger(id: number): Promise<SimpleResult> {
-  return request<SimpleResult>(`/api/passengers/${id}`, { method: "DELETE" });
-}
-export function bulkDelete(ids: number[]): Promise<SimpleResult> {
-  return request<SimpleResult>("/api/passengers/bulk-delete", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ids }),
-  });
-}
-export function clearAll(): Promise<SimpleResult> {
-  return request<SimpleResult>("/api/passengers/clear", { method: "POST" });
-}
-export function mergeDuplicates(passportKey = ""): Promise<{ removed: number; passenger_count: number }> {
-  const qs = passportKey ? `?passport_key=${encodeURIComponent(passportKey)}` : "";
-  return request(`/api/merge-duplicates${qs}`, { method: "POST" });
-}
-export function saveOperationMeta(meta: OperationMeta): Promise<SimpleResult> {
-  return request<SimpleResult>("/api/operation-meta", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(meta),
-  });
-}
-
-export async function previewPassengerFile(file: File): Promise<ImportPreviewResponse> {
-  const body = new FormData();
-  await appendReadableFile(body, "file", file);
-  return request<ImportPreviewResponse>("/api/import/preview", { method: "POST", body });
-}
-export async function uploadPassengerFile(
-  file: File,
-  replace: boolean,
-  dupStrategy: string,
-  batchId: string,
-): Promise<ImportResponse> {
-  const body = new FormData();
-  await appendReadableFile(body, "files", file);
-  const qs = new URLSearchParams({ replace: String(replace), dup_strategy: dupStrategy, batch_id: batchId });
-  return request<ImportResponse>(`/api/import?${qs.toString()}`, { method: "POST", body }, 120_000);
-}
-export async function uploadPassengerFiles(
+export function uploadPassengerFiles(
   files: FileList | File[],
   replace = false,
   dupStrategy = "add",
 ): Promise<ImportResponse> {
-  const body = new FormData();
-  for (const file of Array.from(files)) await appendReadableFile(body, "files", file);
-  const qs = new URLSearchParams({
-    replace: String(replace),
-    dup_strategy: dupStrategy,
-    batch_id: newId(),
-  });
-  return request<ImportResponse>(`/api/import?${qs.toString()}`, { method: "POST", body });
+  return localUploadPassengerFiles(Array.from(files), replace, dupStrategy);
 }
-const IMPORT_QUEUE_SAFE_RETRY_DELAY_MS = 1_000;
 
 export type QueueImportFailure = { filename: string; error: string };
 export type QueueImportResult = ImportQueueResponse & {
@@ -424,31 +259,7 @@ export type QueueImportResult = ImportQueueResponse & {
   failures: QueueImportFailure[];
 };
 
-export async function queueImportFile(
-  file: File,
-  replace: boolean,
-  dupStrategy: string,
-  batchId: string,
-  uploadId: string,
-  uploadIndex = 0,
-): Promise<ImportQueueResponse> {
-  const body = new FormData();
-  // File doğrudan FormData'ya eklenir. arrayBuffer()/Blob kopyası oluşturmak,
-  // büyük ZIP'lerde iPhone belleğini tüketir ve iCloud tutamacını koparır.
-  appendReadableFile(body, "files", file);
-  const qs = new URLSearchParams({
-    replace: String(replace),
-    dup_strategy: dupStrategy,
-    batch_id: batchId,
-    upload_id: uploadId,
-    upload_index: String(uploadIndex),
-  });
-  return request<ImportQueueResponse>(
-    `/api/import/queue?${qs.toString()}`,
-    { method: "POST", body },
-    120_000,
-  );
-}
+export const queueImportFile = localQueueImportFile;
 
 export async function queueImportFiles(
   files: File[],
@@ -460,121 +271,46 @@ export async function queueImportFiles(
   const jobs: ImportJob[] = [];
   const failedFiles: string[] = [];
   const failures: QueueImportFailure[] = [];
-  let delivered = 0;
-  let active = false;
-
   onProgress?.(0, files.length);
-  for (const [uploadIndex, file] of files.entries()) {
-    // Replace bir dosyaya değil batch'e ait niyettir. Her top-level iş bu
-    // niyeti taşır; sunucu yalnız ilk başarıyla ayrıştırılan dosyada tüketir.
-    const applyReplace = replace;
-    const uploadId = newId();
-    let result: ImportQueueResponse | null = null;
-    let failure: unknown;
-    try {
-      result = await queueImportFile(file, applyReplace, dupStrategy, batchId, uploadId, uploadIndex);
-    } catch (error) {
-      failure = error;
-      if (isRetryableTransportError(error)) {
-        await new Promise((resolve) => globalThis.setTimeout(resolve, IMPORT_QUEUE_SAFE_RETRY_DELAY_MS));
-        try {
-          // İlk istek sunucuya ulaşıp yanıtı kaybolmuş olabilir. Aynı upload_id
-          // tekrar kullanıldığı için bu ikinci gönderim yeni iş oluşturmaz.
-          result = await queueImportFile(file, applyReplace, dupStrategy, batchId, uploadId, uploadIndex);
-          failure = undefined;
-        } catch (retryError) {
-          failure = retryError;
-        }
-      }
-    }
-    if (result) {
-      const known = new Set(jobs.map((job) => job.id));
-      jobs.push(...result.jobs.filter((job) => !known.has(job.id)));
-      active = active || result.active;
-    } else {
-      const message = failure instanceof Error ? failure.message : errorText(failure);
+  for (const [index, file] of files.entries()) {
+    const response = await localQueueImportFile(file, replace, dupStrategy, batchId, newId(), index);
+    const job = response.jobs[0];
+    if (job) jobs.push(job);
+    if (job?.status === "error") {
       failedFiles.push(file.name);
-      failures.push({ filename: file.name, error: message });
+      failures.push({ filename: file.name, error: job.message });
     }
-    delivered += 1;
-    onProgress?.(delivered, files.length);
+    onProgress?.(index + 1, files.length);
   }
-  return { jobs, active, batch_id: batchId, failedFiles, failures };
-}
-export function fetchImportQueue(): Promise<ImportQueueResponse> {
-  return request<ImportQueueResponse>("/api/import/queue");
-}
-export function retryImportJob(jobId: string): Promise<SimpleResult> {
-  return request<SimpleResult>(`/api/import/queue/${encodeURIComponent(jobId)}/retry`, { method: "POST" });
-}
-export function deleteImportJob(jobId: string): Promise<SimpleResult> {
-  return request<SimpleResult>(`/api/import/queue/${encodeURIComponent(jobId)}`, { method: "DELETE" });
-}
-export function undoImport(batchId = ""): Promise<SimpleResult> {
-  const suffix = batchId ? `?batch_id=${encodeURIComponent(batchId)}` : "";
-  return request<SimpleResult>(`/api/import/undo${suffix}`, { method: "POST" });
+  return { jobs, active: false, batch_id: batchId, failedFiles, failures };
 }
 
-export async function matchPhotos(files: FileList | File[]): Promise<MatchPhotosResponse> {
-  const body = new FormData();
-  for (const file of Array.from(files)) await appendReadableFile(body, "files", file);
-  return request<MatchPhotosResponse>("/api/photos/match", { method: "POST", body }, 120_000);
+export const fetchImportQueue = localQueueState;
+export const retryImportJob = localRetryJob;
+export const deleteImportJob = localDeleteJob;
+export const undoImport = localUndoImport;
+export function matchPhotos(files: FileList | File[]): Promise<MatchPhotosResponse> {
+  return localMatchPhotos(Array.from(files));
 }
-export async function setPassengerPhoto(id: number, file: File): Promise<SimpleResult> {
-  const body = new FormData();
-  await appendReadableFile(body, "file", file);
-  return request<SimpleResult>(`/api/passengers/${id}/photo`, { method: "POST", body });
-}
-export function removePassengerPhoto(id: number): Promise<SimpleResult> {
-  return request<SimpleResult>(`/api/passengers/${id}/photo`, { method: "DELETE" });
-}
-export function fetchUnmatchedPhotos(): Promise<UnmatchedPhoto[]> {
-  return request<UnmatchedPhoto[]>("/api/photos/unmatched");
-}
-export function assignUnmatchedPhoto(itemId: string, passengerId: number): Promise<SimpleResult> {
-  return request<SimpleResult>(`/api/photos/unmatched/${itemId}/assign`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ passenger_id: passengerId }),
-  });
-}
-export function deleteUnmatchedPhoto(itemId: string): Promise<SimpleResult> {
-  return request<SimpleResult>(`/api/photos/unmatched/${itemId}`, { method: "DELETE" });
-}
+export const setPassengerPhoto = localSetPassengerPhoto;
+export const removePassengerPhoto = localRemovePassengerPhoto;
+export const fetchUnmatchedPhotos = localUnmatchedPhotos;
+export const assignUnmatchedPhoto = localAssignUnmatched;
+export const deleteUnmatchedPhoto = localDeleteUnmatched;
+export const importMail = localImportMail;
 
-export async function importMail(file: File, batchId: string): Promise<MailImportResponse> {
-  const body = new FormData();
-  await appendReadableFile(body, "file", file);
-  return request<MailImportResponse>(`/api/mail/import?batch_id=${encodeURIComponent(batchId)}`, {
-    method: "POST",
-    body,
-  }, 120_000);
+// Backup is implemented by the local export screen; these compatibility
+// functions deliberately make unsupported server-era actions explicit.
+export const restoreBackup = localRestoreEncryptedBackup;
+export const fetchBackups = localBackups;
+export async function restoreDailyBackup(_snapshotDate: string): Promise<SimpleResult> {
+  throw new Error("Yerel cihazda sunucu günlük yedeği bulunmaz.");
 }
-
-export async function restoreBackup(file: File): Promise<SimpleResult> {
-  const body = new FormData();
-  await appendReadableFile(body, "file", file);
-  return request<SimpleResult>("/api/restore", { method: "POST", body });
+export const fetchUsers = localUsers;
+export async function createUser(_name: string, _pin: string, _role: string): Promise<UserView> {
+  throw new Error("Çevrimdışı sürüm tek cihaz kasası kullanır.");
 }
-export function fetchBackups(): Promise<BackupInfo[]> {
-  return request<BackupInfo[]>("/api/backups");
+export async function deactivateUser(_userId: string): Promise<SimpleResult> {
+  throw new Error("Çevrimdışı sürüm tek cihaz kasası kullanır.");
 }
-export function restoreDailyBackup(snapshotDate: string): Promise<SimpleResult> {
-  return request<SimpleResult>(`/api/backups/${encodeURIComponent(snapshotDate)}/restore`, { method: "POST" });
-}
-export function fetchUsers(): Promise<UserView[]> {
-  return request<UserView[]>("/api/users");
-}
-export function createUser(name: string, pin: string, role: string): Promise<UserView> {
-  return request<UserView>("/api/users", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, pin, role }),
-  });
-}
-export function deactivateUser(userId: string): Promise<SimpleResult> {
-  return request<SimpleResult>(`/api/users/${userId}`, { method: "DELETE" });
-}
-export function fetchAudit(): Promise<AuditEntry[]> {
-  return request<AuditEntry[]>("/api/audit?limit=150");
-}
+export const fetchAudit = localAudit;

@@ -1,11 +1,11 @@
 "use client";
 
-import { downloadUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { LocalDownloadButton } from "@/components/LocalDownloadButton";
 
 export function EmptyState({
   onNavigate,
-  title = "Henüz operasyon yok",
+  title = "Henüz yolcu listesi yok",
   subtitle = "Toplu Aktarım bölümünden yolcu listelerini ekleyerek başlayın.",
 }: {
   onNavigate?: (tab: string) => void;
@@ -26,9 +26,7 @@ export function EmptyState({
             Toplu aktarıma geç
           </button>
         )}
-        <a className="soft-btn" href={downloadUrl("/api/template")}>
-          Şablon indir
-        </a>
+        <LocalDownloadButton className="soft-btn" kind="template">Şablon indir</LocalDownloadButton>
       </div>
     </div>
   );

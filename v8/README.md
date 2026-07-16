@@ -47,23 +47,9 @@ Ciphertexts embed the key ID that encrypted them. To rotate:
 2. New writes use `k2`; existing `k1` ciphertexts stay readable.
 3. Re-encrypt at leisure (the codec exposes `needs_rotation`), then drop `k1`.
 
-## Apply to the existing repository
+## Repository placement
 
-Extract the bundle, then from the bundle directory run:
-
-```bash
-./apply_to_repo.sh /path/to/excelbase_cloud
-```
-
-This adds only:
-
-- `v8/`
-- `.github/workflows/v8-ci.yml`
-- `frontend/src/lib/api-v8.ts`
-- `frontend/src/app/v8/` pilot route
-- `V8_IMPLEMENTATION.md`
-
-It does not replace V7 files.
+The isolated server foundation lives under `v8/`, with its CI definition in `.github/workflows/v8-ci.yml` and implementation record in `V8_IMPLEMENTATION.md`. The former `frontend/src/app/v8/` pilot route and `frontend/src/lib/api-v8.ts` client have been retired; the main offline PWA does not depend on this API.
 
 ## Local setup
 
@@ -84,7 +70,7 @@ uvicorn app.main:app --reload --port 8080
 
 API documentation: `http://localhost:8080/api/v8/docs`
 
-After applying the bundle and rebuilding the existing Next.js frontend, the isolated pilot screen is available at `/v8`. Set `NEXT_PUBLIC_V8_API_URL` to the V8 API origin.
+The API root redirects to the main Excelbase origin. Set `V8_UI_URL` only when that redirect should target a different published client; there is no bundled `/v8` screen or `NEXT_PUBLIC_V8_API_URL` client setting.
 
 For local development, send the two IDs printed by the bootstrap command:
 
@@ -173,5 +159,5 @@ ruff check app tests scripts
 3. Background jobs for large import, photo processing and package generation
 4. V7 photo migration with SHA-256 verification
 5. PostgreSQL backup/restore drill and load testing
-6. Next.js UI migration to `/api/v8`
+6. If V8 is revived as a product surface, build a separately scoped client instead of coupling it to the offline PWA
 7. Redis-backed rate limiting when scaling beyond one API instance

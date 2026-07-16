@@ -26,11 +26,6 @@ services:
           property: connectionString
       - key: GATEVISA_DATA_SECRET
         generateValue: true
-      # /v8 sayfasının varsayılan API adresi (build sırasında gömülür).
-      # Boş bırakılırsa /v8 sayfasındaki "API adresi" alanından da girilebilir.
-      - key: NEXT_PUBLIC_V8_API_URL
-        value: https://excelbase-v8.onrender.com
-
   # V8 — ilişkisel çekirdek API'si. Gizli anahtarlar Render tarafından
   # otomatik üretilir (generateValue) ve asla repoya yazılmaz.
   - type: web

@@ -1,96 +1,71 @@
-# Gate Visa PAX — V7
+# Excelbase — çevrimdışı yolcu operasyonları
 
-Kapı vizesi yolcu listesi yönetimi. Excel (GATE VISA PAX LIST) yükle → her satır bir yolcu kartı olur. Biyometrik fotoğrafları toplu ekle, tarihe göre arşivle, eksikleri düzelt, teslim paketi oluştur — hepsi telefonda native uygulama gibi.
+Excelbase; yolcu listelerini, biyometrik fotoğrafları ve teslim paketlerini iPhone'da işleyen kurulabilir bir PWA'dır. Ana uygulamanın çalışma verileri sunucuya gönderilmez: içe aktarma, eşleştirme, filtreleme ve dışa aktarma tarayıcıda yapılır.
 
-**V7**, eski Streamlit uygulamasının **tüm fonksiyonlarını** modern tek servise taşır: **FastAPI backend + Next.js PWA**. Streamlit dosyası (`app.py`) referans olarak repoda kalır ama Render'da yayınlanan tek servis artık V7'dir.
+## Neler yapar?
 
-## Özellikler (V7)
+- XLSX, XLS, XLSM, ODS ve CSV yolcu listelerini; ayrıca bu dosyaları içeren ZIP arşivlerini işler.
+- Dosya adedi sınırı koymaz; dosyaları sırayla işleyerek mobil cihaz belleğini korur.
+- Yolcu kayıtlarını ve kaynak dosyaları Web Crypto (AES-GCM) ile cihazda şifreli saklar.
+- Fotoğraf ve fotoğraf ZIP'lerini pasaport numarası veya benzersiz ad eşleşmesiyle yolculara bağlar.
+- Yolcuları tarih, durum ve metin ile filtreler; tekrarları ve eksik alanları gösterir.
+- Excel, CSV, manifest, fotoğraf ZIP'i ve eksiksiz teslim paketi üretir.
+- Şifreli cihaz yedeği alır ve geri yükler.
+- Uygulama kabuğu ilk başarılı açılıştan sonra çevrimdışı çalışır.
 
-- **Ana (Kokpit)** — operasyon hazırlık yüzdesi, bugünkü operasyon, özet metrikler, hızlı aksiyonlar, son hareketler.
-- **Yolcular** — arama, durum filtresi (Hazır/Eksik/Fotosuz/Pasaportsuz/Tekrarlı), sıralama, sayfalama, toplu seçim + silme, kart detayında düzenleme.
-- **Eksikler** — kategori sayaçları, hazırlık ısı çubuğu, hızlı düzeltme (detay aç / doğrudan foto ata), tekrarlı pasaport birleştirme.
-- **Galeri** — eşleşmiş biyometrik fotoğraflar, ZIP indirme.
-- **Arşiv** — gidiş tarihine göre gruplar, tarih bazlı Excel/CSV/Foto indirme, operasyon durumu/görevli/not kaydı.
-- **Import** — Excel/CSV içe aktarma (değiştir / ekle / atla / üzerine yaz), foto & ZIP otomatik eşleştirme, şablon indirme, import geçmişi.
-- **Paket** — teslim paketi (ZIP: Excel + CSV + rapor + fotoğraflar), yazdırılabilir manifest, JSON yedek al / geri yükle, tümünü temizle.
-- **iPhone/Android PWA** — Safari'de "Ana Ekrana Ekle" ile tam ekran, alt tab bar ile native gezinme, HEIC foto desteği.
+## iPhone'a kurulum
+
+1. Yayın adresini iPhone'da **Safari** ile açın.
+2. Uygulamanın “Çevrimdışı kullanıma hazır” durumuna gelmesini bekleyin.
+3. **Paylaş** → **Ana Ekrana Ekle** → **Ekle** yolunu izleyin.
+4. Excelbase'i bundan sonra ana ekran simgesinden açın.
+
+İlk kurulum ve yeni sürümü alma sırasında internet gerekir. Kurulumdan sonra yolcu listeleri, fotoğraflar ve çıktılar çevrimdışı kullanılabilir. iOS, ekran kapalıyken tarayıcı işlemini durdurabildiği için büyük bir içe aktarma tamamlanana kadar Excelbase'i ön planda tutun.
+
+## Veri güvenliği ve yedek
+
+- Kasa kodu sunucuya gönderilmez ve kurtarılamaz.
+- Şifreleme anahtarı yalnızca kasa açıkken bellekte tutulur.
+- IndexedDB'deki yolcu, iş ve dosya kayıtları şifreli içerik taşır.
+- Kasa kodunu unutmak cihazdaki veriyi erişilemez yapar.
+- Safari verisini silmeden, cihaz değiştirmeden veya uygulamayı kaldırmadan önce **Paket → Şifreli yedek al** ile yedeği Dosyalar'a kaydedin.
 
 ## Mimari
 
-- `backend/` — FastAPI servis katmanı. Mevcut Excel parser, yolcu şeması, persistence ve foto modüllerini kullanır. Tüm iş mantığı REST endpoint'lerinden sunulur ve Next.js statik çıktısını da aynı servisten yayınlar.
-- `frontend/` — Next.js PWA (deniz laciverti / uzay siyahı holografik tema, mobil öncelikli React).
-- `app.py` + yardımcı modüller — orijinal Streamlit uygulaması (referans / iş mantığı kaynağı).
+- `frontend/` — statik Next.js PWA, IndexedDB veri katmanı, Web Crypto kasası, dosya ayrıştırıcıları ve yerel çıktı üreticileri.
+- `frontend/public/sw.js` — uygulama kabuğunu sürümleyip çevrimdışı açılışı sağlayan service worker.
+- `backend/` — statik üretim çıktısını ve sağlık kontrolünü sunan mevcut FastAPI katmanı. Ana PWA çalışma verisi için bu API'ye bağlı değildir.
+- `v8/` — ayrı tutulan eski/deneysel ilişkisel servis; ana PWA arayüzünde V8 sayfası bulunmaz.
 
-### API endpoint'leri
+## Yerel geliştirme
 
-| Alan | Endpoint |
-| --- | --- |
-| Sağlık | `GET /health` |
-| Özet | `GET /api/summary` |
-| Yolcular | `GET /api/passengers?search=&status=&sort=` |
-| Güncelle/Sil | `PATCH /api/passengers/{id}` · `DELETE /api/passengers/{id}` |
-| Toplu sil / temizle | `POST /api/passengers/bulk-delete` · `POST /api/passengers/clear` |
-| Import | `POST /api/import?replace=&dup_strategy=` |
-| Foto | `POST /api/passengers/{id}/photo` · `DELETE .../photo` · `POST /api/photos/match` · `GET /api/photo/{ref}` |
-| Tekrarlı | `POST /api/merge-duplicates` |
-| Arşiv | `GET /api/archive?range=` · `POST /api/operation-meta` |
-| Çıktı | `GET /api/export?kind=` · `GET /api/manifest` · `GET /api/package` · `GET /api/photos-zip` · `GET /api/template` |
-| Yedek | `GET /api/backup` · `POST /api/restore` |
-| Demo | `POST /api/demo` |
-
-## Lokal çalıştırma
-
-Backend (Next build ile aynı servisten sunmak için önce frontend build alın):
-
-```bash
-pip install -r backend/requirements.txt
-cd frontend && npm install && npm run build && cd ..
-GATEVISA_ALLOW_DEV_NO_AUTH=1 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
-# http://localhost:8000
-```
-
-Frontend'i ayrı geliştirme sunucusunda çalıştırmak isterseniz:
+Frontend:
 
 ```bash
 cd frontend
-NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
+npm ci
+npm run dev
 ```
 
-### Production güvenlik ayarları
-
-Yolcu PII verisi internete açılmadan önce API anahtarı ayarlanmalıdır:
+Üretim çıktısı ve kontroller:
 
 ```bash
-export GATEVISA_API_KEY="uzun-rastgele-bir-anahtar"
-export GATEVISA_CORS_ORIGINS="https://frontend-domaininiz.com"
+cd frontend
+npm run lint
+npm test
+npm run build
 ```
 
-Frontend build'inde aynı anahtar (görsel/indirmeler query param `?k=` ile de gönderilir):
+FastAPI üzerinden üretim çıktısını sunmak için:
 
 ```bash
-NEXT_PUBLIC_API_KEY="uzun-rastgele-bir-anahtar"
+pip install -r backend/requirements.txt
+cd frontend && npm ci && npm run build && cd ..
+GATEVISA_ALLOW_DEV_NO_AUTH=1 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-> `GATEVISA_API_KEY` boşsa backend yalnızca `GATEVISA_ALLOW_DEV_NO_AUTH=1` ile açılır (lokal geliştirme).
+PWA özellikleri `localhost` veya HTTPS üzerinde kullanılabilir.
 
-## Kalıcı veritabanı (önerilir)
+## Yayın
 
-Render free plan diski kalıcı değildir. Veri ve fotoğrafların kalıcı olması için `DATABASE_URL` (Postgres) ayarlayın:
-
-```
-DATABASE_URL = "postgresql://postgres:PAROLA@db.xxxx.supabase.co:5432/postgres"
-```
-
-Tablolar (`app_state`, `photos`) otomatik oluşturulur. DB yoksa uygulama yerel dosya yedeğine geçer.
-
-## Render kurulumu
-
-- Tek servis, Docker deploy (`render.yaml` + `Dockerfile`).
-- Docker build sırasında `frontend/` statik PWA olarak build edilir; FastAPI hem `/api/*` hem de PWA'yı sunar.
-- Public URL doğrudan V7 arayüzünü açar.
-
-## iPhone'da uygulama gibi kullanma (PWA)
-
-1. Uygulama linkini **Safari**'de aç.
-2. **Paylaş** → **Ana Ekrana Ekle**.
-3. Ana ekranda Gate Visa ikonu ile tam ekran açılır.
+`Dockerfile`, frontend'i statik olarak derler ve FastAPI imajına kopyalar. `render.yaml` mevcut Render servislerini tanımlar. Yeni dağıtımda service worker sürümü değiştiğinde uygulama güncelleme bildirimi gösterir; kullanıcı onayladığında yeni kabuk etkinleşir.

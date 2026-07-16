@@ -1,13 +1,18 @@
 import type { Metadata, Viewport } from "next";
+import { PwaBootstrap } from "@/components/pwa/PwaBootstrap";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Gate Visa Operations",
-  description: "Yolcu listeleri, evrak kontrolleri ve teslim dosyaları için operasyon platformu.",
+  applicationName: "Excelbase",
+  title: "Excelbase · Yolcu Operasyonları",
+  description: "Yolcu listeleri, fotoğraflar ve teslim dosyaları için çevrimdışı operasyon uygulaması.",
   manifest: "/manifest.webmanifest",
+  formatDetection: {
+    telephone: false,
+  },
   appleWebApp: {
     capable: true,
-    title: "Gate Visa Ops",
+    title: "Excelbase",
     statusBarStyle: "default",
   },
   icons: {
@@ -21,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#102a43",
+  themeColor: "#007ea7",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -30,7 +35,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="tr">
-      <body>{children}</body>
+      <body>
+        {children}
+        <PwaBootstrap />
+      </body>
     </html>
   );
 }

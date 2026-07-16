@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArchiveGroup, downloadUrl, fetchArchive } from "@/lib/api";
+import { ArchiveGroup, fetchArchive } from "@/lib/api";
 import { formatAmount, useStore } from "@/lib/store";
 import { EmptyState } from "@/components/tabs/shared";
+import { LocalDownloadButton } from "@/components/LocalDownloadButton";
 
 export function ArchiveTab() {
   const { summary, version, dateScope } = useStore();
@@ -52,8 +53,6 @@ export function ArchiveTab() {
 
 function ArchiveCard({ group }: { group: ArchiveGroup }) {
   const [open, setOpen] = useState(false);
-  const ids = encodeURIComponent(group.passenger_ids.join(","));
-
   return (
     <article className="archive-card">
       <button className="archive-head" onClick={() => setOpen((value) => !value)} type="button">
@@ -68,9 +67,9 @@ function ArchiveCard({ group }: { group: ArchiveGroup }) {
       {open && (
         <div className="archive-body">
           <div className="action-grid">
-            <a className="soft-btn" href={downloadUrl(`/api/export?kind=excel&ids=${ids}`)}>Excel indir</a>
-            <a className="soft-btn" href={downloadUrl(`/api/export?kind=csv&ids=${ids}`)}>CSV indir</a>
-            <a className="primary-btn" href={downloadUrl(`/api/package?ids=${ids}`)}>Gün paketini indir</a>
+            <LocalDownloadButton className="soft-btn" kind="excel" ids={group.passenger_ids}>Excel indir</LocalDownloadButton>
+            <LocalDownloadButton className="soft-btn" kind="csv" ids={group.passenger_ids}>CSV indir</LocalDownloadButton>
+            <LocalDownloadButton className="primary-btn" kind="package" ids={group.passenger_ids}>Gün paketini indir</LocalDownloadButton>
           </div>
         </div>
       )}
