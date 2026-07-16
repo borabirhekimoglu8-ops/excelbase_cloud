@@ -864,3 +864,26 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 @media (max-width: 359px) {
   .ido-content { padding-left: 12px; padding-right: 12px; }
 }
+
+/* iOS Safari, 16px altındaki form alanına odaklanınca sayfayı yakınlaştırır.
+   Operasyon ekranlarında değer girişi sabit ve okunaklı kalmalıdır. */
+@media (max-width: 760px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select,
+  textarea,
+  .ic-search input,
+  .ic-detail-line.editable input,
+  .ic-detail-line.editable select {
+    font-size: 16px !important;
+  }
+
+  .ic-section-link,
+  .chip-link,
+  .text-btn,
+  .ic-actions-row button,
+  .ic-actions-row a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}

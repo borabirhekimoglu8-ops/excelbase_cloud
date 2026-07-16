@@ -52,7 +52,19 @@ export function PassengerCard({
   ].filter(Boolean);
 
   return (
-    <div className="ic-row as-btn" style={{ minHeight: 76 }} onClick={() => onOpen?.(passenger.id)} role="button" tabIndex={0}>
+    <div
+      className="ic-row as-btn"
+      style={{ minHeight: 76 }}
+      onClick={() => onOpen?.(passenger.id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen?.(passenger.id);
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
       <div className="ic-row-id">
         {selectable && (
           <input

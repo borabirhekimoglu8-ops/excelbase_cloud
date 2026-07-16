@@ -57,7 +57,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const value = useMemo(() => (status?.user ? { user: status.user, signOut } : null), [status]);
 
   if (!status) {
-    return <div className="auth-loading">Gate Visa Operations hazırlanıyor…</div>;
+    return <div className="auth-loading">Excelbase yerel kasası hazırlanıyor…</div>;
   }
 
   if (!status.authenticated || !status.user || !value) {
@@ -68,17 +68,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
           <div className="brand-lockup auth-brand">
             <span className="brand-symbol">GV</span>
             <div>
-              <strong>Gate Visa Operations</strong>
-              <small>Passenger Operations Platform</small>
+              <strong>Excelbase</strong>
+              <small>Çevrimdışı Yolcu Yönetimi</small>
             </div>
           </div>
           <div className="auth-copy">
             <p className="overline">{setup ? "İLK KURULUM" : "GÜVENLİ ERİŞİM"}</p>
-            <h1>{setup ? "Yönetici hesabını oluşturun" : "Operasyon merkezine giriş"}</h1>
+            <h1>{setup ? "Bu cihazdaki kasayı oluşturun" : "Yerel kasanın kilidini açın"}</h1>
             <p>
               {setup
-                ? "Bu işlem yalnızca bir kez yapılır. En az 6 karakterli özel bir erişim kodu belirleyin."
-                : "Size tanımlanan erişim kodunu girin."}
+                ? "Veriler bu iPhone’da şifreli saklanır. En az 6 haneli, tahmin edilmesi zor bir erişim kodu belirleyin."
+                : "Cihazdaki şifreli yolcu verilerini açmak için erişim kodunuzu girin."}
             </p>
           </div>
           <form className="auth-form" onSubmit={setup ? handleSetup : handleLogin}>
@@ -104,7 +104,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
               {busy ? "İşleniyor…" : setup ? "Kurulumu tamamla" : "Giriş yap"}
             </button>
           </form>
-          <p className="security-note">Oturum bilgileri güvenli, HTTP-only çerezle korunur.</p>
+          <p className="security-note">Kod sunucuya gönderilmez. Kodu unutursanız kasa açılamaz; düzenli şifreli yedek alın.</p>
         </section>
       </main>
     );

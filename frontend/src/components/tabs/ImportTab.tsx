@@ -8,7 +8,6 @@ import {
   assignUnmatchedPhoto,
   deleteImportJob,
   deleteUnmatchedPhoto,
-  downloadUrl,
   fetchImportQueue,
   fetchPassengerPage,
   fetchPassengers,
@@ -22,7 +21,7 @@ import {
 } from "@/lib/api";
 import { newId } from "@/lib/id";
 import { useStore } from "@/lib/store";
-import { materializeUploadFile, purgeLegacyUploadQueue } from "@/lib/uploadQueue";
+import { LocalDownloadButton } from "@/components/LocalDownloadButton";
 
 type Step = "files" | "mapping" | "result";
 type DeliveryStage = "waiting" | "sending" | "retrying" | "delivered" | "failed";
@@ -35,9 +34,9 @@ type DeliveryItem = {
 
 const DELIVERY_LABELS: Record<DeliveryStage, string> = {
   waiting: "SIRADA",
-  sending: "GÖNDERİLİYOR",
+  sending: "İŞLENİYOR",
   retrying: "TEKRAR DENENİYOR",
-  delivered: "TESLİM EDİLDİ",
+  delivered: "CİHAZA KAYDEDİLDİ",
   failed: "HATA",
 };
 
@@ -151,9 +150,8 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
   }, [ensureAssignmentPassengers]);
 
   const refreshQueue = useCallback(async () => {
-    // Render/PostgreSQL kısa süreli yavaşladığında önceki sorgu bitmeden yeni
-    // polling isteği açmayız. Bu hem mobilde yanlış sırada UI güncellemesini
-    // hem de aynı oturumun DB'yi üst üste isteklerle boğmasını engeller.
+  // Aynı anda birden fazla yerel kasa okuması açılmaz. Bu, büyük listelerde
+  // iPhone'un gereksiz şifre çözme işi yapmasını önler.
     if (queueRefreshBusyRef.current) return;
     queueRefreshBusyRef.current = true;
     try {
@@ -187,7 +185,6 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
   }, [bump]);
 
   useEffect(() => {
-    purgeLegacyUploadQueue();
     void refreshQueue();
     const onVisible = () => {
       if (document.visibilityState === "visible") void refreshQueue();
@@ -240,7 +237,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
         uploadId,
         filename: file.name,
         stage: "waiting",
-        message: "Gönderim sırasını bekliyor.",
+        message: "Cihazda işlenme sırasını bekliyor.",
       })),
     );
     setDeliveryProgress({
@@ -259,9 +256,8 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
     };
 
     try {
-      // File nesneleri input üzerinde tutulur; input ancak bütün sıra bittikten
-      // sonra temizlenir. Böylece iOS/iCloud dosya sağlayıcısı, ikinci dosyada
-      // geçersizleşen bir tutamaç yerine özgün File'ı doğrudan fetch'e verir.
+      // Dosyalar tek tek işlenir ve her başarılı dosya hemen şifreli kasaya
+      // kaydedilir. Seçim adedi için uygulama kaynaklı bir sınır yoktur.
       for (const [uploadIndex, { file: source, uploadId }] of selected.entries()) {
         // Batch replace niyetini her dosya taşır; backend bunu yalnız ilk
         // başarıyla ayrıştırılan dosyada tüketir. İlk dosyanın bozuk olması
@@ -272,7 +268,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
         let retried = false;
         let accepted = false;
 
-        setDelivery(uploadId, "sending", "Sunucuya gönderiliyor…");
+        setDelivery(uploadId, "sending", "Dosya bu cihazda açılıyor ve yolcular hazırlanıyor…");
         setDeliveryProgress({
           processed,
           delivered,
@@ -291,7 +287,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             setDelivery(
               uploadId,
               "retrying",
-              `${error.message} · Aynı güvenli aktarım kimliğiyle bir kez daha deneniyor…`,
+              `${error.message} · Dosya bir kez daha yerel olarak deneniyor…`,
             );
             setDeliveryProgress({
               processed,
@@ -313,21 +309,23 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
         }
 
         try {
-          if (!result) throw finalError ?? new Error("Sunucudan aktarım kaydı dönmedi.");
-          if (!result.jobs.length) throw new Error("Sunucu dosyayı kabul etti ancak aktarım işi kimliği döndürmedi.");
+          if (!result) throw finalError ?? new Error("Yerel aktarım sonucu oluşturulamadı.");
+          if (!result.jobs.length) throw new Error("Dosya işlendi ancak yerel aktarım kaydı oluşturulamadı.");
           const acceptedResult = result;
+          setJobs((current) => {
+            const known = new Set(current.map((job) => job.id));
+            return [...current, ...acceptedResult.jobs.filter((job) => !known.has(job.id))];
+          });
+          const failedJob = acceptedResult.jobs.find((job) => job.status === "error");
+          if (failedJob) throw new Error(failedJob.message || "Dosya işlenemedi.");
 
           delivered += 1;
           accepted = true;
           setDelivery(
             uploadId,
             "delivered",
-            retried ? "Güvenli yeniden denemeyle sunucuya teslim edildi." : "Sunucuya teslim edildi; arka plan kuyruğuna alındı.",
+            retried ? "Yeniden denemeyle şifreli kasaya kaydedildi." : "Yolcular şifreli yerel kasaya kaydedildi.",
           );
-          setJobs((current) => {
-            const known = new Set(current.map((job) => job.id));
-            return [...current, ...acceptedResult.jobs.filter((job) => !known.has(job.id))];
-          });
           for (const job of acceptedResult.jobs) trackedJobIdsRef.current.add(job.id);
           queueWasActiveRef.current = true;
           if (
@@ -354,17 +352,16 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
         }
       }
 
-      if (delivered) notify(`${delivered} dosya sunucuya teslim edildi`);
+      if (delivered) notify(`${delivered} dosya cihazda işlendi`);
       if (failed) {
-        notify(`${failed} dosya teslim edilemedi · ${failedDetails[0]}`, "error");
+        notify(`${failed} dosya işlenemedi · ${failedDetails[0]}`, "error");
       }
       void refreshQueue();
     } catch (error) {
       notify(error instanceof Error ? error.message : "Dosya aktarımı beklenmedik biçimde durdu.", "error");
       void refreshQueue();
     } finally {
-      // iPhone dosya tutamaçlarını yükleme boyunca canlı tutan kritik sıra:
-      // input yalnızca bütün özgün File nesneleri gönderildikten sonra sıfırlanır.
+      // iPhone dosya tutamaçları bütün sıra bitene kadar canlı tutulur.
       input.value = "";
       setDeliveryProgress(null);
       setUploading(false);
@@ -408,9 +405,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
     }
     setPhotoBusy(true);
     try {
-      const files: File[] = [];
-      for (const source of sourceFiles) files.push(await materializeUploadFile(source));
-      const result = await matchPhotos(files);
+      const result = await matchPhotos(sourceFiles);
       setPhotoLog([`${result.matched} fotoğraf eşleşti.`, ...(result.unmatched.length ? [`${result.unmatched.length} fotoğraf eşleşme kutusuna alındı.`] : [])]);
       notify(`${result.matched} fotoğraf eşleşti`);
       bump();
@@ -434,9 +429,8 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
     const notes: string[] = [];
     for (const source of files) {
       try {
-        const file = await materializeUploadFile(source);
-        const result = await importMail(file, batchId);
-        notes.push(`${result.subject || file.name}: ${result.imported_rows} yolcu, ${result.matched_photos} fotoğraf.`);
+        const result = await importMail(source, batchId);
+        notes.push(`${result.subject || source.name}: ${result.imported_rows} yolcu, ${result.matched_photos} fotoğraf.`);
       } catch (err) {
         notes.push(`${source.name}: ${err instanceof Error ? err.message : "işlenemedi"}`);
       }
@@ -464,8 +458,8 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
     await refreshQueue();
   }
 
-  // Sunucuda işleme sürerken yeni dosyalar eklenebilmelidir. Yalnızca mevcut
-  // multipart teslimi devam ederken ikinci bir seçim başlatılmasını engelleriz.
+  // Aynı dosya seçiminin yerel işleme sırası tamamlanmadan ikinci bir seçim
+  // başlatmayız; dosya adedi için ayrıca bir uygulama sınırı yoktur.
   const uploadLocked = uploading;
 
   return (
@@ -480,11 +474,11 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
         <span className={`ic-step${step === "result" ? " active" : ""}`}>3  TAMAMLA</span>
       </div>
 
-      {summary.persistence === "local-fallback" && (
+      {summary.persistence !== "device-encrypted" && (
         <div className="ic-callout amber">
           <div className="ic-callout-copy">
-            <p className="ic-callout-title">Veritabanı bağlantısı yok</p>
-            <p className="ic-callout-detail">Aktarılan veriler geçici bellekte, yeniden başlatmada silinebilir.</p>
+            <p className="ic-callout-title">Yerel kasa hazır değil</p>
+            <p className="ic-callout-detail">Aktarıma başlamadan önce kasayı yeniden kilitleyip açın.</p>
           </div>
         </div>
       )}
@@ -508,7 +502,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             <p className="ic-upload-hint">
               {deliveryProgress
                 ? `${deliveryProgress.processed}/${deliveryProgress.total} işlendi · ${deliveryProgress.delivered} teslim · ${deliveryProgress.failed} hata · ${deliveryProgress.currentFilename}: ${DELIVERY_LABELS[deliveryProgress.currentStage]}`
-                : "Önerilen: Excel dosyalarını tek ZIP yapıp yükleyin"}
+                : "Çoklu dosya seçin veya Excel dosyalarını tek ZIP içinde açın"}
             </p>
             <p className="ic-upload-formats">ZIP (önerilen) · XLSX · XLS · XLSM · CSV · ODS</p>
             <p className="ic-upload-formats">iPhone: Dosyalar → Seç → (…) → Sıkıştır</p>
@@ -526,7 +520,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
           {deliveryItems.length > 0 && (
             <>
               <div className="ic-section-head">
-                <p className="ic-section-title">Sunucuya Teslim Durumu</p>
+                <p className="ic-section-title">Cihazda İşlem Durumu</p>
                 <span style={{ color: "var(--ido-muted)", fontWeight: 500, fontSize: 10 }}>
                   {deliveryItems.filter((item) => item.stage === "delivered").length} teslim · {deliveryItems.filter((item) => item.stage === "failed").length} hata
                 </span>
@@ -609,8 +603,8 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
           <div className="ic-info-note">
             <span className="ic-info-mark">i</span>
             <div className="ic-info-note-copy">
-              <p className="ic-info-note-title">Aktarım arka planda güvenle sürdürülür.</p>
-              <p className="ic-info-note-detail">Bu ekrandan çıksanız bile işlem sunucuda devam eder.</p>
+              <p className="ic-info-note-title">Her tamamlanan dosya hemen kaydedilir.</p>
+              <p className="ic-info-note-detail">iPhone ekranı kapanırsa işlem duraklayabilir. Sıra bitene kadar uygulamayı açık tutun; tamamlanan dosyalar kaybolmaz.</p>
             </div>
           </div>
 
@@ -748,7 +742,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
           )}
 
           <div className="ic-actions-row">
-            <a href={downloadUrl("/api/export?kind=excel")}>Excel indir</a>
+            <LocalDownloadButton kind="excel">Excel indir</LocalDownloadButton>
             <button onClick={startNewUpload} type="button">Yeni yükleme</button>
           </div>
 
@@ -857,7 +851,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
           )}
 
           <div className="ic-actions-row">
-            <a href={downloadUrl("/api/template")}>Standart şablonu indir</a>
+            <LocalDownloadButton kind="template">Standart şablonu indir</LocalDownloadButton>
           </div>
         </>
       )}

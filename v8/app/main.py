@@ -123,7 +123,7 @@ def root():
         return RedirectResponse(url=settings.ui_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     return {
         "service": "Excelbase V8 API",
-        "message": "Bu adres yalnızca API sunucusudur. Uygulama arayüzü için excelbase servisinin /v8 sayfasını açın.",
+        "message": "Bu adres yalnızca API sunucusudur. Ana Excelbase uygulamasını kendi yayın adresinden açın.",
         "docs": "/api/v8/docs",
         "health": "/api/v8/health",
     }

@@ -1,177 +1,99 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import {
-  AuditEntry,
-  BackupInfo,
-  UserView,
-  createUser,
-  deactivateUser,
-  fetchAudit,
-  fetchBackups,
-  fetchUsers,
-  restoreDailyBackup,
-} from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
 
-const ROLE_LABELS: Record<string, string> = {
-  admin: "Yönetici",
-  operator: "Operasyon",
-  viewer: "Görüntüleme",
+type StorageState = {
+  usage: number;
+  quota: number;
+  persisted: boolean | null;
 };
 
+function formatBytes(value: number): string {
+  if (!value) return "0 MB";
+  const mb = value / (1024 * 1024);
+  if (mb < 1024) return `${mb.toLocaleString("tr-TR", { maximumFractionDigits: 1 })} MB`;
+  return `${(mb / 1024).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} GB`;
+}
+
 export function ManagementTab() {
-  const { user } = useAuth();
-  const { notify, bump } = useStore();
-  const [users, setUsers] = useState<UserView[]>([]);
-  const [audit, setAudit] = useState<AuditEntry[]>([]);
-  const [backups, setBackups] = useState<BackupInfo[]>([]);
+  const { user, signOut } = useAuth();
+  const { summary, notify } = useStore();
+  const [storage, setStorage] = useState<StorageState>({ usage: 0, quota: 0, persisted: null });
   const [busy, setBusy] = useState(false);
 
-  const refresh = useCallback(async () => {
-    if (user.role !== "admin") return;
-    const [userRows, auditRows, backupRows] = await Promise.all([fetchUsers(), fetchAudit(), fetchBackups()]);
-    setUsers(userRows);
-    setAudit(auditRows);
-    setBackups(backupRows);
-  }, [user.role]);
+  const refreshStorage = useCallback(async () => {
+    const estimate = await navigator.storage?.estimate?.();
+    const persisted = navigator.storage?.persisted ? await navigator.storage.persisted() : null;
+    setStorage({ usage: estimate?.usage ?? 0, quota: estimate?.quota ?? 0, persisted });
+  }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void refreshStorage();
+  }, [refreshStorage, summary.passenger_count]);
 
-  if (user.role !== "admin") {
-    return <div className="notice-card">Yönetim alanı yalnızca yöneticilere açıktır.</div>;
-  }
-
-  async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
+  async function requestPersistence() {
+    if (!navigator.storage?.persist) {
+      notify("Bu iOS sürümü kalıcı depolama isteğini desteklemiyor.", "warn");
+      return;
+    }
     setBusy(true);
     try {
-      await createUser(String(form.get("name") ?? ""), String(form.get("pin") ?? ""), String(form.get("role") ?? "operator"));
-      formElement.reset();
-      notify("Kullanıcı oluşturuldu");
-      await refresh();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Kullanıcı oluşturulamadı", "error");
+      const granted = await navigator.storage.persist();
+      notify(
+        granted
+          ? "Cihaz kalıcı depolama izni verdi."
+          : "iOS kalıcı depolamayı garanti etmedi; düzenli yedek alın.",
+        granted ? "ok" : "warn",
+      );
+      await refreshStorage();
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleDeactivate(target: UserView) {
-    if (!window.confirm(`${target.name} kullanıcısı devre dışı bırakılsın mı?`)) return;
-    await deactivateUser(target.id);
-    notify("Kullanıcı devre dışı bırakıldı", "warn");
-    await refresh();
-  }
-
-  async function handleRestore(snapshotDate: string) {
-    if (!window.confirm(`${snapshotDate} tarihli sistem yedeğine dönülsün mü?`)) return;
-    setBusy(true);
-    try {
-      const result = await restoreDailyBackup(snapshotDate);
-      notify(result.message);
-      bump();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Yedek geri yüklenemedi", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const percent = storage.quota ? Math.min(100, Math.round((storage.usage / storage.quota) * 100)) : 0;
 
   return (
     <div className="tab-body">
       <div className="section-heading">
         <div>
-          <p className="overline">YETKİ VE KAYIT</p>
-          <h2>Sistem yönetimi</h2>
+          <p className="overline">YEREL KASA</p>
+          <h2>Cihaz ve güvenlik</h2>
+          <p>Yolcu ve fotoğraf verileri bu iPhone&apos;da şifreli tutulur; çalışma sırasında sunucuya gönderilmez.</p>
         </div>
       </div>
 
       <section className="panel-card">
         <div className="panel-head">
           <div>
-            <h3>Kullanıcılar</h3>
-            <p>Operasyon erişimlerini rol bazında yönetin.</p>
+            <h3>Çevrimdışı depolama</h3>
+            <p>{formatBytes(storage.usage)} kullanılıyor{storage.quota ? ` · ${formatBytes(storage.quota)} ayrılabilir alan` : ""}</p>
           </div>
+          <span className={`ic-pill ${storage.persisted ? "ic-pill-ok" : "ic-pill-warn"}`}>
+            {storage.persisted ? "KALICI" : "YEDEK GEREKLİ"}
+          </span>
         </div>
-        <form className="management-form" onSubmit={handleCreateUser}>
-          <label className="field">
-            <span>Ad soyad</span>
-            <input name="name" required />
-          </label>
-          <label className="field">
-            <span>Erişim kodu</span>
-            <input name="pin" type="password" inputMode="numeric" minLength={6} required />
-          </label>
-          <label className="field">
-            <span>Rol</span>
-            <select name="role" defaultValue="operator">
-              <option value="operator">Operasyon</option>
-              <option value="viewer">Görüntüleme</option>
-              <option value="admin">Yönetici</option>
-            </select>
-          </label>
-          <button className="primary-btn" disabled={busy} type="submit">Kullanıcı ekle</button>
-        </form>
-        <div className="data-list">
-          {users.map((item) => (
-            <div className="data-row" key={item.id}>
-              <div>
-                <strong>{item.name}</strong>
-                <small>{ROLE_LABELS[item.role] ?? item.role} · {item.active ? "Aktif" : "Kapalı"}</small>
-              </div>
-              {item.active && item.id !== user.id && (
-                <button className="text-btn danger-text" onClick={() => void handleDeactivate(item)} type="button">
-                  Devre dışı bırak
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
+        <div className="progress"><span style={{ width: `${percent}%` }} /></div>
+        <button className="soft-btn" disabled={busy || storage.persisted === true} onClick={() => void requestPersistence()} type="button">
+          {busy ? "Kontrol ediliyor…" : storage.persisted ? "Kalıcı depolama açık" : "Kalıcı depolama iste"}
+        </button>
       </section>
 
       <section className="panel-card">
         <div className="panel-head">
           <div>
-            <h3>Günlük yedekler</h3>
-            <p>Şifreli veritabanı anlık görüntüleri, son 30 gün.</p>
+            <h3>Yerel erişim</h3>
+            <p>{user.name} · Bu kasa yalnız belirlediğiniz erişim koduyla açılır.</p>
           </div>
         </div>
-        <div className="data-list compact">
-          {backups.length === 0 && <p className="muted">Henüz günlük yedek oluşmadı.</p>}
-          {backups.map((backup) => (
-            <div className="data-row" key={backup.snapshot_date}>
-              <strong>{backup.snapshot_date}</strong>
-              <button className="text-btn" disabled={busy} onClick={() => void handleRestore(backup.snapshot_date)}>
-                Geri yükle
-              </button>
-            </div>
-          ))}
-        </div>
+        <button className="soft-btn" onClick={() => void signOut()} type="button">Kasayı kilitle</button>
       </section>
 
-      <section className="panel-card">
-        <div className="panel-head">
-          <div>
-            <h3>İşlem günlüğü</h3>
-            <p>Son yetkili değişiklikler.</p>
-          </div>
-        </div>
-        <div className="audit-table">
-          {audit.map((entry) => (
-            <div className="audit-row" key={entry.id}>
-              <span>{new Date(entry.time).toLocaleString("tr-TR")}</span>
-              <strong>{entry.actor}</strong>
-              <span>{entry.action} · {entry.path}</span>
-            </div>
-          ))}
-        </div>
-      </section>
+      <div className="notice-card">
+        iOS uygulama verisini nadiren temizleyebilir. “Çıktılar ve Yedek” ekranından şifreli yedeği düzenli olarak Dosyalar&apos;a kaydedin. İlk kurulum ve uygulama güncellemeleri internet ister; kurulumdan sonra yolcu işlemleri çevrimdışı yapılır.
+      </div>
     </div>
   );
 }

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Passenger, downloadUrl, fetchPassengers, scopedPath } from "@/lib/api";
+import { Passenger, fetchPassengers } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { PassengerDetail } from "@/components/PassengerDetail";
 import { EmptyState } from "@/components/tabs/shared";
+import { LocalDownloadButton } from "@/components/LocalDownloadButton";
 
 export function GalleryTab() {
   const { summary, version, dateScope } = useStore();
@@ -38,9 +39,7 @@ export function GalleryTab() {
         <span>{rows.length} eşleşmiş foto</span>
         <span>{summary.missing_photo} fotosuz</span>
         {rows.length > 0 && (
-          <a href={downloadUrl(scopedPath("/api/photos-zip", dateScope))} className="chip-link">
-            Foto ZIP indir
-          </a>
+          <LocalDownloadButton kind="photos" scope={dateScope} className="chip-link">Foto ZIP indir</LocalDownloadButton>
         )}
       </div>
 

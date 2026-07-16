@@ -108,8 +108,9 @@ def _load_settings() -> Settings:
         rate_limit_enabled=_bool("V8_RATE_LIMIT_ENABLED", True),
         rate_limit_import_per_minute=_int("V8_RATE_LIMIT_IMPORT_PER_MINUTE", 10),
         rate_limit_reveal_per_minute=_int("V8_RATE_LIMIT_REVEAL_PER_MINUTE", 30),
-        # API kökünü ziyaret eden tarayıcılar uygulama arayüzüne yönlendirilir.
-        ui_url=os.getenv("V8_UI_URL", "").strip() or (f"{origins[0]}/v8" if origins else ""),
+        # API kökünü ziyaret eden tarayıcılar ana Excelbase arayüzüne yönlendirilir.
+        # Eski /v8 istemci rotası kaldırıldığı için varsayılan hedef origin köküdür.
+        ui_url=os.getenv("V8_UI_URL", "").strip() or (origins[0] if origins else ""),
     )
     if settings.production:
         if settings.allow_dev_identity:
