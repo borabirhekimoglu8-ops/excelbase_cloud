@@ -37,12 +37,14 @@ struct SettingsView: View {
                     Label("İnternet bağlantısı kullanılmaz", systemImage: "wifi.slash")
                 }
 
-                Section("Veri yönetimi") {
+                Section {
                     Button(role: .destructive) {
                         isEraseConfirmationPresented = true
                     } label: {
                         Label("Bu iPhone’daki tüm verileri sil", systemImage: "trash")
                     }
+                } header: {
+                    Text("Veri yönetimi")
                 } footer: {
                     Text("Silme işlemi yolcuları, aktarım kuyruğunu ve fotoğrafları kalıcı olarak kaldırır. Önce taşınabilir Excel/CSV çıktısı alın.")
                 }
