@@ -82,6 +82,10 @@ from .config import (
     MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES,
     MAX_IMPORT_SNAPSHOTS,
     MAX_UPLOAD_BYTES,
+    embedded_import_worker_enabled,
+    import_job_heartbeat_seconds,
+    import_job_lease_seconds,
+    import_worker_poll_seconds,
 )
 from .mail_ingest import parse_eml
 
@@ -115,8 +119,6 @@ def _record(idx: int, row: pd.Series, dup_keys: set[str], with_key: str = "") ->
     photo_url = ""
     if photo:
         photo_url = f"/api/photo/{photo}"
-        if with_key:
-            photo_url += f"?k={with_key}"
     issues = row_issues(row, dup_keys)
     return PassengerRecord(
         id=int(idx),
@@ -475,6 +477,7 @@ def _merge_and_save_import(
     batch_id: str = "",
     job_id: str = "",
 ) -> tuple[int, list[str], list[str], int, str, int, int]:
+    _assert_current_import_lease_owned()
     current_df, current_loaded, extra = load_state()
     batch_id = batch_id.strip() or str(uuid.uuid4())
     mode = "Değiştir" if (replace or current_df.empty) else f"Ekle ({dup_strategy})"
@@ -566,6 +569,9 @@ def _merge_and_save_import(
         batch["job_results"] = prior_results
     _update_import_history(extra, batch)
 
+    # Parsing happens outside the mutation lock. Confirm ownership again at
+    # the last safe point before the passenger blob becomes durable.
+    _assert_current_import_lease_owned()
     saved = save_state(next_df, next_loaded, extra)
     return (
         int(accepted_count),
@@ -792,8 +798,6 @@ def get_unmatched_photos(with_key: str = "") -> list[dict]:
     items = []
     for item in extra.get("unmatched_photos", []):
         path = f"/api/photo/{item.get('ref', '')}"
-        if with_key:
-            path += f"?k={with_key}"
         items.append(
             {
                 "id": str(item.get("id", "")),
@@ -1275,15 +1279,21 @@ def expand_import_upload(filename: str, data: bytes) -> list[tuple[str, bytes]]:
 # her dosya tesliminde binlerce yolcu yeniden okunup/yazılmaz.
 
 MAX_IMPORT_JOBS = 5000
-# Parser timeout'u 120 sn; büyük passenger state merge/yedek gecikmesi için
-# geniş pay bırakılır. Üretim Dockerfile tek uvicorn worker çalıştırır.
-IMPORT_JOB_LEASE_SECONDS = 30 * 60
+# A short lease plus heartbeat recovers a killed worker quickly without
+# allowing another process to steal a healthy long-running ZIP import.
+IMPORT_JOB_LEASE_SECONDS = import_job_lease_seconds()
+IMPORT_JOB_HEARTBEAT_SECONDS = import_job_heartbeat_seconds()
 _ACTIVE_JOB_STATUSES = {"pending", "processing", "waiting"}
 _IMPORT_WORKER_LOCK = threading.Lock()
 _LOCAL_QUEUE_LOCK = threading.RLock()
 _import_worker_alive = False
 _IMPORT_WORKER_ID = f"{os.getpid()}-{uuid.uuid4()}"
+_IMPORT_LEASE_CONTEXT = threading.local()
 _SAFE_UPLOAD_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+
+
+class ImportLeaseLostError(RuntimeError):
+    """The current worker may no longer mutate or finish its claimed job."""
 
 
 def _queue_uses_database() -> bool:
@@ -1298,6 +1308,20 @@ def _queue_uses_database() -> bool:
             "alınmadı. Lütfen bağlantı düzeldikten sonra yeniden deneyin."
         )
     return available
+
+
+def require_postgres_for_split_roles() -> None:
+    """Reject unsafe cross-process passenger writes without PostgreSQL."""
+
+    engine = db.get_engine()
+    if (
+        not db.database_configured()
+        or engine is None
+        or getattr(getattr(engine, "dialect", None), "name", "") != "postgresql"
+    ):
+        raise RuntimeError(
+            "EXCELBASE_PROCESS_ROLE=web/worker requires a reachable PostgreSQL database."
+        )
 
 
 def _local_queue_dir() -> str:
@@ -1515,6 +1539,23 @@ def _queue_finish(
         return found
 
 
+def _finish_claimed_job(job_id: str, status: str, **kwargs) -> None:
+    """Finish the current job or surface a lost ownership/database fence."""
+
+    if _queue_finish(job_id, status, **kwargs):
+        return
+    # Deterministic archive replay may discover that an earlier attempt
+    # already moved the parent to the same or a terminal state. That is a
+    # successful idempotent outcome, not evidence of a stolen live lease.
+    current = _queue_get(job_id)
+    current_status = str((current or {}).get("status") or "")
+    if current_status == status or current_status in {"done", "error", "cancelled"}:
+        return
+    raise ImportLeaseLostError(
+        f"Aktarım işi artık bu worker'a ait değil; durum={status!r} kaydedilmedi."
+    )
+
+
 def _queue_claim() -> dict | None:
     if _queue_uses_database():
         row = db.claim_next_import_job(_IMPORT_WORKER_ID, lease_seconds=IMPORT_JOB_LEASE_SECONDS)
@@ -1533,6 +1574,99 @@ def _queue_claim() -> dict | None:
             result["payload"] = _queue_load_payload(str(job.get("id", "")))
             return result
     return None
+
+
+def _queue_renew_lease(job_id: str) -> bool:
+    """Renew a claimed database job without changing local queue semantics."""
+
+    if not _queue_uses_database():
+        return True
+    return bool(
+        db.renew_import_job_lease(
+            job_id,
+            _IMPORT_WORKER_ID,
+            lease_seconds=IMPORT_JOB_LEASE_SECONDS,
+        )
+    )
+
+
+def _start_import_lease_heartbeat(
+    job_id: str,
+) -> tuple[threading.Event, threading.Event, threading.Thread | None]:
+    """Keep ownership alive while pandas/openpyxl processes a claimed job.
+
+    A session can disappear at any time during a deploy.  The database remains
+    the ownership authority: if renewal fails, strict finish fencing prevents
+    the old process from overwriting a job reclaimed by a newer worker.
+    """
+
+    stop = threading.Event()
+    ownership_lost = threading.Event()
+    if not _queue_uses_database():
+        return stop, ownership_lost, None
+
+    def heartbeat() -> None:
+        failures = 0
+        while not stop.wait(IMPORT_JOB_HEARTBEAT_SECONDS):
+            try:
+                if not _queue_renew_lease(job_id):
+                    ownership_lost.set()
+                    logger.error(
+                        "Aktarım işi lease sahipliği kaybedildi job_id=%s worker=%s",
+                        job_id,
+                        _IMPORT_WORKER_ID,
+                    )
+                    return
+                failures = 0
+            except Exception:
+                failures += 1
+                logger.exception(
+                    "Aktarım lease yenilemesi başarısız job_id=%s attempt=%d",
+                    job_id,
+                    failures,
+                )
+
+    thread = threading.Thread(
+        target=heartbeat,
+        name=f"gatevisa-import-lease-{job_id[:20]}",
+        daemon=True,
+    )
+    thread.start()
+    return stop, ownership_lost, thread
+
+
+def _assert_current_import_lease_owned() -> None:
+    """Fence passenger writes against a reclaimed or expired queue job."""
+
+    job_id = str(getattr(_IMPORT_LEASE_CONTEXT, "job_id", "") or "")
+    ownership_lost = getattr(_IMPORT_LEASE_CONTEXT, "ownership_lost", None)
+    if not job_id:
+        return
+    if isinstance(ownership_lost, threading.Event) and ownership_lost.is_set():
+        raise ImportLeaseLostError("Aktarım işi sahipliği kaybedildi; değişiklik uygulanmadı.")
+    if _queue_uses_database() and not _queue_renew_lease(job_id):
+        if isinstance(ownership_lost, threading.Event):
+            ownership_lost.set()
+        raise ImportLeaseLostError("Aktarım işi lease süresi doldu; değişiklik uygulanmadı.")
+
+
+def _process_claimed_import_job(job: dict) -> None:
+    """Process one claimed job while maintaining its database lease."""
+
+    job_id = str(job.get("id", ""))
+    stop, ownership_lost, heartbeat = _start_import_lease_heartbeat(job_id)
+    previous_job_id = getattr(_IMPORT_LEASE_CONTEXT, "job_id", "")
+    previous_lost = getattr(_IMPORT_LEASE_CONTEXT, "ownership_lost", None)
+    _IMPORT_LEASE_CONTEXT.job_id = job_id
+    _IMPORT_LEASE_CONTEXT.ownership_lost = ownership_lost
+    try:
+        _process_import_job(job)
+    finally:
+        _IMPORT_LEASE_CONTEXT.job_id = previous_job_id
+        _IMPORT_LEASE_CONTEXT.ownership_lost = previous_lost
+        stop.set()
+        if heartbeat is not None:
+            heartbeat.join(timeout=min(5.0, IMPORT_JOB_HEARTBEAT_SECONDS))
 
 
 def _queue_has_pending() -> bool:
@@ -2015,7 +2149,11 @@ def _process_archive_children_chunk(
 
     if results:
         try:
-            stored = db.store_finished_import_children(parent_id, results)
+            stored = db.store_finished_import_children(
+                parent_id,
+                results,
+                worker_id=_IMPORT_WORKER_ID,
+            )
         except db.DatabaseUnavailableError as exc:
             raise StorePersistenceError(str(exc)) from exc
         if stored is None:
@@ -2106,6 +2244,7 @@ def _mark_bad_archive_child(
                         "payload": payload,
                     }
                 ],
+                worker_id=_IMPORT_WORKER_ID,
             )
         except db.DatabaseUnavailableError as exc:
             raise StorePersistenceError(str(exc)) from exc
@@ -2121,7 +2260,24 @@ def _mark_bad_archive_child(
         replace=replace,
     )
     if child.get("status") == "pending":
-        _queue_finish(str(child.get("id")), "error", message=message)
+        child_id = str(child.get("id") or "")
+        if _queue_uses_database():
+            # Archive expansion creates the child but does not claim it.  Keep
+            # ordinary worker completions strictly lease-fenced and use the
+            # dedicated pending-child batch transition for this deterministic
+            # validation result.
+            try:
+                updated = db.finish_import_jobs_batch(
+                    [{"id": child_id, "status": "error", "message": message}]
+                )
+            except db.DatabaseUnavailableError as exc:
+                raise StorePersistenceError(str(exc)) from exc
+            if not updated:
+                stored = db.get_import_job(child_id)
+                if stored is None or str(stored.get("status")) != "error":
+                    raise StorePersistenceError("ZIP alt işi hata durumunda kaydedilemedi.")
+        else:
+            _queue_finish(child_id, "error", message=message)
 
 
 def _expand_archive_job(parent: dict, data: bytes, *, process_children: bool = False) -> None:
@@ -2135,7 +2291,11 @@ def _expand_archive_job(parent: dict, data: bytes, *, process_children: bool = F
     try:
         archive = zipfile.ZipFile(BytesIO(data))
     except (zipfile.BadZipFile, OSError) as exc:
-        _queue_finish(parent_id, "error", message=f"{filename}: geçerli bir ZIP arşivi değil.")
+        _finish_claimed_job(
+            parent_id,
+            "error",
+            message=f"{filename}: geçerli bir ZIP arşivi değil.",
+        )
         return
 
     supported = 0
@@ -2259,7 +2419,7 @@ def _expand_archive_job(parent: dict, data: bytes, *, process_children: bool = F
         archive.close()
 
     if supported == 0:
-        _queue_finish(
+        _finish_claimed_job(
             parent_id,
             "error",
             message=f"{filename}: ZIP içinde desteklenen yolcu listesi bulunamadı.",
@@ -2268,7 +2428,7 @@ def _expand_archive_job(parent: dict, data: bytes, *, process_children: bool = F
     message = f"{supported} liste bulundu; sırayla işleniyor."
     if limit_hit:
         message += " Boyut sınırı sonrası kalan üyeler atlandı."
-    _queue_finish(parent_id, "waiting", message=message, delete_payload=True)
+    _finish_claimed_job(parent_id, "waiting", message=message, delete_payload=True)
     _refresh_parent(parent_id)
 
 
@@ -2284,10 +2444,14 @@ def _process_file_job(job: dict, data: bytes) -> None:
             job_id=job_id,
         )
     except (ValueError, TimeoutError) as exc:
-        _queue_finish(job_id, "error", message=str(exc))
+        _finish_claimed_job(job_id, "error", message=str(exc))
     except Exception as exc:  # Kalıcı hata dahil: payload retry için korunur.
         logger.exception("Aktarım işi başarısız: %s", job.get("filename"))
-        _queue_finish(job_id, "error", message=str(exc) or "Dosya işlenemedi; yeniden deneyin.")
+        _finish_claimed_job(
+            job_id,
+            "error",
+            message=str(exc) or "Dosya işlenemedi; yeniden deneyin.",
+        )
     else:
         parts = [f"{imported} yolcu aktarıldı"]
         if duplicates:
@@ -2296,7 +2460,7 @@ def _process_file_job(job: dict, data: bytes) -> None:
             parts.append(f"{invalid} kritik kontrol")
         if warnings:
             parts.append(warnings[0])
-        _queue_finish(
+        _finish_claimed_job(
             job_id,
             "done",
             message=" · ".join(parts) + ".",
@@ -2316,7 +2480,11 @@ def _process_import_job(job: dict) -> None:
     if data is None:
         data = _queue_load_payload(job_id)
     if not data:
-        _queue_finish(job_id, "error", message="Dosya içeriği sunucuda bulunamadı; dosyayı yeniden seçin.")
+        _finish_claimed_job(
+            job_id,
+            "error",
+            message="Dosya içeriği sunucuda bulunamadı; dosyayı yeniden seçin.",
+        )
         if job.get("parent_id"):
             _refresh_parent(str(job.get("parent_id")))
         return
@@ -2363,7 +2531,7 @@ def _import_worker_loop() -> None:
                 pass
             return
         try:
-            _process_import_job(job)
+            _process_claimed_import_job(job)
         except Exception:
             logger.exception("Aktarım işi beklenmedik şekilde çöktü: %s", job.get("id"))
             try:
@@ -2428,6 +2596,10 @@ def migrate_legacy_import_queue() -> int:
 def ensure_import_worker() -> None:
     """Bekleyen işleri tek işleyicide, lease korumasıyla sırayla işler."""
     global _import_worker_alive
+    # A dedicated OCI worker polls the durable queue itself.  Web processes
+    # must never spawn a second daemon worker or reclaim its live lease.
+    if not embedded_import_worker_enabled():
+        return
     # Önce süresi dolmuş processing kayıtlarını pending yap. Bu kontrol
     # pending sorgusundan sonra olursa yalnız stale işi olan kuyruk hiç açılmaz.
     recovered = recover_stale_import_jobs(force=False)
@@ -2449,3 +2621,81 @@ def ensure_import_worker() -> None:
         with _IMPORT_WORKER_LOCK:
             _import_worker_alive = False
         raise
+
+
+def run_import_worker_forever(stop_event: threading.Event | None = None) -> None:
+    """Run the durable import worker as a foreground process.
+
+    This is the PID 1 entrypoint used by ``python -m backend.worker``.  It
+    deliberately stays alive when the queue is empty, so an upload does not
+    depend on a web request being able to start an in-process thread.
+    """
+
+    stop = stop_event or threading.Event()
+    poll_seconds = import_worker_poll_seconds()
+    failures = 0
+
+    # Startup is retried because the database container may still be finishing
+    # recovery even after its TCP healthcheck has become reachable.
+    while not stop.is_set():
+        try:
+            migrated = migrate_legacy_import_queue()
+            if migrated:
+                logger.info("Eski kuyruktan %d aktarım işi kalıcı kuyruğa taşındı", migrated)
+            recovered = recover_stale_import_jobs(force=False)
+            if recovered:
+                logger.warning("%d süresi dolmuş aktarım işi kuyruğa iade edildi", recovered)
+            if _queue_uses_database():
+                db.cleanup_import_jobs(older_than_days=7, max_finished=200)
+            else:
+                _cleanup_local_import_jobs(max_finished=200)
+            break
+        except Exception:
+            failures += 1
+            delay = min(30.0, float(2 ** min(failures, 5)))
+            logger.exception("Aktarım işleyicisi başlatılamadı; %.0f sn sonra yeniden denenecek", delay)
+            stop.wait(delay)
+
+    failures = 0
+    last_recovery = time.monotonic()
+    while not stop.is_set():
+        try:
+            job = _queue_claim()
+            failures = 0
+        except Exception:
+            failures += 1
+            delay = min(30.0, float(2 ** min(failures, 5)))
+            logger.exception("Aktarım kuyruğu okunamadı; %.0f sn sonra yeniden denenecek", delay)
+            stop.wait(delay)
+            continue
+
+        if job is None:
+            # A worker killed mid-job is recovered after its lease expires.
+            # Periodic recovery also handles rows left by older releases.
+            if time.monotonic() - last_recovery >= max(30.0, IMPORT_JOB_LEASE_SECONDS / 2.0):
+                try:
+                    recovered = recover_stale_import_jobs(force=False)
+                    if recovered:
+                        logger.warning("%d süresi dolmuş aktarım işi kuyruğa iade edildi", recovered)
+                except Exception:
+                    logger.exception("Süresi dolmuş aktarım işleri kontrol edilemedi")
+                last_recovery = time.monotonic()
+            stop.wait(poll_seconds)
+            continue
+
+        try:
+            _process_claimed_import_job(job)
+        except Exception:
+            logger.exception("Aktarım işi beklenmedik şekilde çöktü: %s", job.get("id"))
+            try:
+                finished = _queue_finish(
+                    str(job.get("id", "")),
+                    "error",
+                    message="Beklenmedik sunucu hatası; yeniden deneyin.",
+                )
+                if not finished:
+                    logger.error("Çöken aktarım işi artık bu worker'a ait değil: %s", job.get("id"))
+                if job.get("parent_id"):
+                    _refresh_parent(str(job.get("parent_id")))
+            except Exception:
+                logger.exception("Çöken aktarım işi hata durumuna alınamadı: %s", job.get("id"))

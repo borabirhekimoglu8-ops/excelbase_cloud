@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import zipfile
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -53,6 +54,105 @@ def test_enqueue_is_idempotent_and_claim_is_leased(queue_db):
     assert db.claim_next_import_job("worker-b", lease_seconds=60) is None
 
 
+def test_lease_renewal_and_finish_are_strictly_owner_status_and_expiry_fenced(queue_db):
+    db.enqueue_import_job("one.csv", b"one", job_id="fenced-job")
+    claimed = db.claim_next_import_job("worker-a", lease_seconds=30)
+    assert claimed is not None
+    original_deadline = claimed["lease_until"]
+
+    assert db.renew_import_job_lease("fenced-job", "worker-b", lease_seconds=120) is False
+    assert db.finish_import_job("fenced-job", "done", worker_id="worker-b") is False
+    assert db.finish_import_job("fenced-job", "done") is False
+    assert db.get_import_job("fenced-job")["status"] == "processing"
+
+    assert db.renew_import_job_lease("fenced-job", "worker-a", lease_seconds=120) is True
+    renewed = db.get_import_job("fenced-job")
+    assert renewed is not None and renewed["lease_until"] > original_deadline
+
+    expired = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(
+        timespec="microseconds"
+    )
+    with queue_db.begin() as conn:
+        conn.execute(
+            text("UPDATE import_jobs SET lease_until = :expired WHERE id = :id"),
+            {"expired": expired, "id": "fenced-job"},
+        )
+
+    assert db.renew_import_job_lease("fenced-job", "worker-a", lease_seconds=120) is False
+    assert db.finish_import_job("fenced-job", "done", worker_id="worker-a") is False
+    assert db.recover_expired_import_jobs() == 1
+
+    reclaimed = db.claim_next_import_job("worker-b", lease_seconds=60)
+    assert reclaimed is not None and reclaimed["id"] == "fenced-job"
+    assert db.finish_import_job("fenced-job", "done", worker_id="worker-a") is False
+    assert db.finish_import_job("fenced-job", "done", worker_id="worker-b") is True
+    assert db.finish_import_job("fenced-job", "error", worker_id="worker-b") is False
+
+
+def test_postgres_passenger_mutation_lock_wraps_the_complete_body(monkeypatch):
+    events: list[str] = []
+
+    class FakeTransaction:
+        def commit(self):
+            events.append("commit")
+
+        def rollback(self):
+            events.append("rollback")
+
+    class FakeConnection:
+        def begin(self):
+            events.append("begin")
+            return FakeTransaction()
+
+        def execute(self, statement, params):
+            events.append(str(statement))
+            assert params == {"lock_key": db._PASSENGER_MUTATION_LOCK_KEY}
+
+        def close(self):
+            events.append("close")
+
+    class FakeEngine:
+        dialect = SimpleNamespace(name="postgresql")
+
+        def connect(self):
+            events.append("connect")
+            return FakeConnection()
+
+    monkeypatch.setattr(db, "get_engine", lambda: FakeEngine())
+
+    with db.passenger_mutation_lock():
+        events.append("body")
+
+    assert events == [
+        "connect",
+        "begin",
+        "SELECT pg_advisory_xact_lock(:lock_key)",
+        "body",
+        "commit",
+        "close",
+    ]
+
+
+def test_configured_passenger_store_outage_fails_closed_before_mutation(monkeypatch):
+    from backend import state
+
+    monkeypatch.setattr(db, "database_configured", lambda: True)
+    monkeypatch.setattr(db, "get_engine", lambda: None)
+    called = False
+
+    @state.locked_mutation
+    def mutation():
+        nonlocal called
+        called = True
+
+    with pytest.raises(state.StorePersistenceError, match="veritaban"):
+        mutation()
+    assert called is False
+
+    with pytest.raises(state.StorePersistenceError, match="veritaban"):
+        state.load_state()
+
+
 def test_passenger_state_update_is_an_upsert_without_delete(queue_db):
     """State refresh must not delete the shared key before replacing its value."""
     with queue_db.begin() as conn:
@@ -68,6 +168,16 @@ def test_passenger_state_update_is_an_upsert_without_delete(queue_db):
     assert db.save_state({"passengers": [{"passport": "FIRST"}]}) is True
     assert db.save_state({"passengers": [{"passport": "SECOND"}]}) is True
     assert db.load_state() == {"passengers": [{"passport": "SECOND"}]}
+
+
+def test_readiness_probe_does_not_write_health_state(queue_db):
+    assert db.probe_read() is True
+    assert db.probe_write() is True
+    with queue_db.connect() as conn:
+        row = conn.execute(
+            text("SELECT value FROM app_state WHERE key = 'health-probe'")
+        ).fetchone()
+    assert row is None
 
 
 def test_zip_expansion_bulk_enqueues_deterministic_chunks_and_keeps_bad_member(
@@ -268,14 +378,14 @@ def test_inline_zip_children_are_never_claimable_and_error_payload_survives(
     original_store = db.store_finished_import_children
     store_calls = 0
 
-    def store_with_visibility_check(parent_id, results):
+    def store_with_visibility_check(parent_id, results, *, worker_id):
         nonlocal store_calls
         store_calls += 1
         # Earlier chunks may already be terminal, but none may be pending.
         before = db.list_import_jobs(limit=None, parent_id=parent_id) or []
         assert all(item["status"] != "pending" for item in before)
         assert db.load_import_job_payload(parent_id) == archive_bytes
-        stored = original_store(parent_id, results)
+        stored = original_store(parent_id, results, worker_id=worker_id)
         after = db.list_import_jobs(limit=None, parent_id=parent_id) or []
         assert all(item["status"] in {"done", "error", "cancelled"} for item in after)
         assert db.load_import_job_payload(parent_id) == archive_bytes
@@ -341,12 +451,12 @@ def test_inline_zip_add_replays_after_state_commit_without_duplicate_or_terminal
     original_store = db.store_finished_import_children
     fail_once = True
 
-    def crash_before_child_commit(parent_id, results):
+    def crash_before_child_commit(parent_id, results, *, worker_id):
         nonlocal fail_once
         if fail_once:
             fail_once = False
             raise db.DatabaseUnavailableError("simulated crash boundary")
-        return original_store(parent_id, results)
+        return original_store(parent_id, results, worker_id=worker_id)
 
     monkeypatch.setattr(db, "save_state", counted_save)
     monkeypatch.setattr(db, "store_finished_import_children", crash_before_child_commit)
@@ -384,6 +494,7 @@ def test_inline_zip_add_replays_after_state_commit_without_duplicate_or_terminal
                 "payload": b"overwrite-attempt",
             }
         ],
+        worker_id=services._IMPORT_WORKER_ID,
     )
     unchanged = db.get_import_job(first["id"])
     assert unchanged is not None and unchanged["status"] == "done"

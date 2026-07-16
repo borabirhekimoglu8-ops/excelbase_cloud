@@ -22,32 +22,57 @@ from passenger_schema import (  # noqa: E402
     ALL_COLUMNS,
     normalize_passenger_dataframe,
 )
-from persistence import load_store, save_store  # noqa: E402
+import db  # noqa: E402
+from persistence import StorePersistenceError, load_store, save_store  # noqa: E402
 from photo_store import _norm_key  # noqa: E402
 
-APP_VERSION = "7.2.2"
+APP_VERSION = "7.3.0"
 
 # Durum tek JSON blob olarak yükle-değiştir-kaydet döngüsüyle güncellenir.
 # Arka plan aktarım işleyicisi eklendiğinden bu döngüler artık gerçekten
 # eşzamanlı çalışabilir; kilit olmadan iki eşzamanlı kayıt birbirinin
 # değişikliğini (örn. içeri alınmış yolcuları) sessizce silebilir.
 MUTATION_LOCK = threading.RLock()
+_MUTATION_CONTEXT = threading.local()
 
 
 def locked_mutation(fn):
-    """Yükle-değiştir-kaydet yapan fonksiyonları tek küresel kilitle sıralar."""
+    """Serialise a complete load-mutate-save cycle locally and in PostgreSQL."""
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        with MUTATION_LOCK:
-            return fn(*args, **kwargs)
+        try:
+            with MUTATION_LOCK:
+                depth = int(getattr(_MUTATION_CONTEXT, "depth", 0) or 0)
+                if depth:
+                    return fn(*args, **kwargs)
+                with db.passenger_mutation_lock():
+                    _MUTATION_CONTEXT.depth = depth + 1
+                    try:
+                        return fn(*args, **kwargs)
+                    finally:
+                        _MUTATION_CONTEXT.depth = depth
+        except db.DatabaseUnavailableError as exc:
+            raise StorePersistenceError(str(exc)) from exc
 
     return wrapper
 
 
+def _require_configured_database() -> None:
+    """Prevent a configured durable store from degrading to a local file."""
+    if db.database_configured() and db.get_engine() is None:
+        raise StorePersistenceError(
+            "Kalıcı yolcu veritabanına ulaşılamıyor; yerel/geçici veriye geçilmedi."
+        )
+
+
 def load_state() -> tuple[pd.DataFrame, list[str], dict]:
     """Kalıcı durumu yükler (df, loaded_files, extra)."""
-    df, loaded_files, extra = load_store()
+    _require_configured_database()
+    try:
+        df, loaded_files, extra = load_store()
+    except db.DatabaseUnavailableError as exc:
+        raise StorePersistenceError(str(exc)) from exc
     df = normalize_passenger_dataframe(df) if not df.empty else pd.DataFrame(columns=ALL_COLUMNS)
     if "import_history" not in extra:
         extra["import_history"] = []
@@ -58,7 +83,11 @@ def load_state() -> tuple[pd.DataFrame, list[str], dict]:
 
 def save_state(df: pd.DataFrame, loaded_files: list[str], extra: dict) -> pd.DataFrame:
     normalized = normalize_passenger_dataframe(df) if not df.empty else pd.DataFrame(columns=ALL_COLUMNS)
-    save_store(normalized, loaded_files, extra=extra)
+    _require_configured_database()
+    try:
+        save_store(normalized, loaded_files, extra=extra)
+    except db.DatabaseUnavailableError as exc:
+        raise StorePersistenceError(str(exc)) from exc
     return normalized
 
 

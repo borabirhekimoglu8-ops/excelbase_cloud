@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
+/.venv/
+/.testenv/
 .streamlit/secrets.toml
 .data/
 frontend/node_modules/
@@ -7,3 +9,10 @@ frontend/.next/
 frontend/out/
 frontend/playwright-report/
 frontend/test-results/
+
+# Oracle/OCI production secrets and local operational artifacts.
+/deploy/oracle/.env
+/deploy/oracle/secrets/
+/deploy/oracle/backups/
+/deploy/oracle/.deployed-image
+/deploy/oracle/.previous-image
