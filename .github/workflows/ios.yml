@@ -1,0 +1,79 @@
+name: iOS Offline
+
+on:
+  pull_request:
+    paths:
+      - "ios/**"
+      - "native/excelbase-core/**"
+      - ".github/workflows/ios.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - "native/excelbase-core/**"
+      - ".github/workflows/ios.yml"
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust core
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/excelbase-core
+      - name: Formatting
+        run: cargo fmt --manifest-path native/excelbase-core/Cargo.toml --all -- --check
+      - name: Clippy
+        run: cargo clippy --locked --manifest-path native/excelbase-core/Cargo.toml --all-targets --all-features -- -D warnings
+      - name: Tests
+        run: cargo test --locked --manifest-path native/excelbase-core/Cargo.toml --all-features
+
+  ios:
+    name: iOS simulator build
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - uses: dtolnay/rust-toolchain@1.88
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/excelbase-core
+          cache-on-failure: true
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build Rust XCFramework
+        run: bash ios/scripts/build-rust-xcframework.sh
+      - name: Generate Xcode project
+        run: bash ios/scripts/generate-project.sh --skip-rust
+      - name: Select an available iPhone simulator
+        run: |
+          SIMULATOR_ID="$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone")))] | first | .udid')"
+          if [[ -z "${SIMULATOR_ID}" || "${SIMULATOR_ID}" == "null" ]]; then
+            echo "No available iPhone simulator was found." >&2
+            exit 1
+          fi
+          echo "SIMULATOR_ID=${SIMULATOR_ID}" >> "${GITHUB_ENV}"
+      - name: Build and run iOS tests without signing
+        run: >-
+          xcodebuild
+          -project ios/ExcelbaseOffline.xcodeproj
+          -scheme ExcelbaseOffline
+          -configuration Debug
+          -destination "platform=iOS Simulator,id=${SIMULATOR_ID}"
+          -derivedDataPath ios/.build/DerivedData
+          CODE_SIGNING_ALLOWED=NO
+          test

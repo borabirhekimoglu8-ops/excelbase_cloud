@@ -1,0 +1,5 @@
+.build/
+ExcelbaseOffline.xcodeproj/
+xcuserdata/
+*.xcworkspace/xcuserdata/
+ExcelbaseOffline/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png

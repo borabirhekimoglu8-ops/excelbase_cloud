@@ -21,6 +21,13 @@ Kapı vizesi yolcu listesi yönetimi. Excel (GATE VISA PAX LIST) yükle → her 
 - `frontend/` — Next.js PWA (deniz laciverti / uzay siyahı holografik tema, mobil öncelikli React).
 - `app.py` + yardımcı modüller — orijinal Streamlit uygulaması (referans / iş mantığı kaynağı).
 
+### Tamamen çevrimdışı iPhone sürümü
+
+`ios/` altındaki native SwiftUI uygulaması; Excel/ZIP işlemlerini Rust çekirdeğiyle, yolcu ve fotoğraf verilerini ise iPhone'un korumalı yerel alanında yönetir. Kurulduktan sonra internet, sunucu veya açık ofis bilgisayarı gerektirmez.
+
+- [iOS Offline mimarisi](docs/IOS_OFFLINE_ARCHITECTURE.md)
+- [V7 → iOS işlev eşliği ve saha kabul ölçütleri](docs/IOS_PARITY_MATRIX.md)
+
 ### API endpoint'leri
 
 | Alan | Endpoint |

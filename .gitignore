@@ -7,3 +7,5 @@ frontend/.next/
 frontend/out/
 frontend/playwright-report/
 frontend/test-results/
+native/**/target/
+.DS_Store
