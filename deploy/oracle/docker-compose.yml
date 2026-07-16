@@ -1,0 +1,146 @@
+name: excelbase-v7
+
+x-v7-common: &v7-common
+  image: excelbase-v7:${EXCELBASE_IMAGE_TAG:-current}
+  build:
+    context: ../..
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  init: true
+  environment: &v7-environment
+    APP_ENV: production
+    TZ: ${TZ:-Europe/Istanbul}
+    DATABASE_URL: postgresql+pg8000://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    GATEVISA_REQUIRE_AUTH: "1"
+    GATEVISA_CORS_ORIGINS: https://${APP_DOMAIN}
+    GATEVISA_DATA_SECRET: ${GATEVISA_DATA_SECRET}
+    PAX_STORE_PATH: /var/lib/excelbase/passengers.json
+    PAX_PHOTO_DIR: /var/lib/excelbase/photos
+  volumes:
+    - excelbase_data:/var/lib/excelbase
+  networks:
+    - backend
+  depends_on:
+    postgres:
+      condition: service_healthy
+  security_opt:
+    - no-new-privileges:true
+  stop_grace_period: 2m
+
+services:
+  # Public V7 API + static PWA.  Excel parsing is deliberately disabled in
+  # this process so large imports cannot starve normal HTTP requests.
+  v7-web:
+    <<: *v7-common
+    environment:
+      <<: *v7-environment
+      EXCELBASE_PROCESS_ROLE: web
+      PORT: "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json, urllib.request;
+          data=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5));
+          assert data.get('status') == 'ok' and data.get('database_writable') is True
+      interval: 15s
+      timeout: 8s
+      retries: 12
+      start_period: 30s
+    mem_limit: 1536m
+    cpus: "0.75"
+    cpu_shares: 1024
+
+  # Private durable queue consumer.  It has no published port and therefore
+  # cannot expose either V7 or V8 to the internet.
+  v7-worker:
+    <<: *v7-common
+    command: ["python", "-m", "backend.worker"]
+    environment:
+      <<: *v7-environment
+      EXCELBASE_PROCESS_ROLE: worker
+      EXCELBASE_WORKER_HEALTH_FILE: /tmp/excelbase-worker.heartbeat
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os,time,db;
+          path=os.environ['EXCELBASE_WORKER_HEALTH_FILE'];
+          assert time.time()-os.path.getmtime(path) < 30;
+          assert db.probe_read() and db.probe_write()
+      interval: 15s
+      timeout: 8s
+      retries: 12
+      start_period: 30s
+    mem_limit: 5g
+    cpus: "1.25"
+    cpu_shares: 768
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    shm_size: 256mb
+    mem_limit: 2g
+    cpus: "0.50"
+    cpu_shares: 512
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 2m
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - edge
+      - backend
+    depends_on:
+      v7-web:
+        condition: service_healthy
+    mem_limit: 256m
+    cpus: "0.25"
+    cpu_shares: 256
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
+networks:
+  edge:
+  backend:
+    internal: true
+
+volumes:
+  postgres_data:
+  excelbase_data:
+  caddy_data:
+  caddy_config:

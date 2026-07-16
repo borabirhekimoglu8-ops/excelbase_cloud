@@ -12,7 +12,7 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from fastapi import Header, HTTPException, Query, Request, status
+from fastapi import Header, HTTPException, Request, status
 
 from .config import SESSION_COOKIE, SESSION_DAYS, api_key, require_auth
 from .state import load_state, save_state
@@ -267,9 +267,10 @@ def require_api_key(
 def require_api_key_flexible(
     request: Request,
     x_api_key: str | None = Header(default=None),
-    k: str | None = Query(default=None),
 ) -> Actor:
-    actor = _resolve_actor(request, x_api_key or k)
+    # Administrator-equivalent service keys are accepted only in a header.
+    # Query parameters leak through browser history, screenshots and proxies.
+    actor = _resolve_actor(request, x_api_key)
     if actor is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Oturum acmaniz gerekiyor.")
     request.state.actor = actor

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
 import hashlib
 import json
 import logging
@@ -70,6 +71,13 @@ _init_failed = False
 _retry_at = 0.0
 _RETRY_INTERVAL_SECONDS = 30.0
 _ENGINE_LOCK = threading.Lock()
+
+# One application-wide PostgreSQL advisory lock serialises every passenger
+# load-mutate-save cycle across the web and worker processes.  The value is a
+# stable signed BIGINT (``EXCELBAS`` in ASCII) and is deliberately unrelated to
+# row/table locks used by the import queue.
+_PASSENGER_MUTATION_LOCK_KEY = 0x455843454C424153
+_PASSENGER_MUTATION_CONTEXT = threading.local()
 
 
 def get_engine() -> "Engine | None":
@@ -142,6 +150,86 @@ def get_engine() -> "Engine | None":
 
 def enabled() -> bool:
     return get_engine() is not None
+
+
+@contextmanager
+def passenger_mutation_lock():
+    """Serialise passenger mutations across PostgreSQL processes.
+
+    A process-local lock cannot prevent a web process and a separate import
+    worker from reading the same passenger blob and then overwriting each
+    other's changes.  PostgreSQL's transaction-scoped advisory lock remains
+    held while the caller performs its complete load-mutate-save cycle and is
+    released automatically if the process or connection dies.
+
+    SQLite and installations without a configured database retain their
+    existing process-local locking behaviour.  When a durable database *is*
+    configured, inability to acquire the lock fails closed instead of letting
+    the caller mutate a temporary local store.
+    """
+    engine = get_engine()
+    if engine is None:
+        if database_configured():
+            raise DatabaseUnavailableError(
+                "Yolcu veritabanına ulaşılamıyor; değişiklik güvenle uygulanamadı."
+            )
+        yield
+        return
+
+    if engine.dialect.name != "postgresql":
+        yield
+        return
+
+    conn = None
+    transaction = None
+    try:
+        conn = engine.connect()
+        transaction = conn.begin()
+        conn.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": _PASSENGER_MUTATION_LOCK_KEY},
+        )
+    except Exception as exc:
+        if transaction is not None:
+            try:
+                transaction.rollback()
+            except Exception:
+                pass
+        if conn is not None:
+            conn.close()
+        logger.exception("Yolcu değişiklik kilidi alınamadı")
+        raise DatabaseUnavailableError(
+            "Yolcu veritabanı değişiklik kilidi alınamadı."
+        ) from exc
+
+    previous_conn = getattr(_PASSENGER_MUTATION_CONTEXT, "connection", None)
+    _PASSENGER_MUTATION_CONTEXT.connection = conn
+    try:
+        try:
+            yield
+        except BaseException:
+            try:
+                transaction.rollback()
+            except Exception:
+                logger.exception("Yolcu değişiklik kilidi geri alınamadı")
+            raise
+        else:
+            try:
+                transaction.commit()
+            except Exception as exc:
+                logger.exception("Yolcu değişiklik kilidi transaction'ı kapatılamadı")
+                raise DatabaseUnavailableError(
+                    "Yolcu veritabanı değişiklik kilidi kapatılamadı."
+                ) from exc
+    finally:
+        if previous_conn is None:
+            try:
+                delattr(_PASSENGER_MUTATION_CONTEXT, "connection")
+            except AttributeError:
+                pass
+        else:
+            _PASSENGER_MUTATION_CONTEXT.connection = previous_conn
+        conn.close()
 
 
 def _create_tables(engine: "Engine") -> None:
@@ -248,56 +336,111 @@ def _create_tables(engine: "Engine") -> None:
 def save_state(payload: dict) -> bool:
     engine = get_engine()
     if engine is None:
+        if database_configured():
+            raise DatabaseUnavailableError(
+                "Yolcu durumu için yapılandırılmış veritabanına ulaşılamıyor."
+            )
         return False
     value = ""
     try:
         value = json.dumps(payload, ensure_ascii=False)
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "INSERT INTO app_state (key, value) VALUES ('passengers', :v) "
-                    "ON CONFLICT (key) DO UPDATE SET value = :v"
-                ),
-                {"v": value},
-            )
+        statement = text(
+            "INSERT INTO app_state (key, value) VALUES ('passengers', :v) "
+            "ON CONFLICT (key) DO UPDATE SET value = :v"
+        )
+        mutation_conn = getattr(_PASSENGER_MUTATION_CONTEXT, "connection", None)
+        if mutation_conn is not None:
+            mutation_conn.execute(statement, {"v": value})
+        else:
+            with engine.begin() as conn:
+                conn.execute(statement, {"v": value})
         return True
-    except Exception:
+    except DatabaseUnavailableError:
+        raise
+    except Exception as exc:
         logger.exception("Yolcu durumu veritabanına yazılamadı (payload %d karakter)", len(value))
+        if database_configured():
+            raise DatabaseUnavailableError(
+                "Yolcu durumu kalıcı veritabanına yazılamadı."
+            ) from exc
         return False
 
 
 def probe_write() -> bool:
-    """Veritabanına gerçekten yazılabildiğini küçük bir kayıtla doğrular."""
+    """Verify real write capability without leaving probe data behind."""
+    engine = get_engine()
+    if engine is None:
+        return False
+    conn = None
+    transaction = None
+    try:
+        conn = engine.connect()
+        transaction = conn.begin()
+        conn.execute(
+            text(
+                "INSERT INTO app_state (key, value) VALUES ('health-probe', :v) "
+                "ON CONFLICT (key) DO UPDATE SET value = :v"
+            ),
+            {"v": date.today().isoformat()},
+        )
+        # A read-only role, full disk or failed transaction is detected by the
+        # statement above.  Rolling back keeps readiness probes out of app data.
+        transaction.rollback()
+        return True
+    except Exception:
+        logger.exception("Veritabanı yazma sondası başarısız")
+        return False
+    finally:
+        if transaction is not None and transaction.is_active:
+            try:
+                transaction.rollback()
+            except Exception:
+                pass
+        if conn is not None:
+            conn.close()
+
+
+def probe_read() -> bool:
+    """Check database readiness without mutating application data."""
     engine = get_engine()
     if engine is None:
         return False
     try:
-        with engine.begin() as conn:
-            conn.execute(text("DELETE FROM app_state WHERE key = 'health-probe'"))
-            conn.execute(
-                text("INSERT INTO app_state (key, value) VALUES ('health-probe', :v)"),
-                {"v": date.today().isoformat()},
-            )
-        return True
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT 1")).fetchone()
+        return bool(row and int(row[0]) == 1)
     except Exception:
-        logger.exception("Veritabanı yazma sondası başarısız")
+        logger.exception("Veritabanı okuma sondası başarısız")
         return False
 
 
 def load_state() -> dict | None:
     engine = get_engine()
     if engine is None:
+        if database_configured():
+            raise DatabaseUnavailableError(
+                "Yolcu durumu için yapılandırılmış veritabanına ulaşılamıyor."
+            )
         return None
     try:
-        with engine.begin() as conn:
-            row = conn.execute(
-                text("SELECT value FROM app_state WHERE key = 'passengers'")
-            ).fetchone()
+        statement = text("SELECT value FROM app_state WHERE key = 'passengers'")
+        mutation_conn = getattr(_PASSENGER_MUTATION_CONTEXT, "connection", None)
+        if mutation_conn is not None:
+            row = mutation_conn.execute(statement).fetchone()
+        else:
+            with engine.begin() as conn:
+                row = conn.execute(statement).fetchone()
         if not row or not row[0]:
             return {}
         return json.loads(row[0])
-    except Exception:
+    except DatabaseUnavailableError:
+        raise
+    except Exception as exc:
         logger.exception("Yolcu durumu veritabanından okunamadı")
+        if database_configured():
+            raise DatabaseUnavailableError(
+                "Yolcu durumu kalıcı veritabanından okunamadı."
+            ) from exc
         return None
 
 
@@ -845,6 +988,8 @@ def enqueue_import_jobs(
 def store_finished_import_children(
     parent_id: str,
     results: list[dict],
+    *,
+    worker_id: str,
 ) -> list[dict] | None:
     """Atomically materialise already-processed archive members.
 
@@ -860,6 +1005,9 @@ def store_finished_import_children(
     engine = get_engine()
     if engine is None:
         raise DatabaseUnavailableError("Aktarım kuyruğu veritabanı kullanılamıyor.")
+    owner = str(worker_id or "")[:128]
+    if not owner:
+        raise ValueError("Arşiv parent işleyici kimliği gereklidir.")
     if not results:
         return []
 
@@ -876,7 +1024,17 @@ def store_finished_import_children(
     now = _utc_now()
     try:
         with engine.begin() as conn:
-            parent = _select_import_job(conn, str(parent_id))
+            lock_suffix = " FOR UPDATE" if conn.dialect.name == "postgresql" else ""
+            parent_row = conn.execute(
+                text(
+                    f"SELECT {_IMPORT_JOB_PUBLIC_COLUMNS} FROM import_jobs "
+                    "WHERE id = :id AND status = 'processing' "
+                    "AND lease_owner = :worker_id AND lease_until IS NOT NULL "
+                    f"AND lease_until >= :now{lock_suffix}"
+                ),
+                {"id": str(parent_id), "worker_id": owner, "now": now},
+            ).fetchone()
+            parent = _row_to_import_job(parent_row)
             if parent is None:
                 return None
 
@@ -1168,6 +1326,55 @@ def claim_next_import_job(worker_id: str, lease_seconds: int = 300) -> dict | No
         raise DatabaseUnavailableError("Aktarım kuyruğundan iş alınamadı.") from exc
 
 
+def renew_import_job_lease(
+    job_id: str,
+    worker_id: str,
+    lease_seconds: int = 300,
+) -> bool:
+    """Extend a live lease only for its current processing owner.
+
+    Expired leases are deliberately not resurrected.  Once the deadline has
+    passed, the worker must stop and let recovery/reclaim establish a fresh
+    owner fence.
+    """
+    engine = get_engine()
+    if engine is None:
+        raise DatabaseUnavailableError("Aktarım kuyruğu veritabanı kullanılamıyor.")
+    owner = str(worker_id or "")[:128]
+    if not job_id or not owner:
+        return False
+    now = _utc_now()
+    lease_until = (
+        datetime.now(timezone.utc) + timedelta(seconds=max(1, int(lease_seconds)))
+    ).isoformat(timespec="microseconds")
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    "UPDATE import_jobs SET "
+                    "lease_until = CASE WHEN lease_until > :lease_until "
+                    "THEN lease_until ELSE :lease_until END, updated_at = :now "
+                    "WHERE id = :id AND status = 'processing' "
+                    "AND lease_owner = :owner AND lease_until IS NOT NULL "
+                    "AND lease_until >= :now"
+                ),
+                {
+                    "id": str(job_id),
+                    "owner": owner,
+                    "now": now,
+                    "lease_until": lease_until,
+                },
+            )
+        return bool(result.rowcount)
+    except DatabaseUnavailableError:
+        raise
+    except Exception as exc:
+        logger.exception("Aktarım işi lease süresi yenilenemedi: %s", job_id)
+        raise DatabaseUnavailableError(
+            "Aktarım işi lease süresi yenilenemedi."
+        ) from exc
+
+
 def has_pending_import_jobs() -> bool | None:
     engine = get_engine()
     if engine is None:
@@ -1246,9 +1453,12 @@ def finish_import_job(
     engine = get_engine()
     if engine is None:
         return False
+    owner = str(worker_id or "")[:128]
+    next_status = str(status)
+    if not owner or next_status not in (_TERMINAL_IMPORT_STATUSES | {"waiting"}):
+        return False
     now = _utc_now()
-    terminal = status in _TERMINAL_IMPORT_STATUSES
-    owner_clause = " AND (lease_owner = :worker_id OR lease_owner IS NULL)" if worker_id else ""
+    terminal = next_status in _TERMINAL_IMPORT_STATUSES
     try:
         with engine.begin() as conn:
             current = _select_import_job(conn, job_id)
@@ -1262,11 +1472,13 @@ def finish_import_job(
                     "finished_at = :finished_at, "
                     "payload = CASE WHEN :delete_payload = 1 THEN NULL ELSE payload END, "
                     "payload_size = CASE WHEN :delete_payload = 1 THEN 0 ELSE payload_size END "
-                    f"WHERE id = :id{owner_clause}"
+                    "WHERE id = :id AND status = 'processing' "
+                    "AND lease_owner = :worker_id AND lease_until IS NOT NULL "
+                    "AND lease_until >= :now"
                 ),
                 {
                     "id": job_id,
-                    "status": str(status),
+                    "status": next_status,
                     "message": str(message),
                     "imported": max(0, int(imported)),
                     "duplicates": max(0, int(duplicates)),
@@ -1274,19 +1486,21 @@ def finish_import_job(
                     "now": now,
                     "finished_at": now if terminal else None,
                     "delete_payload": 1 if delete_payload else 0,
-                    "worker_id": worker_id,
+                    "worker_id": owner,
                 },
             )
             if not result.rowcount:
                 return False
             if current["parent_id"]:
                 _refresh_parent_progress(conn, current["parent_id"], now)
-            if status == "waiting":
+            if next_status == "waiting":
                 _refresh_parent_progress(conn, job_id, now)
         return True
-    except Exception:
+    except DatabaseUnavailableError:
+        raise
+    except Exception as exc:
         logger.exception("Aktarım işi tamamlanamadı: %s", job_id)
-        return False
+        raise DatabaseUnavailableError("Aktarım işi durumu kaydedilemedi.") from exc
 
 
 def finish_import_jobs_batch(results: list[dict]) -> int:

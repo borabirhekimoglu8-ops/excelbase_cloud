@@ -58,20 +58,20 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 
 ### Production güvenlik ayarları
 
-Yolcu PII verisi internete açılmadan önce API anahtarı ayarlanmalıdır:
+Yolcu PII verisi internete açılmadan önce oturum doğrulamasını ve yalnız kendi
+alan adınızı kapsayan CORS ayarını zorunlu kılın:
 
 ```bash
-export GATEVISA_API_KEY="uzun-rastgele-bir-anahtar"
+export APP_ENV="production"
+export GATEVISA_REQUIRE_AUTH="1"
 export GATEVISA_CORS_ORIGINS="https://frontend-domaininiz.com"
 ```
 
-Frontend build'inde aynı anahtar (görsel/indirmeler query param `?k=` ile de gönderilir):
-
-```bash
-NEXT_PUBLIC_API_KEY="uzun-rastgele-bir-anahtar"
-```
-
-> `GATEVISA_API_KEY` boşsa backend yalnızca `GATEVISA_ALLOW_DEV_NO_AUTH=1` ile açılır (lokal geliştirme).
+Tarayıcı build'ine `NEXT_PUBLIC_API_KEY` koymayın. İsteğe bağlı
+`GATEVISA_API_KEY` yalnız güvenilir sunucudan sunucuya entegrasyonlarda
+`X-API-Key` başlığıyla kullanılabilir; URL/query parametresi olarak kabul
+edilmez. Normal kullanıcı ve fotoğraf istekleri güvenli HttpOnly oturum
+çereziyle çalışır.
 
 ## Kalıcı veritabanı (önerilir)
 
@@ -88,6 +88,13 @@ Tablolar (`app_state`, `photos`) otomatik oluşturulur. DB yoksa uygulama yerel 
 - Tek servis, Docker deploy (`render.yaml` + `Dockerfile`).
 - Docker build sırasında `frontend/` statik PWA olarak build edilir; FastAPI hem `/api/*` hem de PWA'yı sunar.
 - Public URL doğrudan V7 arayüzünü açar.
+
+## Oracle Cloud ARM64 kurulumu
+
+Ücretsiz ARM64 VM üzerinde web ve Excel worker süreçlerini ayıran, özel
+PostgreSQL ağı, otomatik HTTPS, yedekleme ve geri dönüş içeren V7 üretim
+kurulumu için [`deploy/oracle/README.md`](deploy/oracle/README.md) belgesini
+kullanın. Bu dağıtım V8'i yayınlamaz.
 
 ## iPhone'da uygulama gibi kullanma (PWA)
 

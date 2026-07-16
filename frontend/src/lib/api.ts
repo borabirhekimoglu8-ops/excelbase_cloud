@@ -153,7 +153,6 @@ export type MailImportResponse = {
 };
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
 
 type ApiErrorKind = "http" | "timeout" | "network";
 
@@ -191,7 +190,9 @@ export function isRetryableTransportError(error: unknown): error is ApiRequestEr
 }
 
 function authHeaders(extra?: HeadersInit): HeadersInit {
-  return { ...(API_KEY ? { "x-api-key": API_KEY } : {}), ...(extra ?? {}) };
+  // Browser authentication is cookie-based. Never compile an administrator
+  // service key into a public JavaScript bundle.
+  return extra ?? {};
 }
 
 function appendReadableFile(body: FormData, field: string, file: File): void {
@@ -289,9 +290,7 @@ export function scopedPath(path: string, scope?: DateScope): string {
 }
 
 export function downloadUrl(path: string): string {
-  if (!API_KEY) return `${API_BASE}${path}`;
-  const sep = path.includes("?") ? "&" : "?";
-  return `${API_BASE}${path}${sep}k=${encodeURIComponent(API_KEY)}`;
+  return `${API_BASE}${path}`;
 }
 
 export function fetchAuthStatus(): Promise<AuthStatus> {

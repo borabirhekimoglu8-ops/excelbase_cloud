@@ -21,7 +21,8 @@ from .config import (
     SESSION_COOKIE,
     SESSION_DAYS,
     allowed_origins,
-    api_key,
+    embedded_import_worker_enabled,
+    process_role,
 )
 from .models import (
     ArchiveResponse,
@@ -80,13 +81,20 @@ async def persistence_error_handler(request: Request, exc: StorePersistenceError
 @app.on_event("startup")
 async def resume_import_queue() -> None:
     """Sunucu yeniden başladığında yarım kalan aktarım işlerini sürdürür."""
+    if not embedded_import_worker_enabled():
+        services.require_postgres_for_split_roles()
+        logger.info(
+            "API process role=%s; import queue is handled by the dedicated worker",
+            process_role(),
+        )
+        return
     try:
         migrated = services.migrate_legacy_import_queue()
         if migrated:
             logger.info("Eski kuyruktan %d aktarım işi yeni kalıcı kuyruğa taşındı", migrated)
-        # Bu process yeni başladığı için önceki lease owner artık yoktur.
-        # Tek-worker Render deployment'ında processing kalanları hemen kurtar.
-        recovered = services.recover_stale_import_jobs(force=True)
+        # Deploy overlap can leave the previous process alive briefly.  Only
+        # expired leases are safe to reclaim; a live worker renews its lease.
+        recovered = services.recover_stale_import_jobs(force=False)
         if recovered:
             logger.info("Yeniden başlatma sonrası %d aktarım işi kuyruğa iade edildi", recovered)
         services.ensure_import_worker()
@@ -181,19 +189,35 @@ async def audit_mutations(request: Request, call_next):
 
 
 def _key_qs() -> str:
-    """Görsel URL'lerine eklenecek anahtar (yapılandırılmışsa)."""
-    return api_key()
+    """Never put an administrator-equivalent service key into a URL."""
+    return ""
 
 
 # ---------------------------------------------------------------- health / meta
+@app.get("/health/live")
+def health_live() -> dict:
+    """Process liveness probe; deliberately does not touch PostgreSQL."""
+    return {"status": "ok", "version": APP_VERSION}
+
+
 @app.get("/health")
 def health() -> dict:
+    db_configured = services.db.database_configured()
     db_enabled = services.db.enabled()
+    database_reachable = services.db.probe_read() if db_enabled else False
+    database_writable = services.db.probe_write() if database_reachable else False
     return {
         "status": "ok",
         "version": APP_VERSION,
-        "persistence": "database" if db_enabled else "local-fallback",
-        "database_writable": services.db.probe_write() if db_enabled else False,
+        "persistence": (
+            "database"
+            if database_reachable
+            else "database-unavailable"
+            if db_configured
+            else "local-fallback"
+        ),
+        "database_reachable": database_reachable,
+        "database_writable": database_writable,
     }
 
 
@@ -551,7 +575,8 @@ async def queue_import_files(
     )
     # FastAPI bu çağrıyı 202 gövdesi gönderildikten sonra çalıştırır; worker
     # açılışındaki DB lease/cleanup gecikmesi mobil yanıtı tutamaz.
-    background_tasks.add_task(services.ensure_import_worker)
+    if embedded_import_worker_enabled():
+        background_tasks.add_task(services.ensure_import_worker)
     return ImportQueueResponse(
         jobs=[ImportJobView(**job) for job in jobs],
         active=True,
@@ -562,7 +587,7 @@ async def queue_import_files(
 @app.get("/api/import/queue", response_model=ImportQueueResponse, dependencies=[Depends(require_api_key)])
 def import_queue_status() -> ImportQueueResponse:
     jobs, active = services.get_import_jobs()
-    if active:
+    if active and embedded_import_worker_enabled():
         services.ensure_import_worker()
     return ImportQueueResponse(jobs=[ImportJobView(**job) for job in jobs], active=active)
 
@@ -575,7 +600,8 @@ def import_queue_status() -> ImportQueueResponse:
 def retry_import_job(job_id: str) -> SimpleResult:
     if not services.retry_import_job(job_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Yeniden denenecek iş bulunamadı.")
-    services.ensure_import_worker()
+    if embedded_import_worker_enabled():
+        services.ensure_import_worker()
     return SimpleResult(ok=True, message="Dosya yeniden kuyruğa alındı.")
 
 

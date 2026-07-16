@@ -1,0 +1,23 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	# V8 is an unpublished pilot.  Block both its frontend export and API even
+	# though the OCI stack only starts V7 containers.
+	@v8 path /v8 /v8/ /v8/* /v8.html /api/v8 /api/v8/*
+	respond @v8 404
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(self), geolocation=(), microphone=()"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	reverse_proxy v7-web:8000
+}

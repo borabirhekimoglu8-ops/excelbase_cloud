@@ -3,6 +3,64 @@ from __future__ import annotations
 import os
 
 
+_PROCESS_ROLES = {"combined", "web", "worker"}
+
+
+def process_role() -> str:
+    """Return the responsibility of this process.
+
+    ``combined`` preserves the historical single-container Render deployment.
+    OCI runs ``web`` and ``worker`` as separate containers built from the same
+    image.  Keeping the default backwards compatible gives us a clean rollback
+    path while the new deployment is being verified.
+    """
+
+    role = os.environ.get("EXCELBASE_PROCESS_ROLE", "combined").strip().lower()
+    if role not in _PROCESS_ROLES:
+        expected = ", ".join(sorted(_PROCESS_ROLES))
+        raise RuntimeError(
+            f"EXCELBASE_PROCESS_ROLE must be one of: {expected}; got {role!r}."
+        )
+    return role
+
+
+def embedded_import_worker_enabled() -> bool:
+    """Whether this API process is allowed to start the legacy worker thread."""
+
+    return process_role() == "combined"
+
+
+def import_worker_poll_seconds() -> float:
+    """Polling delay for the foreground worker when the durable queue is empty."""
+
+    try:
+        return max(0.25, float(os.environ.get("EXCELBASE_WORKER_POLL_SECONDS", "1")))
+    except ValueError as exc:
+        raise RuntimeError("EXCELBASE_WORKER_POLL_SECONDS must be numeric.") from exc
+
+
+def import_job_lease_seconds() -> int:
+    """Lease duration; a heartbeat renews it while a job is being processed."""
+
+    try:
+        return max(60, int(os.environ.get("EXCELBASE_IMPORT_LEASE_SECONDS", "180")))
+    except ValueError as exc:
+        raise RuntimeError("EXCELBASE_IMPORT_LEASE_SECONDS must be an integer.") from exc
+
+
+def import_job_heartbeat_seconds() -> float:
+    """Heartbeat interval, capped below half of the configured lease."""
+
+    try:
+        configured = max(
+            5.0,
+            float(os.environ.get("EXCELBASE_IMPORT_HEARTBEAT_SECONDS", "30")),
+        )
+    except ValueError as exc:
+        raise RuntimeError("EXCELBASE_IMPORT_HEARTBEAT_SECONDS must be numeric.") from exc
+    return min(configured, max(5.0, import_job_lease_seconds() / 2.0))
+
+
 def allowed_origins() -> list[str]:
     raw = os.environ.get("GATEVISA_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
     return [item.strip() for item in raw.split(",") if item.strip()]
