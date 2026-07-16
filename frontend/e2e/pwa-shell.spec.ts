@@ -46,7 +46,7 @@ test("uçak modunda yerel kasa açılır ve içe aktarılan yolcu kalır", async
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
 
-  await page.getByRole("button", { name: "YÜKLE" }).click();
+  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YÜKLE", exact: true }).click();
   await page.getByLabel("ZIP veya Excel listelerini seç").setInputFiles({
     name: "yolcular.xlsx",
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -54,7 +54,7 @@ test("uçak modunda yerel kasa açılır ve içe aktarılan yolcu kalır", async
   });
   await expect(page.getByText("HAZIR", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "YOLCULAR" }).click();
+  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
   await expect(page.getByText("AYŞE YOLCU")).toBeVisible();
 
   await page.evaluate(async () => navigator.serviceWorker.ready);
@@ -63,7 +63,7 @@ test("uçak modunda yerel kasa açılır ve içe aktarılan yolcu kalır", async
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Giriş yap" }).click();
-  await page.getByRole("button", { name: "YOLCULAR" }).click();
+  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
   await expect(page.getByText("AYŞE YOLCU")).toBeVisible();
   await context.setOffline(false);
 });
@@ -74,7 +74,7 @@ test("49 Excel dosyası sırayla işlenir ve çevrimdışı soğuk açılışta 
   await page.locator('input[name="name"]').fill("Toplu Test");
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
-  await page.getByRole("button", { name: "YÜKLE" }).click();
+  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YÜKLE", exact: true }).click();
 
   const files = Array.from({ length: 49 }, (_, offset) => {
     const index = offset + 1;
@@ -87,7 +87,7 @@ test("49 Excel dosyası sırayla işlenir ve çevrimdışı soğuk açılışta 
   await page.getByLabel("ZIP veya Excel listelerini seç").setInputFiles(files);
   await expect(page.getByText("HAZIR", { exact: true })).toHaveCount(49, { timeout: 120_000 });
 
-  await page.getByRole("button", { name: "YOLCULAR" }).click();
+  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
   await expect(page.getByText("TOPLAM 49 KAYIT", { exact: true })).toBeVisible();
 
   await page.evaluate(async () => navigator.serviceWorker.ready);
@@ -98,7 +98,7 @@ test("49 Excel dosyası sırayla işlenir ve çevrimdışı soğuk açılışta 
   await offlinePage.goto("/", { waitUntil: "domcontentloaded" });
   await offlinePage.locator('input[name="pin"]').fill("123456");
   await offlinePage.getByRole("button", { name: "Giriş yap" }).click();
-  await offlinePage.getByRole("button", { name: "YOLCULAR" }).click();
+  await offlinePage.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
   await expect(offlinePage.getByText("TOPLAM 49 KAYIT", { exact: true })).toBeVisible();
   await context.setOffline(false);
 });
