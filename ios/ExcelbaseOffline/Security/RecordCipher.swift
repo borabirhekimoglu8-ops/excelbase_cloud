@@ -7,7 +7,8 @@ public protocol RecordCiphering: Sendable {
 }
 
 public struct AESGCMRecordCipher: RecordCiphering, Sendable {
-    private static let envelopeVersion: UInt8 = 1
+    private static let currentEnvelopeVersion: UInt8 = 2
+    private static let legacyEnvelopeVersion: UInt8 = 1
     private let key: SymmetricKey
 
     /// Resolves Keychain once. Importing thousands of rows must not perform a
@@ -18,16 +19,19 @@ public struct AESGCMRecordCipher: RecordCiphering, Sendable {
 
     public func encrypt<T: Encodable & Sendable>(_ value: T, recordID: UUID) throws -> Data {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .millisecondsSince1970
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(date.timeIntervalSinceReferenceDate.bitPattern)
+        }
         encoder.outputFormatting = [.sortedKeys]
         let plaintext = try encoder.encode(value)
         let sealed = try AES.GCM.seal(
             plaintext,
             using: key,
-            authenticating: authenticatedData(for: recordID)
+            authenticating: authenticatedData(for: recordID, version: Self.currentEnvelopeVersion)
         )
         guard let combined = sealed.combined else { throw OfflineDataError.corruptRecord }
-        return Data([Self.envelopeVersion]) + combined
+        return Data([Self.currentEnvelopeVersion]) + combined
     }
 
     public func decrypt<T: Decodable & Sendable>(
@@ -35,20 +39,29 @@ public struct AESGCMRecordCipher: RecordCiphering, Sendable {
         from envelope: Data,
         recordID: UUID
     ) throws -> T {
-        guard envelope.first == Self.envelopeVersion else { throw OfflineDataError.corruptRecord }
+        guard let version = envelope.first,
+              version == Self.currentEnvelopeVersion || version == Self.legacyEnvelopeVersion
+        else { throw OfflineDataError.corruptRecord }
         let box = try AES.GCM.SealedBox(combined: envelope.dropFirst())
         let plaintext = try AES.GCM.open(
             box,
             using: key,
-            authenticating: authenticatedData(for: recordID)
+            authenticating: authenticatedData(for: recordID, version: version)
         )
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .millisecondsSince1970
+        if version == Self.legacyEnvelopeVersion {
+            decoder.dateDecodingStrategy = .millisecondsSince1970
+        } else {
+            decoder.dateDecodingStrategy = .custom { decoder in
+                let bits = try decoder.singleValueContainer().decode(UInt64.self)
+                return Date(timeIntervalSinceReferenceDate: Double(bitPattern: bits))
+            }
+        }
         return try decoder.decode(type, from: plaintext)
     }
 
-    private func authenticatedData(for recordID: UUID) -> Data {
-        Data("excelbase-record-v1:\(recordID.uuidString.lowercased())".utf8)
+    private func authenticatedData(for recordID: UUID, version: UInt8) -> Data {
+        Data("excelbase-record-v\(version):\(recordID.uuidString.lowercased())".utf8)
     }
 }
 

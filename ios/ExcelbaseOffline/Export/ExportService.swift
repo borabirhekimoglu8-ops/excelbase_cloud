@@ -68,13 +68,13 @@ public actor ExportService: PassengerExporting {
         let handle = try FileHandle(forWritingTo: url)
         defer { try? handle.close() }
         try handle.write(contentsOf: Data([0xEF, 0xBB, 0xBF]))
-        try handle.write(contentsOf: Data((headers.joined(separator: ";") + "\r\n").utf8))
+        try handle.write(contentsOf: Data((headers.joined(separator: ";") + "\n").utf8))
         for passenger in try database.fetchPassengers(search: nil, limit: Int.max, offset: 0) {
             let line = [
                 passenger.no, passenger.firstName, passenger.lastName, passenger.fullName, passenger.passportNumber,
                 passenger.voucher, passenger.departureDate, passenger.arrivalDate,
                 passenger.adultFee, passenger.childFee, passenger.sourceFile, passenger.sheet, passenger.photoRef
-            ].map(csvEscape).joined(separator: ";") + "\r\n"
+            ].map(csvEscape).joined(separator: ";") + "\n"
             try handle.write(contentsOf: Data(line.utf8))
         }
         try handle.synchronize()
