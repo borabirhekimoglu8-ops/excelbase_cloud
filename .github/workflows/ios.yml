@@ -52,6 +52,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/excelbase-core
+          cache-on-failure: true
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Build Rust XCFramework

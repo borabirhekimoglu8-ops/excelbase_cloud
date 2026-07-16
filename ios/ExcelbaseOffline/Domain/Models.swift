@@ -101,7 +101,7 @@ public struct Passenger: Identifiable, Codable, Hashable, Sendable {
     }
 
     public var normalizedPassport: String {
-        passportNumber.uppercased().filter(\.isLetterOrNumber)
+        String(passportNumber.uppercased().filter { $0.isLetter || $0.isNumber })
     }
 
     public func replacingID(_ id: UUID, sortOrder: Int? = nil) -> Passenger {

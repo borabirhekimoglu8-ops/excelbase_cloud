@@ -38,7 +38,10 @@ public struct PhotoMatcher: Sendable {
     }
 
     private func normalize(_ value: String) -> String {
-        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "tr_TR"))
-            .uppercased().filter(\.isLetterOrNumber)
+        String(
+            value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "tr_TR"))
+                .uppercased()
+                .filter { $0.isLetter || $0.isNumber }
+        )
     }
 }
