@@ -94,8 +94,9 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
 
   await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
   const inlinePdfInput = page.getByLabel("AYŞE YOLCU için PDF evrak seç");
-  await expect(inlinePdfInput).toBeVisible();
-  await expect(inlinePdfInput).toBeInViewport();
+  const inlinePdfAction = page.getByText("PDF EKLE", { exact: true });
+  await expect(inlinePdfAction).toBeVisible();
+  await expect(inlinePdfAction).toBeInViewport();
   await inlinePdfInput.setInputFiles({
     name: "TR123456-pasaport.pdf",
     mimeType: "application/pdf",
@@ -106,8 +107,9 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
   await page.getByText("AYŞE YOLCU", { exact: true }).click();
   await expect(page.getByText("Yolcu Detayı", { exact: true })).toBeVisible();
   const quickPdfInput = page.getByLabel("Yolcu PDF evraklarını hızlı yükle");
-  await expect(quickPdfInput).toBeVisible();
-  await expect(quickPdfInput).toBeInViewport();
+  const quickPdfAction = page.getByText("PDF SEÇ", { exact: true });
+  await expect(quickPdfAction).toBeVisible();
+  await expect(quickPdfAction).toBeInViewport();
 
   await page.getByLabel("JPG biyometrik fotoğraf seç").setInputFiles({
     name: "TR123456-biyometrik.jpg",
