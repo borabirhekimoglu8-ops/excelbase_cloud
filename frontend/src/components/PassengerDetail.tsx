@@ -2,6 +2,9 @@
 
 import { ChangeEvent, useEffect, useState } from "react";
 import {
+  DOCUMENT_CATEGORIES,
+  DOCUMENT_CATEGORY_LABELS,
+  DocumentCategory,
   Passenger,
   PassengerDocument,
   addPassengerDocuments,
@@ -13,6 +16,7 @@ import {
   removePassengerPhoto,
   setPassengerPhoto,
   updatePassenger,
+  updatePassengerDocumentCategory,
 } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
@@ -25,8 +29,8 @@ const FIELDS: { key: keyof Passenger; label: string; type?: string }[] = [
   { key: "last_name", label: "Soyad" },
   { key: "passport_no", label: "Pasaport No" },
   { key: "voucher", label: "Rezervasyon / Voucher" },
-  { key: "departure_date", label: "Sefer Tarihi (Gidiş)" },
-  { key: "arrival_date", label: "Varış Tarihi" },
+  { key: "departure_date", label: "Sefer Tarihi (Gidiş)", type: "date" },
+  { key: "arrival_date", label: "Varış Tarihi", type: "date" },
   { key: "adult_fee", label: "Vize Ücreti Yetişkin" },
   { key: "child_fee", label: "Vize Ücreti Çocuk" },
 ];
@@ -46,6 +50,13 @@ function formatDocumentDate(value: string) {
   }).format(parsed);
 }
 
+function formatRecordDateTime(value: string) {
+  if (!value) return "Saat bilgisi yok";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("tr-TR", { dateStyle: "medium", timeStyle: "short" }).format(parsed);
+}
+
 function releaseObjectUrl(url: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
@@ -60,6 +71,7 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
   const [busy, setBusy] = useState(false);
   const [documentsBusy, setDocumentsBusy] = useState(false);
   const [documentAction, setDocumentAction] = useState("");
+  const [documentCategory, setDocumentCategory] = useState<DocumentCategory>("other");
 
   async function refreshPassenger() {
     const list = await fetchPassengers();
@@ -108,8 +120,12 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
   async function handleSave() {
     setSaving(true);
     try {
-      await updatePassenger(id, form as Partial<Passenger>);
-      notify("Yolcu güncellendi");
+      const wasDraft = passenger?.record_status === "draft";
+      await updatePassenger(id, {
+        ...(form as Partial<Passenger>),
+        record_status: wasDraft ? "review" : passenger?.record_status,
+      });
+      notify(wasDraft ? "Taslak kontrol aşamasına alındı" : "Yolcu güncellendi");
       bump();
       onClose();
     } catch (err) {
@@ -177,8 +193,8 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
     if (!files.length) return;
     setDocumentsBusy(true);
     try {
-      await addPassengerDocuments(id, files);
-      notify(`${files.length} PDF evrak yolcuya eklendi`);
+      await addPassengerDocuments(id, files, documentCategory);
+      notify(`${files.length} ${DOCUMENT_CATEGORY_LABELS[documentCategory]} evrakı yolcuya eklendi`);
       bump();
       await refreshPassenger();
     } catch (err) {
@@ -235,6 +251,20 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
     }
   }
 
+  async function handleDocumentCategoryChange(document: PassengerDocument, category: DocumentCategory) {
+    setDocumentAction(`${document.id}:category`);
+    try {
+      await updatePassengerDocumentCategory(id, document.id, category);
+      notify("PDF evrak türü güncellendi");
+      bump();
+      await refreshPassenger();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "PDF evrak türü güncellenemedi", "error");
+    } finally {
+      setDocumentAction("");
+    }
+  }
+
   const { tone, label } = passengerStatusTone(passenger);
   const hasIssues = passenger.issues.length > 0;
   const documents = passenger.documents ?? [];
@@ -283,6 +313,25 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
             <span>{hasIssues ? "!" : "✓"}</span>
           </div>
 
+          <section className="ic-record-metadata" aria-label="Yolcu kayıt bilgileri">
+            <div>
+              <span>KAYIT TARİHİ</span>
+              <strong>{passenger.record_date || "Tarihi bilinmeyen"}</strong>
+            </div>
+            <div>
+              <span>KAYIT SAATİ</span>
+              <strong>{formatRecordDateTime(passenger.created_at)}</strong>
+            </div>
+            <div>
+              <span>KAYDI AÇAN</span>
+              <strong>{passenger.created_by || "Bilinmiyor"}</strong>
+            </div>
+            <div>
+              <span>KAYNAK</span>
+              <strong>{passenger.record_source === "manual" ? "Tekil kayıt" : "Toplu aktarım"}</strong>
+            </div>
+          </section>
+
           <section className="ic-document-quick" aria-label="PDF evrak yükleme alanı">
             <div className="ic-document-quick-copy">
               <span className="ic-filetype pdf">PDF</span>
@@ -292,17 +341,27 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
               </div>
             </div>
             {canWrite ? (
-              <label className={`ic-document-quick-action${documentsBusy ? " disabled" : ""}`}>
-                {documentsBusy ? "EKLENİYOR…" : "PDF SEÇ"}
-                <input
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  aria-label="Yolcu PDF evraklarını hızlı yükle"
-                  multiple
-                  onChange={handleDocuments}
-                  disabled={documentsBusy || busy}
-                />
-              </label>
+              <div className="ic-document-quick-controls">
+                <label className="ic-document-category-picker">
+                  <span>Evrak türü</span>
+                  <select value={documentCategory} onChange={(event) => setDocumentCategory(event.target.value as DocumentCategory)} disabled={documentsBusy || busy}>
+                    {DOCUMENT_CATEGORIES.map((category) => (
+                      <option value={category} key={category}>{DOCUMENT_CATEGORY_LABELS[category]}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className={`ic-document-quick-action${documentsBusy ? " disabled" : ""}`}>
+                  {documentsBusy ? "EKLENİYOR…" : "PDF SEÇ"}
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    aria-label={`${DOCUMENT_CATEGORY_LABELS[documentCategory]} PDF evraklarını hızlı yükle`}
+                    multiple
+                    onChange={handleDocuments}
+                    disabled={documentsBusy || busy}
+                  />
+                </label>
+              </div>
             ) : (
               <span className="ic-pill ic-pill-neutral">SADECE GÖRÜNTÜLEME</span>
             )}
@@ -388,8 +447,22 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
                     <div className="ic-row-copy">
                       <p className="ic-row-title" title={document.filename}>{document.filename}</p>
                       <p className="ic-row-meta">
-                        {formatDocumentSize(document.size)} · {formatDocumentDate(document.created_at)}
+                        {DOCUMENT_CATEGORY_LABELS[document.category ?? "other"]} · {formatDocumentSize(document.size)} · {formatDocumentDate(document.created_at)}
                       </p>
+                      {canWrite && (
+                        <label className="ic-document-inline-category">
+                          <span>Evrak türünü değiştir</span>
+                          <select
+                            value={document.category ?? "other"}
+                            disabled={Boolean(documentAction)}
+                            onChange={(event) => void handleDocumentCategoryChange(document, event.target.value as DocumentCategory)}
+                          >
+                            {DOCUMENT_CATEGORIES.map((category) => (
+                              <option value={category} key={category}>{DOCUMENT_CATEGORY_LABELS[category]}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                     </div>
                   </div>
                   <div className="ic-document-actions">
@@ -437,24 +510,34 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
           )}
 
           {canWrite ? (
-            <label className={`ic-btn-outline ic-document-upload${documentsBusy ? " disabled" : ""}`}>
-              {documentsBusy ? "PDF EVRAKLAR EKLENİYOR…" : "PDF EVRAK EKLE"}
-              <input
-                type="file"
-                accept=".pdf,application/pdf"
-                aria-label="Yolcu PDF evraklarını seç"
-                multiple
-                onChange={handleDocuments}
-                disabled={documentsBusy || busy}
-              />
-            </label>
+            <div className="ic-document-add-row">
+              <label className="ic-document-category-picker wide">
+                <span>Yeni evrak türü</span>
+                <select value={documentCategory} onChange={(event) => setDocumentCategory(event.target.value as DocumentCategory)} disabled={documentsBusy || busy}>
+                  {DOCUMENT_CATEGORIES.map((category) => (
+                    <option value={category} key={category}>{DOCUMENT_CATEGORY_LABELS[category]}</option>
+                  ))}
+                </select>
+              </label>
+              <label className={`ic-btn-outline ic-document-upload${documentsBusy ? " disabled" : ""}`}>
+                {documentsBusy ? "PDF EVRAKLAR EKLENİYOR…" : "PDF EVRAK EKLE"}
+                <input
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  aria-label={`${DOCUMENT_CATEGORY_LABELS[documentCategory]} PDF evraklarını seç`}
+                  multiple
+                  onChange={handleDocuments}
+                  disabled={documentsBusy || busy}
+                />
+              </label>
+            </div>
           ) : null}
         </div>
 
         {canWrite && (
           <div className="ic-sticky">
             <button className="ic-btn-primary" onClick={handleSave} disabled={saving || busy} type="button">
-              {saving ? "KAYDEDİLİYOR…" : "DEĞİŞİKLİKLERİ KAYDET"}
+              {saving ? "KAYDEDİLİYOR…" : passenger.record_status === "draft" ? "TASLAĞI KONTROLE GÖNDER" : "DEĞİŞİKLİKLERİ KAYDET"}
             </button>
           </div>
         )}

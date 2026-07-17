@@ -25,6 +25,7 @@ export function PassengerPhoto({ passenger }: { passenger: Passenger }) {
 }
 
 export function passengerStatusTone(passenger: Passenger): { tone: "ok" | "warn" | "bad"; label: string } {
+  if (passenger.record_status === "draft") return { tone: "warn", label: "TASLAK" };
   const issues = passenger.issues;
   if (issues.length === 0) return { tone: "ok", label: "HAZIR" };
   const critical = issues.some((i) => ["Pasaport yok", "İsim yok", "Tarih hatalı"].includes(i));
@@ -55,7 +56,8 @@ export function PassengerCard({
   const metaParts = [
     passenger.passport_no || "Pasaport yok",
     passenger.voucher,
-    passenger.departure_date && `Gidiş ${passenger.departure_date}`,
+    passenger.record_date && `Kayıt ${passenger.record_date}`,
+    passenger.departure_date && `Sefer ${passenger.departure_date}`,
     `${documentCount} PDF`,
   ].filter(Boolean);
 

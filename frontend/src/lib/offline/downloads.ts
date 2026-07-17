@@ -8,6 +8,7 @@ import {
   createPassengerCsvBlob,
   createPassengerXlsxBlob,
   createPhotosZipBlob,
+  createRecordFolderZipBlob,
   saveBlob,
 } from "./exporter";
 import {
@@ -18,12 +19,13 @@ import {
   localPassengerDocumentFile,
 } from "./localApi";
 
-export type LocalDownloadKind = "template" | "excel" | "csv" | "manifest" | "daily-list" | "photos" | "documents" | "package" | "backup";
+export type LocalDownloadKind = "template" | "excel" | "csv" | "manifest" | "daily-list" | "photos" | "documents" | "package" | "record-package" | "backup";
 
 export type LocalDownloadOptions = {
   scope?: DateScope;
   ids?: number[];
   title?: string;
+  recordDate?: string;
 };
 
 function stamp(): string {
@@ -44,6 +46,14 @@ function reportLabel(rows: ReadonlyArray<{ departure_date?: string }>): string {
   const dates = reportDates(rows);
   if (!dates.length) return "Tarihsiz";
   return dates.length === 1 ? dates[0] : `${dates[0]} – ${dates.at(-1)}`;
+}
+
+function selectedRecordDate(rows: ReadonlyArray<{ record_date?: string }>, preferred = ""): string {
+  const explicit = preferred.trim();
+  if (explicit === "Tarihsiz") return "Tarihsiz";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(explicit)) return explicit;
+  const dates = ([...new Set(rows.map((row) => row.record_date?.trim()).filter(Boolean))] as string[]).sort();
+  return dates.length === 1 && /^\d{4}-\d{2}-\d{2}$/.test(dates[0]) ? dates[0] : stamp();
 }
 
 async function loadIdoLogoDataUrl(): Promise<string> {
@@ -113,6 +123,20 @@ export async function downloadLocal(kind: LocalDownloadKind, options: LocalDownl
   if (kind === "documents") {
     if (!documents.length) throw new Error("Seçili yolculara eklenmiş PDF evrak bulunmuyor.");
     await saveBlob(await createDocumentsZipBlob(documents), `gate-visa-checklist-evraklar-${stamp()}.zip`);
+    return;
+  }
+  if (kind === "record-package") {
+    const recordDate = selectedRecordDate(rows, options.recordDate);
+    await saveBlob(
+      await createRecordFolderZipBlob(rows, photos, {
+        recordDate,
+        documents,
+        title: options.title ?? "İDO Kontrol Listesi",
+        operationLabel: recordDate,
+        logoDataUrl: await loadIdoLogoDataUrl(),
+      }),
+      `IDO_GATE_VISA_${recordDate}.zip`,
+    );
     return;
   }
   await saveBlob(

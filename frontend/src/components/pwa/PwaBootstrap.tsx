@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./PwaBootstrap.module.css";
 
-const SHELL_VERSION = "2026.07.17.2";
+const SHELL_VERSION = "2026.07.17.3";
 const INSTALL_HINT_KEY = "excelbase:pwa-install-hint:2026-07";
 
 type WorkerState = "checking" | "ready" | "unsupported" | "error";

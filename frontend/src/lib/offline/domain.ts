@@ -1,13 +1,37 @@
+import { REQUIRED_DOCUMENT_CATEGORIES } from "@/lib/api";
 import type {
   ArchiveGroup,
   DateScope,
+  DocumentCategory,
   ImportHistoryItem,
   OperationMeta,
   OperationSummary,
   Passenger,
+  PassengerDocument,
+  RecordFolder,
+  RecordStatus,
 } from "@/lib/api";
 
-export type StoredPassenger = Omit<Passenger, "issues" | "duplicate" | "photo_url"> & {
+export type StoredPassengerDocument = Omit<PassengerDocument, "category"> & { category?: DocumentCategory };
+
+export type StoredPassenger = Omit<
+  Passenger,
+  | "issues"
+  | "duplicate"
+  | "photo_url"
+  | "documents"
+  | "created_at"
+  | "record_date"
+  | "created_by"
+  | "record_status"
+  | "record_source"
+> & {
+  documents?: StoredPassengerDocument[];
+  created_at?: string;
+  record_date?: string;
+  created_by?: string;
+  record_status?: RecordStatus;
+  record_source?: "manual" | "import";
   /** Internal idempotency marker; never exported to the passenger workbook. */
   _import_job_id?: string;
 };
@@ -96,7 +120,21 @@ export function rowIssues(row: StoredPassenger, duplicates: Set<string>): string
   if (departure && arrival && arrival < departure) issues.push("Tarih hatalı");
   const passport = fold(row.passport_no);
   if (passport && passport.length < 6) issues.push("Pasaport formatı");
+  const categories = new Set((row.documents ?? []).map((document) => document.category ?? "other"));
+  const labels: Record<string, string> = { passport: "Pasaport PDF yok", application_form: "Başvuru formu PDF yok" };
+  for (const category of REQUIRED_DOCUMENT_CATEGORIES) {
+    if (!categories.has(category)) issues.push(labels[category] ?? `${category} PDF yok`);
+  }
   return issues;
+}
+
+function normalizedDocuments(documents: StoredPassengerDocument[] | undefined): PassengerDocument[] {
+  return (documents ?? []).map((document) => ({ ...document, category: document.category ?? "other" }));
+}
+
+export function resolvedRecordStatus(row: StoredPassenger, issues: string[]): RecordStatus {
+  if (row.record_status === "draft") return "draft";
+  return issues.length ? "review" : "ready";
 }
 
 export function toPassenger(row: StoredPassenger, duplicates: Set<string>, photoUrl = ""): Passenger {
@@ -107,8 +145,13 @@ export function toPassenger(row: StoredPassenger, duplicates: Set<string>, photo
     departure_date: canonicalDate(row.departure_date) || text(row.departure_date),
     arrival_date: canonicalDate(row.arrival_date) || text(row.arrival_date),
     full_name: text(row.full_name) || [text(row.first_name), text(row.last_name)].filter(Boolean).join(" "),
+    created_at: text(row.created_at),
+    record_date: canonicalDate(row.record_date),
+    created_by: text(row.created_by) || "Bilinmiyor",
+    record_source: row.record_source === "manual" ? "manual" : "import",
+    record_status: resolvedRecordStatus(row, issues),
     photo_url: photoUrl,
-    documents: row.documents ?? [],
+    documents: normalizedDocuments(row.documents),
     issues,
     duplicate: issues.includes("Tekrarlı"),
   };
@@ -150,9 +193,43 @@ export function filterScope(rows: StoredPassenger[], scope?: DateScope): StoredP
   const bounds = scopeBounds(scope);
   if (!bounds) return rows;
   return rows.filter((row) => {
-    const date = canonicalDate(row.departure_date);
+    const date = scope?.field === "created"
+      ? canonicalDate(row.record_date)
+      : canonicalDate(row.departure_date);
     return Boolean(date && date >= bounds[0] && date <= bounds[1]);
   });
+}
+
+export function buildRecordFolders(
+  allRows: StoredPassenger[],
+  scope?: DateScope,
+): { groups: RecordFolder[]; total_count: number } {
+  const recordScope = { ...(scope ?? { range: "Tümü", start: "", end: "" }), field: "created" as const };
+  const rows = filterScope(allRows, recordScope);
+  const duplicates = duplicateIdentities(rows);
+  const groups = new Map<string, StoredPassenger[]>();
+  for (const row of rows) {
+    const key = canonicalDate(row.record_date) || "Tarihsiz";
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  return {
+    groups: [...groups.entries()]
+      .toSorted(([a], [b]) => (a === "Tarihsiz" ? 1 : b === "Tarihsiz" ? -1 : b.localeCompare(a)))
+      .map(([dateKey, group]) => {
+        const statuses = group.map((row) => resolvedRecordStatus(row, rowIssues(row, duplicates)));
+        return {
+          date_key: dateKey,
+          count: group.length,
+          ready_count: statuses.filter((status) => status === "ready").length,
+          review_count: statuses.filter((status) => status === "review").length,
+          draft_count: statuses.filter((status) => status === "draft").length,
+          with_photo: group.filter((row) => Boolean(row.photo)).length,
+          document_count: group.reduce((count, row) => count + (row.documents?.length ?? 0), 0),
+          passenger_ids: group.map((row) => row.id),
+        };
+      }),
+    total_count: rows.length,
+  };
 }
 
 export function filterPassengers(
@@ -252,7 +329,7 @@ export function buildArchive(
   scope: DateScope | undefined,
   operationMeta: Record<string, OperationMeta> = {},
 ): { groups: ArchiveGroup[]; total_count: number } {
-  const rows = filterScope(allRows, scope);
+  const rows = filterScope(allRows, scope ? { ...scope, field: "departure" } : scope);
   const groups = new Map<string, StoredPassenger[]>();
   for (const row of rows) {
     const key = canonicalDate(row.departure_date) || "Tarihsiz";

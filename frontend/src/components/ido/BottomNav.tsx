@@ -1,9 +1,10 @@
 "use client";
 
-export type NavKey = "home" | "passengers" | "import" | "settings";
+export type NavKey = "home" | "records" | "passengers" | "import" | "settings";
 
 const ITEMS: Array<{ key: NavKey; label: string }> = [
   { key: "home", label: "ANA" },
+  { key: "records", label: "KAYITLAR" },
   { key: "passengers", label: "YOLCULAR" },
   { key: "import", label: "YÜKLE" },
   { key: "settings", label: "AYARLAR" },

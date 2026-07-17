@@ -58,14 +58,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(true);
   const [version, setVersion] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [dateScope, setDateScope] = useState<DateScope>({ range: "Tümü", start: "", end: "" });
+  const [dateScope, setDateScope] = useState<DateScope>({ range: "Tümü", start: "", end: "", field: "departure" });
   const toastId = useRef(1);
   const changeRefreshTimer = useRef<number | null>(null);
   const refreshSequence = useRef(0);
   const inFlightRefresh = useRef<{ key: string; promise: Promise<boolean> } | null>(null);
 
   const refresh = useCallback((): Promise<boolean> => {
-    const key = `${dateScope.range}\u0000${dateScope.start}\u0000${dateScope.end}`;
+    const key = `${dateScope.field ?? "departure"}\u0000${dateScope.range}\u0000${dateScope.start}\u0000${dateScope.end}`;
     if (inFlightRefresh.current?.key === key) return inFlightRefresh.current.promise;
 
     const sequence = ++refreshSequence.current;
