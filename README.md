@@ -7,9 +7,10 @@ Gate Visa Checklist; yolcu listelerini, PDF evrakları, JPG biyometrik fotoğraf
 - XLSX, XLS, XLSM, ODS ve CSV yolcu listelerini; ayrıca bu dosyaları içeren ZIP arşivlerini işler.
 - Dosya adedi sınırı koymaz; dosyaları sırayla işleyerek mobil cihaz belleğini korur.
 - Yolcu kayıtlarını, kaynak dosyaları ve yolcu evraklarını Web Crypto (AES-GCM) ile cihazda şifreli saklar.
-- Yolcu kartından birden fazla PDF evrak ekler; evrakları çevrimdışı açar, indirir ve teslim paketine dahil eder.
+- Yolcu kartından veya detay ekranındaki görünür yükleme alanından birden fazla PDF evrak ekler; evrakları çevrimdışı açar, indirir ve teslim paketine dahil eder.
 - JPG/JPEG biyometrik fotoğrafları ve fotoğraf ZIP'lerini pasaport numarası veya benzersiz ad eşleşmesiyle yolculara bağlar.
 - Yolcuları tarih, durum ve metin ile filtreler; tekrarları ve eksik alanları gösterir.
+- Seçili ya da filtrelenmiş tüm yolcular için İDO logolu, A4 yatay yazdırılabilir günlük liste üretir; 20 kayıtlık ekran sayfalamasından etkilenmez.
 - Excel, CSV, manifest, fotoğraf ZIP'i, PDF evrak ZIP'i ve eksiksiz teslim paketi üretir.
 - Şifreli cihaz yedeği alır ve geri yükler.
 - Uygulama kabuğu ilk başarılı açılıştan sonra çevrimdışı çalışır.

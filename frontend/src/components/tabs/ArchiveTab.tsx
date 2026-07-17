@@ -67,6 +67,7 @@ function ArchiveCard({ group }: { group: ArchiveGroup }) {
       {open && (
         <div className="archive-body">
           <div className="action-grid">
+            <LocalDownloadButton className="primary-btn" kind="daily-list" ids={group.passenger_ids}>İDO günlük liste</LocalDownloadButton>
             <LocalDownloadButton className="soft-btn" kind="excel" ids={group.passenger_ids}>Excel indir</LocalDownloadButton>
             <LocalDownloadButton className="soft-btn" kind="csv" ids={group.passenger_ids}>CSV indir</LocalDownloadButton>
             <LocalDownloadButton className="primary-btn" kind="package" ids={group.passenger_ids}>Gün paketini indir</LocalDownloadButton>

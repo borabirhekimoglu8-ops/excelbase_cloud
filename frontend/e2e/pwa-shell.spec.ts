@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import * as XLSX from "@e965/xlsx";
+import { readFile } from "node:fs/promises";
 
 function passengerWorkbook(name: string, passport: string, index = 1): Buffer {
   const worksheet = XLSX.utils.aoa_to_sheet([
@@ -77,6 +78,7 @@ test("uçak modunda yerel kasa açılır ve içe aktarılan yolcu kalır", async
 });
 
 test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", async ({ context, page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.locator('input[name="name"]').fill("Evrak Operatörü");
   await page.locator('input[name="pin"]').fill("123456");
@@ -91,8 +93,21 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
   await expect(page.getByText("HAZIR", { exact: true })).toBeVisible();
 
   await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
+  const inlinePdfInput = page.getByLabel("AYŞE YOLCU için PDF evrak seç");
+  await expect(inlinePdfInput).toBeVisible();
+  await expect(inlinePdfInput).toBeInViewport();
+  await inlinePdfInput.setInputFiles({
+    name: "TR123456-pasaport.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.7\nGate Visa Checklist test pasaportu\n%%EOF"),
+  });
+  await expect(page.getByText("1 PDF", { exact: true })).toBeVisible();
+
   await page.getByText("AYŞE YOLCU", { exact: true }).click();
   await expect(page.getByText("Yolcu Detayı", { exact: true })).toBeVisible();
+  const quickPdfInput = page.getByLabel("Yolcu PDF evraklarını hızlı yükle");
+  await expect(quickPdfInput).toBeVisible();
+  await expect(quickPdfInput).toBeInViewport();
 
   await page.getByLabel("JPG biyometrik fotoğraf seç").setInputFiles({
     name: "TR123456-biyometrik.jpg",
@@ -102,18 +117,11 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
   await expect(page.getByText("JPG DEĞİŞTİR", { exact: true })).toBeVisible();
   await expect(page.locator('.ido-sheet img[alt="AYŞE YOLCU"]')).toHaveAttribute("src", /^blob:/);
 
-  await page.getByLabel("Yolcu PDF evraklarını seç").setInputFiles([
-    {
-      name: "TR123456-pasaport.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from("%PDF-1.7\nGate Visa Checklist test pasaportu\n%%EOF"),
-    },
-    {
-      name: "TR123456-vize-formu.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from("%PDF-1.7\nGate Visa Checklist test vize formu\n%%EOF"),
-    },
-  ]);
+  await quickPdfInput.setInputFiles({
+    name: "TR123456-vize-formu.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.7\nGate Visa Checklist test vize formu\n%%EOF"),
+  });
   await expect(page.getByText("TR123456-pasaport.pdf", { exact: true })).toBeVisible();
   await expect(page.getByText("TR123456-vize-formu.pdf", { exact: true })).toBeVisible();
   await expect(page.getByText("2 EVRAK", { exact: true })).toBeVisible();
@@ -153,6 +161,18 @@ test("49 Excel dosyası sırayla işlenir ve çevrimdışı soğuk açılışta 
 
   await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
   await expect(page.getByText("TOPLAM 49 KAYIT", { exact: true })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "İDO LİSTESİ", exact: true }).click();
+  const dailyListDownload = await downloadPromise;
+  expect(dailyListDownload.suggestedFilename()).toMatch(/^ido-gunluk-yolcu-listesi-.*\.html$/);
+  const downloadPath = await dailyListDownload.path();
+  expect(downloadPath).not.toBeNull();
+  const dailyList = await readFile(downloadPath!, "utf8");
+  expect(dailyList).toContain("İDO Günlük Yolcu Listesi");
+  expect(dailyList).toContain("<b>49</b><span>Toplam yolcu</span>");
+  expect(dailyList).toContain("YOLCU1 YOLCU");
+  expect(dailyList).toContain("YOLCU49 YOLCU");
+  expect(dailyList).toContain("data:image/jpeg;base64,");
 
   await page.evaluate(async () => navigator.serviceWorker.ready);
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
