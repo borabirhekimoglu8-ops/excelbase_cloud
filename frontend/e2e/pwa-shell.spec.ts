@@ -106,7 +106,8 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
 
   await page.getByText("AYŞE YOLCU", { exact: true }).click();
   await expect(page.getByText("Yolcu Detayı", { exact: true })).toBeVisible();
-  const quickPdfInput = page.getByLabel("Yolcu PDF evraklarını hızlı yükle");
+  const quickDocumentPanel = page.locator(".ic-document-quick");
+  const quickPdfInput = quickDocumentPanel.locator('input[type="file"]');
   const quickPdfAction = page.getByText("PDF SEÇ", { exact: true });
   await expect(quickPdfAction).toBeVisible();
   await expect(quickPdfAction).toBeInViewport();
@@ -119,6 +120,7 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
   await expect(page.getByText("JPG DEĞİŞTİR", { exact: true })).toBeVisible();
   await expect(page.locator('.ido-sheet img[alt="AYŞE YOLCU"]')).toHaveAttribute("src", /^blob:/);
 
+  await quickDocumentPanel.getByRole("combobox").selectOption("application_form");
   await quickPdfInput.setInputFiles({
     name: "TR123456-vize-formu.pdf",
     mimeType: "application/pdf",
