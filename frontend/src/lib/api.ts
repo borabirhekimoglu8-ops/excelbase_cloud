@@ -8,6 +8,7 @@ import {
   localBackups,
   localBulkDelete,
   localClearAll,
+  localCreatePassengerRecord,
   localDeleteJob,
   localDeletePassenger,
   localDeletePassengerDocument,
@@ -24,6 +25,7 @@ import {
   localPreview,
   localQueueImportFile,
   localQueueState,
+  localRecordFolders,
   localRemovePassengerPhoto,
   localRetryJob,
   localRestoreEncryptedBackup,
@@ -34,13 +36,40 @@ import {
   localUndoImport,
   localUnmatchedPhotos,
   localUpdatePassenger,
+  localUpdatePassengerDocumentCategory,
   localUploadPassengerFile,
   localUploadPassengerFiles,
   localUploadPassengerDocuments,
   localUsers,
 } from "@/lib/offline/localApi";
 
-export type DateScope = { range: string; start: string; end: string };
+export type DateField = "departure" | "created";
+export type DateScope = { range: string; start: string; end: string; field?: DateField };
+
+export const DOCUMENT_CATEGORIES = [
+  "passport",
+  "application_form",
+  "hotel",
+  "ferry",
+  "insurance",
+  "bank",
+  "other",
+] as const;
+
+export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number];
+export const REQUIRED_DOCUMENT_CATEGORIES: readonly DocumentCategory[] = ["passport", "application_form"];
+export type RecordStatus = "draft" | "review" | "ready";
+export type RecordSource = "manual" | "import";
+
+export const DOCUMENT_CATEGORY_LABELS: Record<DocumentCategory, string> = {
+  passport: "Pasaport",
+  application_form: "Başvuru formu",
+  hotel: "Otel rezervasyonu",
+  ferry: "Feribot bileti",
+  insurance: "Seyahat sigortası",
+  bank: "Banka / finansal evrak",
+  other: "Diğer evrak",
+};
 
 export type PassengerDocument = {
   id: string;
@@ -48,6 +77,7 @@ export type PassengerDocument = {
   mime: "application/pdf";
   size: number;
   created_at: string;
+  category: DocumentCategory;
 };
 
 export type PassengerDocumentFile = {
@@ -69,6 +99,13 @@ export type Passenger = {
   child_fee: string;
   source_file: string;
   sheet: string;
+  /** Empty only for legacy rows whose creation time is genuinely unknown. */
+  created_at: string;
+  /** Local calendar date used as the stable record-folder key. */
+  record_date: string;
+  created_by: string;
+  record_status: RecordStatus;
+  record_source: RecordSource;
   photo: string;
   photo_url: string;
   /** Passenger-specific PDF metadata. Payloads stay encrypted in the local vault. */
@@ -76,6 +113,36 @@ export type Passenger = {
   issues: string[];
   duplicate: boolean;
 };
+
+export type ManualPassengerInput = {
+  no: string;
+  first_name: string;
+  last_name: string;
+  passport_no: string;
+  voucher: string;
+  departure_date: string;
+  arrival_date: string;
+  adult_fee: string;
+  child_fee: string;
+  record_date: string;
+  created_by: string;
+  save_as_draft?: boolean;
+};
+
+export type PassengerDocumentUpload = { file: File; category: DocumentCategory };
+
+export type RecordFolder = {
+  date_key: string;
+  count: number;
+  ready_count: number;
+  review_count: number;
+  draft_count: number;
+  with_photo: number;
+  document_count: number;
+  passenger_ids: number[];
+};
+
+export type RecordFolderResponse = { groups: RecordFolder[]; total_count: number };
 
 export type ImportHistoryItem = {
   time?: string;
@@ -229,6 +296,7 @@ export function isRetryableTransportError(error: unknown): error is ApiRequestEr
 function appendScope(qs: URLSearchParams, scope?: DateScope): void {
   if (!scope) return;
   qs.set("range", scope.range || "Tümü");
+  qs.set("field", scope.field ?? "departure");
   if (scope.start) qs.set("start", scope.start);
   if (scope.end) qs.set("end", scope.end);
 }
@@ -256,6 +324,8 @@ export const fetchPassengerPage = localPassengerPage;
 export function fetchArchive(scope: DateScope = { range: "Tümü", start: "", end: "" }): Promise<ArchiveResponse> {
   return localArchive(scope);
 }
+export const fetchRecordFolders = localRecordFolders;
+export const createPassengerRecord = localCreatePassengerRecord;
 export const updatePassenger = localUpdatePassenger;
 export const deletePassenger = localDeletePassenger;
 export const bulkDelete = localBulkDelete;
@@ -319,11 +389,13 @@ export const openPassengerDocument = localPassengerDocumentFile;
 export function addPassengerDocuments(
   passengerId: number,
   files: FileList | File[],
+  category: DocumentCategory = "other",
 ): Promise<PassengerDocument[]> {
-  return localUploadPassengerDocuments(passengerId, Array.from(files));
+  return localUploadPassengerDocuments(passengerId, Array.from(files), category);
 }
 export const uploadPassengerDocuments = addPassengerDocuments;
 export const deletePassengerDocument = localDeletePassengerDocument;
+export const updatePassengerDocumentCategory = localUpdatePassengerDocumentCategory;
 export const downloadPassengerDocument = downloadLocalPassengerDocument;
 export const fetchUnmatchedPhotos = localUnmatchedPhotos;
 export const assignUnmatchedPhoto = localAssignUnmatched;

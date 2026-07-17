@@ -1,5 +1,6 @@
 import * as XLSX from "@e965/xlsx";
 import {
+  BlobWriter,
   BlobReader,
   Uint8ArrayWriter,
   ZipWriter,
@@ -24,19 +25,37 @@ export const PASSENGER_EXPORT_COLUMNS = [
 ] as const;
 
 export type ExportPassengerRow = ParsedPassengerRow & {
+  id?: number;
+  created_at?: string;
+  record_date?: string;
+  created_by?: string;
+  record_status?: string;
   photo?: string;
-  documents?: ReadonlyArray<{ id: string; filename: string }>;
+  documents?: ReadonlyArray<{ id: string; filename: string; category?: ExportDocumentCategory }>;
 };
 
 export type ExportPhoto = {
   filename: string;
   blob: Blob;
+  passengerId?: number;
+  passengerName?: string;
+  passportNo?: string;
 };
+
+export type ExportDocumentCategory =
+  | "passport"
+  | "application_form"
+  | "hotel"
+  | "ferry"
+  | "insurance"
+  | "bank"
+  | "other";
 
 export type ExportDocument = ExportPhoto & {
   passengerId: number;
   passengerName: string;
   passportNo: string;
+  category?: ExportDocumentCategory;
 };
 
 export type ManifestOptions = {
@@ -58,12 +77,44 @@ export type DeliveryZipOptions = ManifestOptions & {
   documents?: readonly ExportDocument[];
 };
 
+export type RecordFolderZipOptions = DailyPassengerListOptions & {
+  recordDate: string;
+  documents?: readonly ExportDocument[];
+};
+
 export type SaveBlobResult = "shared" | "downloaded" | "cancelled";
 
 type ExportRecord = Record<(typeof PASSENGER_EXPORT_COLUMNS)[number], string>;
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const ZIP_MIME = "application/zip";
+const REQUIRED_DOCUMENT_CATEGORIES: readonly ExportDocumentCategory[] = ["passport", "application_form"];
+const DOCUMENT_CATEGORY_ORDER: readonly ExportDocumentCategory[] = [
+  "passport",
+  "application_form",
+  "hotel",
+  "ferry",
+  "insurance",
+  "bank",
+  "other",
+];
+const DOCUMENT_CATEGORY_FILENAMES: Record<Exclude<ExportDocumentCategory, "other">, string> = {
+  passport: "Pasaport.pdf",
+  application_form: "Vize_Basvuru_Formu.pdf",
+  hotel: "Otel_Rezervasyonu.pdf",
+  ferry: "Feribot_Bileti.pdf",
+  insurance: "Seyahat_Sigortasi.pdf",
+  bank: "Banka_Belgesi.pdf",
+};
+const DOCUMENT_CATEGORY_MISSING_LABELS: Record<ExportDocumentCategory, string> = {
+  passport: "Pasaport PDF",
+  application_form: "Başvuru formu PDF",
+  hotel: "Otel rezervasyonu PDF",
+  ferry: "Feribot bileti PDF",
+  insurance: "Seyahat sigortası PDF",
+  bank: "Banka / finansal evrak PDF",
+  other: "Diğer evrak",
+};
 
 function text(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -249,11 +300,13 @@ function passengerDisplayName(row: ExportPassengerRow): string {
 }
 
 function passengerListStatus(row: ExportPassengerRow): "HAZIR" | "KONTROL" {
+  const categories = new Set((row.documents ?? []).map((document) => document.category ?? "other"));
   return passengerDisplayName(row)
     && text(row.passport_no)
     && text(row.voucher)
     && (text(row.adult_fee) || text(row.child_fee))
     && text(row.photo)
+    && REQUIRED_DOCUMENT_CATEGORIES.every((category) => categories.has(category))
     ? "HAZIR"
     : "KONTROL";
 }
@@ -346,6 +399,172 @@ export function createIdoDailyPassengerListHtmlBlob(
   return new Blob([html], { type: "text/html;charset=utf-8" });
 }
 
+function attachmentMatchKey(value: unknown): string {
+  return text(value)
+    .toLocaleLowerCase("tr-TR")
+    .replaceAll("ı", "i")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function attachmentBelongsToRow(
+  row: ExportPassengerRow,
+  attachment: Pick<ExportPhoto, "filename" | "passengerId" | "passengerName" | "passportNo">,
+): boolean {
+  if (row.id !== undefined && attachment.passengerId !== undefined) return row.id === attachment.passengerId;
+
+  const rowPassport = attachmentMatchKey(row.passport_no);
+  const attachmentPassport = attachmentMatchKey(attachment.passportNo);
+  if (rowPassport && attachmentPassport) return rowPassport === attachmentPassport;
+
+  const rowName = attachmentMatchKey(passengerDisplayName(row));
+  const attachmentName = attachmentMatchKey(attachment.passengerName);
+  if (rowName && attachmentName) return rowName === attachmentName;
+
+  // Compatibility with photo exports produced before passenger metadata was
+  // added: those files are named with the passport number or passenger name.
+  const filename = attachmentMatchKey(attachment.filename.replace(/\.[^.]+$/, ""));
+  return Boolean(
+    (rowPassport.length >= 3 && filename.includes(rowPassport))
+    || (rowName.length >= 5 && filename.includes(rowName)),
+  );
+}
+
+function rowPhotos(row: ExportPassengerRow, photos: readonly ExportPhoto[]): ExportPhoto[] {
+  return photos
+    .filter((photo) => attachmentBelongsToRow(row, photo))
+    .toSorted((left, right) => left.filename.localeCompare(right.filename, "tr"));
+}
+
+function documentCategory(document: Pick<ExportDocument, "category">): ExportDocumentCategory {
+  return DOCUMENT_CATEGORY_ORDER.includes(document.category ?? "other") ? document.category ?? "other" : "other";
+}
+
+function rowDocuments(row: ExportPassengerRow, documents: readonly ExportDocument[]): ExportDocument[] {
+  return documents
+    .filter((document) => attachmentBelongsToRow(row, document))
+    .toSorted((left, right) => {
+      const categoryOrder = DOCUMENT_CATEGORY_ORDER.indexOf(documentCategory(left))
+        - DOCUMENT_CATEGORY_ORDER.indexOf(documentCategory(right));
+      return categoryOrder || left.filename.localeCompare(right.filename, "tr");
+    });
+}
+
+function missingPassengerFields(row: ExportPassengerRow): string[] {
+  const missing: string[] = [];
+  if (!passengerDisplayName(row)) missing.push("Ad soyad");
+  if (!text(row.passport_no)) missing.push("Pasaport no");
+  if (!text(row.voucher)) missing.push("Voucher");
+  if (!text(row.departure_date)) missing.push("Gidiş tarihi");
+  if (!text(row.arrival_date)) missing.push("Varış tarihi");
+  if (!text(row.adult_fee) && !text(row.child_fee)) missing.push("Vize ücreti");
+  return missing;
+}
+
+type MissingDocumentReportOptions = {
+  recordDate: string;
+  photos?: readonly ExportPhoto[];
+  documents?: readonly ExportDocument[];
+};
+
+/** Creates the operational exception report included in each record-date folder. */
+export function createMissingDocumentsXlsxBlob(
+  rows: readonly ExportPassengerRow[],
+  options: MissingDocumentReportOptions,
+): Blob {
+  const photos = options.photos ?? [];
+  const documents = options.documents ?? [];
+  const records = [...rows]
+    .sort(passengerListOrder)
+    .map((row, index) => {
+      const fields = missingPassengerFields(row);
+      const availableCategories = new Set(rowDocuments(row, documents).map(documentCategory));
+      const missingDocuments = [
+        ...(rowPhotos(row, photos).length ? [] : ["Biyometrik fotoğraf"]),
+        ...REQUIRED_DOCUMENT_CATEGORIES
+          .filter((category) => !availableCategories.has(category))
+          .map((category) => DOCUMENT_CATEGORY_MISSING_LABELS[category]),
+      ];
+      if (!fields.length && !missingDocuments.length) return null;
+      return {
+        Sıra: String(index + 1),
+        "Kayıt Tarihi": text(row.record_date) || options.recordDate,
+        "Kayıt Saati": text(row.created_at),
+        "Ad Soyad": passengerDisplayName(row),
+        "Pasaport No": text(row.passport_no),
+        Voucher: text(row.voucher),
+        "Gidiş Tarihi": text(row.departure_date),
+        "Eksik Alanlar": fields.join(", "),
+        "Eksik Evraklar": missingDocuments.join(", "),
+        Durum: text(row.record_status).toLocaleLowerCase("tr-TR") === "draft" ? "TASLAK" : "EKSİK",
+      };
+    })
+    .filter((record): record is NonNullable<typeof record> => record !== null);
+  const columns = [
+    "Sıra",
+    "Kayıt Tarihi",
+    "Kayıt Saati",
+    "Ad Soyad",
+    "Pasaport No",
+    "Voucher",
+    "Gidiş Tarihi",
+    "Eksik Alanlar",
+    "Eksik Evraklar",
+    "Durum",
+  ];
+  const worksheet = XLSX.utils.json_to_sheet(records, { header: columns, skipHeader: false });
+  worksheet["!cols"] = [
+    { wch: 8 },
+    { wch: 15 },
+    { wch: 24 },
+    { wch: 30 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 15 },
+    { wch: 35 },
+    { wch: 48 },
+    { wch: 12 },
+  ];
+  worksheet["!autofilter"] = { ref: `A1:J${Math.max(records.length + 1, 1)}` };
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Eksik Evraklar");
+  workbook.Props = {
+    Title: `İDO Eksik Evrak Raporu ${options.recordDate}`,
+    Subject: "Gate Visa Checklist kayıt tarihi evrak kontrolü",
+    Company: "İDO",
+  };
+  return blobFromBytes(workbookBytes(workbook), XLSX_MIME);
+}
+
+function archiveToken(value: unknown, fallback: string, maxLength = 72): string {
+  const cleaned = text(value)
+    .toLocaleUpperCase("tr-TR")
+    .replace(/[ÇĞİÖŞÜ]/g, (character) => ({ Ç: "C", Ğ: "G", İ: "I", Ö: "O", Ş: "S", Ü: "U" })[character] ?? character)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, maxLength);
+  return cleaned || fallback;
+}
+
+function passengerFolderName(row: ExportPassengerRow, index: number, width: number): string {
+  const order = String(index + 1).padStart(width, "0");
+  const passport = archiveToken(row.passport_no, "PASAPORT_YOK", 42);
+  const name = archiveToken(passengerDisplayName(row), "ISIMSIZ_YOLCU", 72);
+  return sanitizeZipFilename(`${order}_${passport}_${name}`, `${order}_YOLCU`);
+}
+
+function categorizedDocumentFilename(document: ExportDocument): string {
+  const category = documentCategory(document);
+  if (category !== "other") return DOCUMENT_CATEGORY_FILENAMES[category];
+  const original = sanitizeZipFilename(document.filename, "Evrak.pdf");
+  const dot = original.lastIndexOf(".");
+  const stem = dot > 0 ? original.slice(0, dot) : original;
+  return `Diger_${archiveToken(stem, "Evrak", 96)}.pdf`;
+}
+
 export function sanitizeZipFilename(filename: string, fallback = "dosya"): string {
   const leaf = text(filename).replaceAll("\\", "/").split("/").pop() ?? "";
   const cleaned = leaf
@@ -377,15 +596,15 @@ function uniqueFilename(filename: string, used: Set<string>): string {
   return candidate;
 }
 
-async function addPhotos(
-  writer: ZipWriter<Uint8Array>,
+async function addPhotos<Output>(
+  writer: ZipWriter<Output>,
   photos: readonly ExportPhoto[],
   prefix: string,
 ): Promise<void> {
   const used = new Set<string>();
   for (const photo of photos) {
     const filename = uniqueFilename(photo.filename, used);
-    await writer.add(`${prefix}${filename}`, new BlobReader(photo.blob), { useWebWorkers: false, level: 6 });
+    await writer.add(`${prefix}${filename}`, new BlobReader(photo.blob), { useWebWorkers: false, level: 0 });
   }
 }
 
@@ -396,8 +615,8 @@ export async function createPhotosZipBlob(photos: readonly ExportPhoto[]): Promi
   return blobFromBytes(bytes, ZIP_MIME);
 }
 
-async function addDocuments(
-  writer: ZipWriter<Uint8Array>,
+async function addDocuments<Output>(
+  writer: ZipWriter<Output>,
   documents: readonly ExportDocument[],
 ): Promise<void> {
   const usedByFolder = new Map<string, Set<string>>();
@@ -422,6 +641,75 @@ export async function createDocumentsZipBlob(documents: readonly ExportDocument[
   await addDocuments(writer, documents);
   const bytes = await writer.close();
   return blobFromBytes(bytes, ZIP_MIME);
+}
+
+/**
+ * Builds a portable record-date folder. Every passenger gets an isolated,
+ * deterministic directory; already-compressed JPG/PDF payloads are stored
+ * without recompression so large iPhone exports remain responsive.
+ */
+export async function createRecordFolderZipBlob(
+  rows: readonly ExportPassengerRow[],
+  photos: readonly ExportPhoto[] = [],
+  options: RecordFolderZipOptions,
+): Promise<Blob> {
+  const orderedRows = [...rows].sort(passengerListOrder);
+  const documents = options.documents ?? [];
+  const recordDate = /^\d{4}-\d{2}-\d{2}$/.test(text(options.recordDate))
+    ? text(options.recordDate)
+    : "Tarihsiz";
+  const root = `${recordDate}_IDO_GATE_VISA/`;
+  const writer = new ZipWriter(new BlobWriter(ZIP_MIME), { useWebWorkers: false });
+  const dailyXlsx = createPassengerXlsxBlob(orderedRows);
+  const controlHtml = createIdoDailyPassengerListHtmlBlob(orderedRows, {
+    ...options,
+    title: options.title ?? "İDO Kontrol Listesi",
+    operationLabel: options.operationLabel ?? recordDate,
+  });
+  const missingXlsx = createMissingDocumentsXlsxBlob(orderedRows, {
+    recordDate,
+    photos,
+    documents,
+  });
+
+  await writer.add(root, undefined, { directory: true });
+  await writer.add(`${root}IDO_Gunluk_Yolcu_Listesi.xlsx`, new BlobReader(dailyXlsx), {
+    useWebWorkers: false,
+    level: 6,
+  });
+  await writer.add(`${root}IDO_Kontrol_Listesi.html`, new BlobReader(controlHtml), {
+    useWebWorkers: false,
+    level: 6,
+  });
+  await writer.add(`${root}Eksik_Evrak_Raporu.xlsx`, new BlobReader(missingXlsx), {
+    useWebWorkers: false,
+    level: 6,
+  });
+
+  const width = Math.max(3, String(orderedRows.length).length);
+  for (const [index, row] of orderedRows.entries()) {
+    const folder = passengerFolderName(row, index, width);
+    const prefix = `${root}${folder}/`;
+    const used = new Set<string>();
+    await writer.add(prefix, undefined, { directory: true });
+
+    for (const photo of rowPhotos(row, photos)) {
+      const filename = uniqueFilename("Biyometrik_Fotograf.jpg", used);
+      await writer.add(`${prefix}${filename}`, new BlobReader(photo.blob), {
+        useWebWorkers: false,
+        level: 0,
+      });
+    }
+    for (const document of rowDocuments(row, documents)) {
+      const filename = uniqueFilename(categorizedDocumentFilename(document), used);
+      await writer.add(`${prefix}${filename}`, new BlobReader(document.blob), {
+        useWebWorkers: false,
+        level: 0,
+      });
+    }
+  }
+
+  return writer.close();
 }
 
 export async function createDeliveryZipBlob(

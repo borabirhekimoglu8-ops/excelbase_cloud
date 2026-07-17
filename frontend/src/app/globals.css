@@ -893,6 +893,177 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ido-nav-label { color: var(--ido-faint); font-weight: 500; font-size: 9px; letter-spacing: .01em; }
 .ido-nav-item.active .ido-nav-label { color: var(--ido-primary); font-weight: 600; }
 
+/* Kayıt / sefer tarihi ayrımı */
+.ic-scope-control {
+  display: grid;
+  gap: 7px;
+  padding: 7px;
+  overflow: visible;
+}
+.ic-date-basis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  background: #e5ecef;
+  border-radius: 4px;
+}
+.ic-date-basis button {
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ido-muted);
+  text-align: left;
+  cursor: pointer;
+}
+.ic-date-basis button span { font-size: 11px; font-weight: 750; }
+.ic-date-basis button small { font-size: 8px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ic-date-basis button.active { background: #fff; border-color: #c5d4da; color: var(--ido-primary-deep); box-shadow: 0 1px 3px rgba(5,59,82,.08); }
+.ic-scope-fixed { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 7px; color: var(--ido-primary-deep); }
+.ic-scope-fixed span { font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+.ic-scope-fixed small { color: var(--ido-muted); font-size: 9px; font-weight: 550; }
+.ic-scope-control .scope-options { width: 100%; gap: 3px; overflow-x: auto; scrollbar-width: none; }
+.ic-scope-control .scope-options::-webkit-scrollbar { display: none; }
+.ic-scope-control .scope-option { flex: 1 0 auto; min-height: 38px; padding: 7px 10px; font-size: 10px; }
+.ic-scope-control .scope-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.ic-scope-control .scope-dates label { display: grid; gap: 3px; }
+.ic-scope-control .scope-dates input { width: 100%; min-width: 0; min-height: 44px; }
+
+/* Günlük kayıt klasörleri */
+.ic-records-page { display: grid; gap: 10px; }
+.ic-records-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: var(--ido-primary-deep);
+  color: #fff;
+  border-radius: 5px;
+  box-shadow: 0 10px 26px rgba(5,59,82,.12);
+}
+.ic-records-hero::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; background: linear-gradient(90deg,var(--ido-primary) 0 78%,var(--ido-orange) 78%); }
+.ic-records-hero-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ic-records-hero-brand img { flex: 0 0 auto; width: 67px; height: 46px; object-fit: contain; padding: 3px; border-radius: 4px; background: #fff; }
+.ic-records-hero-brand div { min-width: 0; }
+.ic-records-hero-brand p { margin: 0 0 2px; color: #83d1e3; font-size: 8px; font-weight: 800; letter-spacing: .14em; }
+.ic-records-hero-brand h2 { margin: 0; font-size: 19px; line-height: 1.2; font-weight: 700; letter-spacing: -.015em; }
+.ic-records-hero-brand span { display: block; margin-top: 4px; color: #c5dce5; font-size: 9px; line-height: 1.35; }
+.ic-records-stats { display: grid; grid-template-columns: repeat(4,1fr); border: 1px solid rgba(255,255,255,.16); border-radius: 3px; overflow: hidden; }
+.ic-records-stats div { display: grid; justify-items: center; gap: 1px; padding: 8px 3px; border-right: 1px solid rgba(255,255,255,.14); }
+.ic-records-stats div:last-child { border-right: 0; }
+.ic-records-stats strong { font-size: 17px; line-height: 1.1; font-weight: 750; }
+.ic-records-stats span { color: #b8d2dc; font-size: 7px; font-weight: 700; letter-spacing: .06em; }
+.ic-records-new { min-height: 46px; border: 0; border-radius: 3px; background: #fff; color: var(--ido-primary-deep); font-size: 10px; font-weight: 800; letter-spacing: .035em; cursor: pointer; }
+.ic-records-loading { padding: 28px 16px; border: 1px solid var(--ido-border); background: #fff; color: var(--ido-muted); text-align: center; font-size: 11px; }
+.ic-records-empty { display: grid; justify-items: center; gap: 7px; padding: 34px 20px; border: 1px solid var(--ido-border); background: #fff; text-align: center; }
+.ic-records-empty-mark { width: 42px; height: 42px; display: grid; place-items: center; background: var(--ido-blue-tint); color: var(--ido-primary); font-size: 24px; }
+.ic-records-empty h3 { margin: 3px 0 0; color: var(--ido-ink); font-size: 16px; }
+.ic-records-empty p { margin: 0; color: var(--ido-muted); font-size: 10px; }
+.ic-records-empty button { min-height: 44px; margin-top: 5px; padding: 0 18px; border: 0; background: var(--ido-primary); color: #fff; font-size: 10px; font-weight: 750; cursor: pointer; }
+.ic-folder-list { display: grid; gap: 8px; }
+.ic-folder-card { overflow: hidden; border: 1px solid var(--ido-border); border-left: 4px solid #a7bac3; border-radius: 4px; background: #fff; }
+.ic-folder-card.open { border-left-color: var(--ido-primary); box-shadow: 0 8px 22px rgba(5,59,82,.06); }
+.ic-folder-head { width: 100%; min-height: 90px; display: flex; align-items: center; gap: 11px; padding: 12px; border: 0; background: #fff; text-align: left; cursor: pointer; }
+.ic-folder-icon { position: relative; flex: 0 0 auto; width: 43px; height: 34px; margin-top: 6px; border-radius: 3px; background: #d8ebf1; }
+.ic-folder-icon::before { content: ""; position: absolute; left: 0; top: -6px; width: 22px; height: 10px; border-radius: 3px 3px 0 0; background: #b9dce6; }
+.ic-folder-icon span { position: absolute; inset: 8px 9px; border-top: 2px solid var(--ido-primary); border-bottom: 2px solid var(--ido-primary); opacity: .75; }
+.ic-folder-copy { min-width: 0; flex: 1 1 auto; display: grid; gap: 2px; }
+.ic-folder-copy small { color: var(--ido-primary); font-size: 7px; font-weight: 800; letter-spacing: .1em; }
+.ic-folder-copy strong { color: var(--ido-ink); font-size: 13px; font-weight: 700; }
+.ic-folder-copy > span { color: var(--ido-muted); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ic-folder-status { flex: 0 0 auto; display: grid; justify-items: end; gap: 4px; }
+.ic-folder-status b { color: var(--ido-primary); font-size: 17px; line-height: 1; }
+.ic-folder-body { display: grid; gap: 10px; padding: 12px; border-top: 1px solid var(--ido-border); background: #f7fafb; }
+.ic-folder-breakdown { display: grid; grid-template-columns: repeat(4,1fr); border: 1px solid var(--ido-border); background: #fff; }
+.ic-folder-breakdown div { display: grid; gap: 1px; padding: 8px 5px; border-right: 1px solid var(--ido-border); text-align: center; }
+.ic-folder-breakdown div:last-child { border-right: 0; }
+.ic-folder-breakdown span { color: var(--ido-muted); font-size: 7px; font-weight: 650; text-transform: uppercase; }
+.ic-folder-breakdown strong { color: var(--ido-primary-deep); font-size: 14px; }
+.ic-folder-primary { min-height: 48px; border: 0; border-radius: 3px; background: var(--ido-primary); color: #fff; font-size: 10px; font-weight: 800; cursor: pointer; }
+.ic-folder-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.ic-folder-actions button { min-height: 42px; border: 1px solid var(--ido-border); border-radius: 3px; background: #fff; color: var(--ido-primary-deep); font-size: 9px; font-weight: 750; cursor: pointer; }
+.ic-folder-primary:disabled,.ic-folder-actions button:disabled { opacity: .55; cursor: wait; }
+.ic-folder-legacy-note { margin: 0; padding: 8px 10px; background: var(--ido-amber-tint); color: var(--ido-amber); font-size: 9px; line-height: 1.4; }
+
+/* Tekil yolcu kayıt formu */
+.ic-record-form { display: grid; gap: 10px; }
+.ic-record-intro { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 13px; padding: 15px; border-radius: 4px; background: var(--ido-primary-deep); color: #fff; }
+.ic-record-eyebrow { margin: 0 0 4px; color: #81d0e2; font-size: 8px; font-weight: 800; letter-spacing: .13em; }
+.ic-record-intro h2 { margin: 0; font-size: 18px; line-height: 1.2; }
+.ic-record-intro p:not(.ic-record-eyebrow) { margin: 5px 0 0; color: #c5dce5; font-size: 9px; line-height: 1.4; }
+.ic-record-date-seal { min-width: 96px; display: grid; justify-items: end; gap: 1px; padding-left: 12px; border-left: 1px solid rgba(255,255,255,.2); }
+.ic-record-date-seal span { color: #8cd4e4; font-size: 7px; font-weight: 800; letter-spacing: .08em; }
+.ic-record-date-seal strong { font-size: 12px; }
+.ic-record-date-seal small { max-width: 96px; color: #c5dce5; font-size: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ic-record-error { padding: 11px 12px; border-left: 4px solid var(--ido-red); border-radius: 3px; background: var(--ido-red-tint); color: var(--ido-red); font-size: 10px; font-weight: 650; line-height: 1.4; }
+.ic-form-section { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--ido-border); border-radius: 4px; background: #fff; }
+.ic-form-section-head { display: flex; align-items: flex-start; gap: 9px; }
+.ic-form-section-head > span:first-child { flex: 0 0 auto; display: inline-grid; place-items: center; width: 28px; height: 28px; border: 1px solid #a9d4e1; background: var(--ido-blue-tint); color: var(--ido-primary); font-size: 9px; font-weight: 800; }
+.ic-form-section-head > div { min-width: 0; flex: 1 1 auto; }
+.ic-form-section-head h3 { margin: 0; color: var(--ido-primary-deep); font-size: 14px; line-height: 1.25; }
+.ic-form-section-head p { margin: 2px 0 0; color: var(--ido-muted); font-size: 9px; }
+.ic-record-count { flex: 0 0 auto; min-width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--ido-primary); color: #fff; font-size: 10px; font-weight: 800; }
+.ic-form-grid { display: grid; grid-template-columns: 1fr; gap: 9px; }
+.ic-form-grid.two { grid-template-columns: 1fr 1fr; }
+.ic-form-field { min-width: 0; display: grid; gap: 4px; }
+.ic-form-field span { color: var(--ido-muted); font-size: 9px; font-weight: 700; }
+.ic-form-field input,.ic-form-field select { width: 100%; min-width: 0; min-height: 46px; padding: 9px 10px; border: 1px solid var(--ido-border); border-radius: 3px; background: #fbfcfd; color: var(--ido-ink); outline: none; }
+.ic-form-field input:focus,.ic-form-field select:focus { border-color: var(--ido-primary); box-shadow: 0 0 0 2px rgba(0,126,167,.10); background: #fff; }
+.ic-form-field input::placeholder { color: #91a0a8; }
+.ic-form-field.compact { max-width: 180px; }
+.ic-record-photo { display: flex; align-items: center; gap: 13px; padding: 11px; border: 1px solid var(--ido-border); background: #f8fbfc; }
+.ic-record-photo-preview { flex: 0 0 auto; width: 68px; height: 80px; display: grid; place-items: center; overflow: hidden; background: var(--ido-blue-tint); color: var(--ido-primary); font-size: 11px; font-weight: 800; }
+.ic-record-photo-preview img { width: 100%; height: 100%; object-fit: cover; }
+.ic-record-photo-copy { min-width: 0; flex: 1 1 auto; display: grid; gap: 3px; }
+.ic-record-photo-copy strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+.ic-record-photo-copy small { color: var(--ido-muted); font-size: 9px; }
+.ic-record-file-actions { display: flex; align-items: center; gap: 9px; margin-top: 4px; }
+.ic-record-file-button,.ic-record-file-actions button { min-height: 40px; display: inline-flex; align-items: center; padding: 0 11px; border: 1px solid var(--ido-border); border-radius: 3px; background: #fff; color: var(--ido-primary); font-size: 9px; font-weight: 750; cursor: pointer; }
+.ic-record-file-button.primary { border-color: var(--ido-primary); background: var(--ido-primary); color: #fff; }
+.ic-record-pdf-drop { min-height: 70px; display: flex; align-items: center; gap: 11px; padding: 12px; border: 1px dashed #8fc4d4; background: #f6fbfc; cursor: pointer; }
+.ic-record-pdf-drop > span:nth-child(2) { min-width: 0; display: grid; gap: 2px; }
+.ic-record-pdf-drop strong { color: var(--ido-primary-deep); font-size: 11px; }
+.ic-record-pdf-drop small { color: var(--ido-muted); font-size: 9px; }
+.ic-record-document-list { display: grid; gap: 7px; }
+.ic-record-document { display: grid; grid-template-columns: minmax(0,1fr) 145px auto; align-items: end; gap: 8px; padding: 10px; border: 1px solid var(--ido-border); background: #fff; }
+.ic-record-document-copy { min-width: 0; display: grid; gap: 2px; }
+.ic-record-document-copy strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
+.ic-record-document-copy small { color: var(--ido-muted); font-size: 8px; }
+.ic-record-document > label { min-width: 0; display: grid; gap: 3px; }
+.ic-record-document > label span { color: var(--ido-muted); font-size: 8px; font-weight: 650; }
+.ic-record-document select { width: 100%; min-width: 0; min-height: 40px; padding: 5px 7px; border: 1px solid var(--ido-border); background: #fbfcfd; color: var(--ido-ink); }
+.ic-record-document > button { min-height: 40px; padding: 0 8px; border: 0; background: var(--ido-red-tint); color: var(--ido-red); font-size: 8px; font-weight: 750; cursor: pointer; }
+.ic-record-savebar { position: sticky; bottom: 0; z-index: 35; display: grid; grid-template-columns: 1fr 1.45fr; gap: 7px; margin: 4px -16px -16px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--ido-border); background: rgba(255,255,255,.97); box-shadow: 0 -10px 24px rgba(5,59,82,.08); backdrop-filter: blur(10px); }
+.ic-record-savebar button { min-height: 50px; border-radius: 3px; font-size: 9px; font-weight: 800; letter-spacing: .02em; cursor: pointer; }
+.ic-record-savebar .primary { border: 0; background: var(--ido-primary); color: #fff; }
+.ic-record-savebar .secondary { border: 1px solid var(--ido-primary); background: #fff; color: var(--ido-primary); }
+.ic-record-savebar .cancel { grid-column: 1/-1; min-height: 38px; border: 0; background: transparent; color: var(--ido-muted); }
+.ic-record-savebar button:disabled { opacity: .55; cursor: wait; }
+
+/* Yolcu detayında kayıt metadata ve kategorili evrak yükleme */
+.ic-record-metadata { display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; border: 1px solid var(--ido-border); background: #fff; }
+.ic-record-metadata div { min-width: 0; display: grid; gap: 2px; padding: 9px 10px; border-right: 1px solid var(--ido-border); border-bottom: 1px solid var(--ido-border); }
+.ic-record-metadata div:nth-child(2n) { border-right: 0; }
+.ic-record-metadata div:nth-last-child(-n+2) { border-bottom: 0; }
+.ic-record-metadata span { color: var(--ido-faint); font-size: 7px; font-weight: 800; letter-spacing: .06em; }
+.ic-record-metadata strong { color: var(--ido-primary-deep); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ic-document-quick-controls { flex: 0 0 auto; display: grid; justify-items: end; gap: 5px; }
+.ic-document-category-picker { display: grid; gap: 2px; }
+.ic-document-category-picker span { color: var(--ido-muted); font-size: 7px; font-weight: 700; }
+.ic-document-category-picker select { width: 126px; min-height: 36px; padding: 4px 6px; border: 1px solid var(--ido-border); border-radius: 3px; background: #fff; color: var(--ido-ink); font-size: 9px; }
+.ic-document-add-row { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 8px; }
+.ic-document-category-picker.wide select { width: 100%; min-height: 44px; }
+.ic-document-inline-category { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.ic-document-inline-category span { color: var(--ido-faint); font-size: 8px; font-weight: 650; }
+.ic-document-inline-category select { min-height: 34px; max-width: 170px; padding: 4px 6px; border: 1px solid var(--ido-border); border-radius: 3px; background: #fff; color: var(--ido-ink); font-size: 9px; }
+
 /* Boş durum */
 .ic-empty { display: grid; justify-items: center; gap: 10px; text-align: center; padding: 48px 20px; }
 .ic-empty h3 { margin: 0; color: var(--ido-ink); font-size: 18px; font-weight: 600; }
@@ -914,6 +1085,14 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   .ido-content { padding-left: 12px; padding-right: 12px; }
   .ic-document-row { display: grid; }
   .ic-document-actions { justify-content: flex-start; padding-left: 50px; }
+  .ic-record-intro { grid-template-columns: 1fr; }
+  .ic-record-date-seal { justify-items: start; padding: 9px 0 0; border-left: 0; border-top: 1px solid rgba(255,255,255,.2); }
+  .ic-form-grid.two { grid-template-columns: 1fr; }
+  .ic-record-document { grid-template-columns: 1fr; align-items: stretch; }
+  .ic-record-document > button { justify-self: start; }
+  .ic-document-quick { display: grid; }
+  .ic-document-quick-controls { width: 100%; grid-template-columns: 1fr auto; align-items: end; justify-items: stretch; }
+  .ic-document-category-picker select { width: 100%; }
 }
 
 /* iOS Safari, 16px altındaki form alanına odaklanınca sayfayı yakınlaştırır.

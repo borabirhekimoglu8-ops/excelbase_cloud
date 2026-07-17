@@ -11,6 +11,7 @@ import type {
   AuthStatus,
   BackupInfo,
   DateScope,
+  DocumentCategory,
   ImportHistoryItem,
   ImportJob,
   ImportPreviewResponse,
@@ -18,12 +19,14 @@ import type {
   ImportResponse,
   MailImportResponse,
   MatchPhotosResponse,
+  ManualPassengerInput,
   OperationMeta,
   OperationSummary,
   Passenger,
   PassengerDocument,
   PassengerDocumentFile,
   PassengerPage,
+  RecordFolderResponse,
   SimpleResult,
   UnmatchedPhoto,
   UserView,
@@ -31,7 +34,9 @@ import type {
 import { newId } from "@/lib/id";
 import {
   buildArchive,
+  buildRecordFolders,
   buildSummary,
+  canonicalDate,
   filterPassengers,
   fold,
   passengerIdentity,
@@ -40,7 +45,7 @@ import {
   type StoredPassenger,
 } from "./domain";
 import { parsePassengerBytes, parseSelectedFile, type ParsedPassengerRow } from "./parser";
-import type { ExportDocument } from "./exporter";
+import type { ExportDocument, ExportPhoto } from "./exporter";
 import {
   clearPassengers,
   clearMeta,
@@ -79,7 +84,7 @@ const META_OPERATION = "operation-meta";
 const META_UNMATCHED = "unmatched-photos";
 const META_LAST_UNDO = "last-undo";
 const META_BATCH_PREFIX = "import-batch:";
-const APP_VERSION = "7.4.1-offline";
+const APP_VERSION = "7.5.0-offline";
 const SOURCE_PREFIX = "source:";
 const PHOTO_PREFIX = "photo:";
 const DOCUMENT_PREFIX = "document:";
@@ -97,6 +102,7 @@ type StoredImportJob = ImportJob & {
   dupStrategy: string;
   uploadIndex: number;
   sourceBinaryId: string;
+  createdBy?: string;
 };
 
 type BatchState = { started: boolean; replaceConsumed: boolean };
@@ -139,11 +145,30 @@ async function enrichedPassengers(rows: StoredPassenger[]): Promise<Passenger[]>
   return Promise.all(rows.map(async (row) => toPassenger(row, duplicates, await photoUrl(row.photo))));
 }
 
-function asStoredRow(row: ParsedPassengerRow, id: number, importJobId: string): StoredPassenger {
+function localDateFromInstant(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+    .map((part, index) => String(part).padStart(index === 0 ? 4 : 2, "0"))
+    .join("-");
+}
+
+function asStoredRow(
+  row: ParsedPassengerRow,
+  id: number,
+  importJobId: string,
+  createdAt: string,
+  createdBy = "Yerel kullanıcı",
+): StoredPassenger {
   return {
     id,
     ...row,
     full_name: text(row.full_name) || [text(row.first_name), text(row.last_name)].filter(Boolean).join(" "),
+    created_at: createdAt,
+    record_date: localDateFromInstant(createdAt),
+    created_by: createdBy,
+    record_status: "review",
+    record_source: "import",
     photo: "",
     documents: [],
     _import_job_id: importJobId,
@@ -272,12 +297,58 @@ export async function localArchive(scope?: DateScope): Promise<ArchiveResponse> 
   return buildArchive(rows, scope, meta ?? {});
 }
 
+export async function localRecordFolders(scope?: DateScope): Promise<RecordFolderResponse> {
+  const rows = await listPassengers<StoredPassenger>();
+  return buildRecordFolders(rows, scope);
+}
+
+export async function localCreatePassengerRecord(input: ManualPassengerInput): Promise<Passenger> {
+  const rows = await listPassengers<StoredPassenger>();
+  const recordDate = canonicalDate(input.record_date);
+  if (!recordDate) throw new Error("Geçerli bir kayıt tarihi seçin.");
+  const firstName = text(input.first_name);
+  const lastName = text(input.last_name);
+  const passport = text(input.passport_no).toLocaleUpperCase("tr-TR");
+  if (!input.save_as_draft && (!firstName || !lastName || !passport || !canonicalDate(input.departure_date))) {
+    throw new Error("Tamamlanan kayıtta ad, soyad, pasaport ve gidiş tarihi zorunludur. Eksik kaydı taslak olarak kaydedebilirsiniz.");
+  }
+  const status = await vaultAuthStatus();
+  const createdAt = new Date().toISOString();
+  const nextId = rows.reduce((maximum, row) => Math.max(maximum, row.id), 0) + 1;
+  const nextNo = text(input.no) || String(nextId);
+  const row: StoredPassenger = {
+    id: nextId,
+    no: nextNo,
+    first_name: firstName,
+    last_name: lastName,
+    full_name: [firstName, lastName].filter(Boolean).join(" "),
+    passport_no: passport,
+    voucher: text(input.voucher).toLocaleUpperCase("tr-TR"),
+    departure_date: canonicalDate(input.departure_date) || text(input.departure_date),
+    arrival_date: canonicalDate(input.arrival_date) || text(input.arrival_date),
+    adult_fee: text(input.adult_fee),
+    child_fee: text(input.child_fee),
+    source_file: "Manuel kayıt",
+    sheet: "Yeni Kayıt",
+    created_at: createdAt,
+    record_date: recordDate,
+    created_by: text(input.created_by) || status.user?.name || "Yerel kullanıcı",
+    record_status: input.save_as_draft ? "draft" : "review",
+    record_source: "manual",
+    photo: "",
+    documents: [],
+  };
+  await putPassenger(row);
+  const duplicates = filterPassengers([...rows, row]).duplicates;
+  return toPassenger(row, duplicates);
+}
+
 export async function localUpdatePassenger(id: number, updates: Partial<Passenger>): Promise<SimpleResult> {
   const current = await getPassenger<StoredPassenger>(id);
   if (!current) throw new Error("Yolcu bulunamadı.");
   const allowed: Array<keyof StoredPassenger> = [
     "no", "first_name", "last_name", "full_name", "passport_no", "voucher", "departure_date",
-    "arrival_date", "adult_fee", "child_fee", "source_file", "sheet",
+    "arrival_date", "adult_fee", "child_fee", "source_file", "sheet", "record_date", "record_status",
   ];
   const next = { ...current };
   for (const key of allowed) {
@@ -343,7 +414,11 @@ export async function localMergeDuplicates(passportKey = ""): Promise<{ removed:
   let removed = 0;
   for (const group of groups.values()) {
     if (group.length < 2) continue;
-    const [first, ...rest] = group;
+    const [first, ...rest] = group.toSorted((left, right) => {
+      const leftTime = text(left.created_at) || "9999";
+      const rightTime = text(right.created_at) || "9999";
+      return leftTime.localeCompare(rightTime) || left.id - right.id;
+    });
     const merged: StoredPassenger = {
       ...first,
       documents: [...new Map(
@@ -434,7 +509,7 @@ async function applyParsedJob(job: StoredImportJob, bytes: ArrayBuffer): Promise
   const additions: StoredPassenger[] = [];
   let duplicates = 0;
   for (const parsedRow of parsed.rows) {
-    const candidate = asStoredRow(parsedRow, nextId, job.id);
+    const candidate = asStoredRow(parsedRow, nextId, job.id, job.created_at, job.createdBy);
     const identity = passengerIdentity(candidate);
     const existing = identity ? byIdentity.get(identity) : undefined;
     if (existing) {
@@ -446,6 +521,11 @@ async function applyParsedJob(job: StoredImportJob, bytes: ArrayBuffer): Promise
           id: existing.id,
           photo: existing.photo,
           documents: existing.documents ?? [],
+          created_at: existing.created_at,
+          record_date: existing.record_date,
+          created_by: existing.created_by,
+          record_status: existing.record_status,
+          record_source: existing.record_source,
         };
         byIdentity.set(identity, updated);
         const pendingIndex = additions.findIndex((row) => row.id === existing.id);
@@ -507,6 +587,7 @@ export async function localQueueImportFile(
   uploadId: string,
   uploadIndex = 0,
 ): Promise<ImportQueueResponse> {
+  const auth = await vaultAuthStatus();
   const sourceBinaryId = `${SOURCE_PREFIX}${uploadId}`;
   const job: StoredImportJob = {
     id: uploadId,
@@ -524,6 +605,7 @@ export async function localQueueImportFile(
     dupStrategy,
     uploadIndex,
     sourceBinaryId,
+    createdBy: auth.user?.name ?? "Yerel kullanıcı",
   };
   await putJob(job);
 
@@ -703,16 +785,19 @@ async function assertPdfFile(file: File): Promise<void> {
 export async function localPassengerDocuments(passengerId: number): Promise<PassengerDocument[]> {
   const row = await getPassenger<StoredPassenger>(passengerId);
   if (!row) throw new Error("Yolcu bulunamadı.");
-  return row.documents ?? [];
+  return (row.documents ?? []).map((document) => ({ ...document, category: document.category ?? "other" }));
 }
 
 export async function localUploadPassengerDocuments(
   passengerId: number,
   files: File[],
+  category: DocumentCategory = "other",
 ): Promise<PassengerDocument[]> {
   const row = await getPassenger<StoredPassenger>(passengerId);
   if (!row) throw new Error("Yolcu bulunamadı.");
-  if (!files.length) return row.documents ?? [];
+  if (!files.length) {
+    return (row.documents ?? []).map((document) => ({ ...document, category: document.category ?? "other" }));
+  }
 
   let totalBytes = 0;
   for (const file of files) {
@@ -738,6 +823,7 @@ export async function localUploadPassengerDocuments(
         mime: "application/pdf",
         size: normalized.size,
         created_at: new Date().toISOString(),
+        category,
       };
       await putBinary(documentBinaryId(id), normalized, {
         kind: "document",
@@ -754,7 +840,7 @@ export async function localUploadPassengerDocuments(
     for (const document of created) await deleteBinary(documentBinaryId(document.id));
     throw error;
   }
-  return row.documents;
+  return row.documents.map((document) => ({ ...document, category: document.category ?? "other" }));
 }
 
 export async function localPassengerDocumentFile(
@@ -768,10 +854,30 @@ export async function localPassengerDocumentFile(
   const binary = await getBinary(documentBinaryId(document.id));
   if (!binary) throw new Error("PDF evrakın şifreli dosyası bulunamadı.");
   return {
-    metadata: document,
+    metadata: { ...document, category: document.category ?? "other" },
     blob: binary.data.type === "application/pdf"
       ? binary.data
       : new Blob([binary.data], { type: "application/pdf" }),
+  };
+}
+
+export async function localUpdatePassengerDocumentCategory(
+  passengerId: number,
+  documentId: string,
+  category: DocumentCategory,
+): Promise<SimpleResult> {
+  const row = await getPassenger<StoredPassenger>(passengerId);
+  if (!row) throw new Error("Yolcu bulunamadı.");
+  const documents = row.documents ?? [];
+  if (!documents.some((document) => document.id === documentId)) throw new Error("PDF evrak bulunamadı.");
+  row.documents = documents.map((document) => (
+    document.id === documentId ? { ...document, category } : document
+  ));
+  await putPassenger(row);
+  return {
+    ok: true,
+    message: "PDF evrak türü güncellendi.",
+    passenger_count: (await listPassengers()).length,
   };
 }
 
@@ -1060,18 +1166,25 @@ export async function localBackups(): Promise<BackupInfo[]> {
 
 export async function localExportRows(scope?: DateScope, ids?: number[]): Promise<StoredPassenger[]> {
   const rows = await listPassengers<StoredPassenger>();
-  const selected = ids?.length ? rows.filter((row) => ids.includes(row.id)) : rows;
+  const wanted = ids?.length ? new Set(ids) : null;
+  const selected = wanted ? rows.filter((row) => wanted.has(row.id)) : rows;
   return filterPassengers(selected, { scope }).rows;
 }
 
-export async function localExportPhotos(rows: StoredPassenger[]): Promise<Array<{ filename: string; blob: Blob }>> {
-  const output: Array<{ filename: string; blob: Blob }> = [];
+export async function localExportPhotos(rows: StoredPassenger[]): Promise<ExportPhoto[]> {
+  const output: ExportPhoto[] = [];
   for (const row of rows) {
     if (!row.photo) continue;
     const binary = await getBinary(row.photo);
     if (!binary) continue;
     const extension = binary.name.includes(".") ? `.${binary.name.split(".").pop()}` : ".jpg";
-    output.push({ filename: `${row.passport_no || row.full_name || row.id}${extension}`, blob: binary.data });
+    output.push({
+      filename: `${row.passport_no || row.full_name || row.id}${extension}`,
+      blob: binary.data,
+      passengerId: row.id,
+      passengerName: row.full_name,
+      passportNo: row.passport_no,
+    });
   }
   return output;
 }
@@ -1087,6 +1200,7 @@ export async function localExportDocuments(rows: StoredPassenger[]): Promise<Exp
         passengerName: row.full_name,
         passportNo: row.passport_no,
         filename: document.filename,
+        category: document.category ?? "other",
         blob: binary.data.type === "application/pdf"
           ? binary.data
           : new Blob([binary.data], { type: "application/pdf" }),

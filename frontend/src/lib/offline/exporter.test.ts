@@ -17,6 +17,7 @@ import {
   createPassengerCsvBlob,
   createPassengerXlsxBlob,
   createPhotosZipBlob,
+  createRecordFolderZipBlob,
   sanitizeZipFilename,
   saveBlob,
   type ExportPassengerRow,
@@ -68,6 +69,18 @@ async function zipEntryBytes(blob: Blob, filename: string): Promise<Uint8Array> 
     await reader.close();
   }
   throw new Error(`${filename} bulunamadı`);
+}
+
+async function zipEntries(blob: Blob): Promise<Array<{ filename: string; directory: boolean }>> {
+  const reader = new ZipReader(new BlobReader(blob), { useWebWorkers: false });
+  try {
+    return (await reader.getEntries()).map((entry) => ({
+      filename: entry.filename,
+      directory: entry.directory,
+    }));
+  } finally {
+    await reader.close();
+  }
 }
 
 afterEach(() => {
@@ -250,6 +263,111 @@ describe("ZIP exports", () => {
     ));
     expect(delivery.get("evraklar/TR123456-7/pasaport.pdf")).toContain("passport");
     expect(delivery.get("teslim-manifestosu.html")).toContain("<b>2</b><span>PDF evrak</span>");
+  });
+
+  it("creates an exact no-cap record-date folder with safe passenger JPG and categorized PDFs", async () => {
+    const rows: ExportPassengerRow[] = Array.from({ length: 101 }, (_, index) => ({
+      ...passenger,
+      id: index + 1,
+      no: String(index + 1),
+      first_name: `YOLCU${index + 1}`,
+      last_name: "TEST",
+      full_name: `YOLCU${index + 1} TEST`,
+      passport_no: `TR${String(index + 1).padStart(7, "0")}`,
+      record_date: "2026-07-17",
+      created_at: `2026-07-17T08:${String(index % 60).padStart(2, "0")}:00.000Z`,
+      photo: index === 0 ? "photo:first" : "",
+      documents: index === 0
+        ? [
+            { id: "passport-1", filename: "../../passport.pdf", category: "passport" },
+            { id: "passport-2", filename: "passport.pdf", category: "passport" },
+            { id: "form-1", filename: "form.pdf", category: "application_form" },
+            { id: "other-1", filename: "../../evil.pdf", category: "other" },
+          ]
+        : [],
+    }));
+    const photos = [{
+      passengerId: 1,
+      passengerName: "YOLCU1 TEST",
+      passportNo: "TR0000001",
+      filename: "../../face.jpg",
+      blob: new Blob(["jpeg"], { type: "image/jpeg" }),
+    }];
+    const documents = [
+      {
+        passengerId: 1,
+        passengerName: "YOLCU1 TEST",
+        passportNo: "TR0000001",
+        category: "passport" as const,
+        filename: "../../passport.pdf",
+        blob: new Blob(["%PDF-1.7 passport"], { type: "application/pdf" }),
+      },
+      {
+        passengerId: 1,
+        passengerName: "YOLCU1 TEST",
+        passportNo: "TR0000001",
+        category: "passport" as const,
+        filename: "passport.pdf",
+        blob: new Blob(["%PDF-1.7 passport copy"], { type: "application/pdf" }),
+      },
+      {
+        passengerId: 1,
+        passengerName: "YOLCU1 TEST",
+        passportNo: "TR0000001",
+        category: "application_form" as const,
+        filename: "form.pdf",
+        blob: new Blob(["%PDF-1.7 form"], { type: "application/pdf" }),
+      },
+      {
+        passengerId: 1,
+        passengerName: "YOLCU1 TEST",
+        passportNo: "TR0000001",
+        category: "other" as const,
+        filename: "../../evil.pdf",
+        blob: new Blob(["%PDF-1.7 other"], { type: "application/pdf" }),
+      },
+    ];
+    const logo = "data:image/jpeg;base64,aWRvLWxvZ28=";
+    const packageBlob = await createRecordFolderZipBlob(rows, photos, {
+      recordDate: "2026-07-17",
+      documents,
+      logoDataUrl: logo,
+    });
+    const entries = await zipEntries(packageBlob);
+    const names = entries.map((entry) => entry.filename);
+    const root = "2026-07-17_IDO_GATE_VISA/";
+    const passengerRoot = `${root}001_TR0000001_YOLCU1_TEST/`;
+
+    expect(packageBlob.type).toBe("application/zip");
+    expect(names).toEqual(expect.arrayContaining([
+      root,
+      `${root}IDO_Gunluk_Yolcu_Listesi.xlsx`,
+      `${root}IDO_Kontrol_Listesi.html`,
+      `${root}Eksik_Evrak_Raporu.xlsx`,
+      passengerRoot,
+      `${passengerRoot}Biyometrik_Fotograf.jpg`,
+      `${passengerRoot}Pasaport.pdf`,
+      `${passengerRoot}Pasaport (2).pdf`,
+      `${passengerRoot}Vize_Basvuru_Formu.pdf`,
+      `${passengerRoot}Diger_EVIL.pdf`,
+    ]));
+    expect(entries.filter((entry) => entry.directory && new RegExp(`^${root}\\d{3}_.+/$`).test(entry.filename)))
+      .toHaveLength(101);
+    expect(names.some((name) => name.includes("..") || name.includes("\\"))).toBe(false);
+
+    const contents = await zipContents(packageBlob);
+    expect(contents.get(`${root}IDO_Kontrol_Listesi.html`)).toContain(`src="${logo}"`);
+    const workbook = XLSX.read(await zipEntryBytes(packageBlob, `${root}IDO_Gunluk_Yolcu_Listesi.xlsx`), { type: "array" });
+    const exportedRows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets.Yolcular, { header: 1, defval: "" });
+    expect(exportedRows).toHaveLength(102);
+
+    const undated = await zipEntries(await createRecordFolderZipBlob(
+      [{ ...passenger, id: 999, passport_no: "../../AUX", full_name: "<Kötü / İsim>" }],
+      [],
+      { recordDate: "geçersiz" },
+    ));
+    expect(undated.map((entry) => entry.filename)).toContain("Tarihsiz_IDO_GATE_VISA/001_AUX_KOTU_ISIM/");
+    expect(undated.some((entry) => entry.filename.includes("..") || entry.filename.includes("\\"))).toBe(false);
   });
 });
 

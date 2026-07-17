@@ -9,12 +9,14 @@ export function LocalDownloadButton({
   kind,
   scope,
   ids,
+  recordDate,
   className,
   children,
 }: {
   kind: LocalDownloadKind;
   scope?: DateScope;
   ids?: number[];
+  recordDate?: string;
   className?: string;
   children: ReactNode;
 }) {
@@ -24,7 +26,7 @@ export function LocalDownloadButton({
   async function handleDownload() {
     setBusy(true);
     try {
-      await downloadLocal(kind, { scope, ids });
+      await downloadLocal(kind, { scope, ids, recordDate });
     } catch (error) {
       notify(error instanceof Error ? error.message : "Dosya hazırlanamadı.", "error");
     } finally {

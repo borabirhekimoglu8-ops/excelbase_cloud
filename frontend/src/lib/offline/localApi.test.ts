@@ -5,6 +5,7 @@ import { deleteDB } from "idb";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createPassengerXlsxBlob } from "./exporter";
 import {
+  localCreatePassengerRecord,
   localDeletePassengerDocument,
   localDeletePassenger,
   localPassengers,
@@ -15,6 +16,8 @@ import {
   localQueueImportFile,
   localSetPassengerPhoto,
   localSummary,
+  localUpdatePassenger,
+  localUpdatePassengerDocumentCategory,
   localUploadPassengerDocuments,
 } from "./localApi";
 import {
@@ -76,6 +79,54 @@ beforeEach(async () => {
 afterEach(resetDatabase);
 
 describe("local offline API", () => {
+  it("manuel yolcu kaydını oluşturan, kaynak, tarih ve iş akışı bilgileriyle saklar", async () => {
+    const created = await localCreatePassengerRecord({
+      no: "",
+      first_name: "Bora",
+      last_name: "Birhekimoğlu",
+      passport_no: "tr987654",
+      voucher: "ido-42",
+      departure_date: "21.07.2026",
+      arrival_date: "25.07.2026",
+      adult_fee: "60",
+      child_fee: "0",
+      record_date: "2026-07-17",
+      created_by: "Operasyon Sorumlusu",
+    });
+
+    expect(created).toMatchObject({
+      full_name: "Bora Birhekimoğlu",
+      passport_no: "TR987654",
+      voucher: "İDO-42",
+      departure_date: "2026-07-21",
+      arrival_date: "2026-07-25",
+      source_file: "Manuel kayıt",
+      sheet: "Yeni Kayıt",
+      record_date: "2026-07-17",
+      created_by: "Operasyon Sorumlusu",
+      record_source: "manual",
+      record_status: "review",
+    });
+    expect(created.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect((await localPassengers())[0]).toMatchObject({ id: created.id, record_source: "manual" });
+
+    const draft = await localCreatePassengerRecord({
+      no: "",
+      first_name: "Taslak",
+      last_name: "",
+      passport_no: "",
+      voucher: "",
+      departure_date: "",
+      arrival_date: "",
+      adult_fee: "",
+      child_fee: "",
+      record_date: "2026-07-18",
+      created_by: "Operasyon Sorumlusu",
+      save_as_draft: true,
+    });
+    expect(draft).toMatchObject({ record_date: "2026-07-18", record_status: "draft", record_source: "manual" });
+  });
+
   it("işlenen Excel yolcularını beklemeden yerel listede gösterir", async () => {
     const result = await localQueueImportFile(
       workbookFile("16.07.xlsx", "Ayşe Yılmaz", "TR123456"),
@@ -126,7 +177,7 @@ describe("local offline API", () => {
     const passengerId = (await localPassengers())[0].id;
 
     const [document] = await localUploadPassengerDocuments(passengerId, [pdfFile("DOC12345-pasaport.pdf")]);
-    expect(document).toMatchObject({ filename: "DOC12345-pasaport.pdf", mime: "application/pdf" });
+    expect(document).toMatchObject({ filename: "DOC12345-pasaport.pdf", mime: "application/pdf", category: "other" });
     expect(document.size).toBeGreaterThan(0);
     expect(await localPassengerDocuments(passengerId)).toEqual([document]);
     expect((await localPassengers())[0].documents).toEqual([document]);
@@ -140,6 +191,59 @@ describe("local offline API", () => {
     await localDeletePassengerDocument(passengerId, document.id);
     expect(await localPassengerDocuments(passengerId)).toEqual([]);
     expect((await listBinaryIds()).filter((id) => id.startsWith("document:"))).toHaveLength(0);
+  });
+
+  it("PDF evrak kategorisini açık seçimde korur, kategori verilmezse other kullanır", async () => {
+    await localQueueImportFile(workbookFile("kategori.xlsx", "Kategori Yolcu", "CAT12345"), false, "skip", "cat", "cat-job");
+    const passengerId = (await localPassengers())[0].id;
+
+    const [defaultDocument] = await localUploadPassengerDocuments(passengerId, [pdfFile("diger.pdf")]);
+    const documentsAfterPassport = await localUploadPassengerDocuments(
+      passengerId,
+      [pdfFile("pasaport.pdf")],
+      "passport",
+    );
+    const passportDocument = documentsAfterPassport.find((document) => document.filename === "pasaport.pdf");
+
+    expect(defaultDocument.category).toBe("other");
+    expect(passportDocument?.category).toBe("passport");
+    expect((await localPassengerDocuments(passengerId)).map((document) => document.category))
+      .toEqual(["other", "passport"]);
+    expect((await localPassengerDocumentFile(passengerId, passportDocument!.id)).metadata.category)
+      .toBe("passport");
+    await localUpdatePassengerDocumentCategory(passengerId, defaultDocument.id, "application_form");
+    expect((await localPassengerDocumentFile(passengerId, defaultDocument.id)).metadata.category)
+      .toBe("application_form");
+  });
+
+  it("overwrite aktarımı mevcut kayıt tarihi ve oluşturan bilgisini korur", async () => {
+    await localQueueImportFile(
+      workbookFile("ilk.xlsx", "İlk Yolcu", "KEEP1234"),
+      false,
+      "skip",
+      "first-batch",
+      "first-job",
+    );
+    const before = (await localPassengers())[0];
+    await localUpdatePassenger(before.id, { record_date: "2026-05-12" });
+
+    await localQueueImportFile(
+      workbookFile("yenilenen.xlsx", "Yenilenen Yolcu", "KEEP1234"),
+      false,
+      "overwrite",
+      "overwrite-batch",
+      "overwrite-job",
+    );
+
+    const [after] = await localPassengers();
+    expect(after).toMatchObject({
+      id: before.id,
+      full_name: "Yenilenen Yolcu",
+      record_date: "2026-05-12",
+      created_at: before.created_at,
+      created_by: before.created_by,
+      record_source: "import",
+    });
   });
 
   it("sahte PDF içeren çoklu seçimi atomik olarak reddeder", async () => {
