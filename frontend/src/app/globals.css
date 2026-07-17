@@ -696,6 +696,12 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ic-row-copy { min-width: 0; flex: 1 1 auto; display: grid; gap: 2px; }
 .ic-row-title { margin: 0; color: var(--ido-ink); font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ic-row-meta { margin: 0; color: var(--ido-muted); font-weight: 500; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ic-passenger-actions { display: grid; justify-items: end; gap: 6px; flex: 0 0 auto; }
+.ic-inline-pdf { position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; min-width: 64px; min-height: 30px; border: 1px solid #b9dce8; border-radius: var(--ido-radius-sm); background: #fff; color: var(--ido-primary); font-weight: 700; font-size: 8px; letter-spacing: .02em; cursor: pointer; }
+.ic-inline-pdf:hover { border-color: var(--ido-primary); background: var(--ido-blue-tint); }
+.ic-inline-pdf.disabled { opacity: .55; cursor: wait; }
+.ic-inline-pdf input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.ic-inline-pdf input:disabled { cursor: wait; }
 .ic-document-heading { align-items: flex-start; margin-top: 4px; }
 .ic-document-list { display: grid; gap: 8px; }
 .ic-document-row { align-items: flex-start; }
@@ -705,6 +711,15 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ic-empty-document p { margin: 0; color: var(--ido-ink); font-weight: 600; font-size: 12px; }
 .ic-empty-document span:not(.ic-filetype) { display: block; margin-top: 2px; color: var(--ido-muted); font-weight: 500; font-size: 9px; }
 .ic-document-upload { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; font-size: 11px; cursor: pointer; }
+.ic-document-upload input { display: none; }
+.ic-document-quick { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 82px; background: #fff; border: 1px solid var(--ido-primary); border-radius: var(--ido-radius); padding: 12px; box-shadow: 0 6px 18px rgba(0,126,167,.07); }
+.ic-document-quick-copy { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ic-document-quick-copy > div { min-width: 0; }
+.ic-document-quick-copy p { margin: 0; color: var(--ido-ink); font-weight: 700; font-size: 12px; }
+.ic-document-quick-copy span:not(.ic-filetype) { display: block; margin-top: 3px; color: var(--ido-muted); font-weight: 500; font-size: 9px; line-height: 1.35; }
+.ic-document-quick-action { position: relative; overflow: hidden; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-width: 78px; min-height: 42px; border-radius: var(--ido-radius-sm); background: var(--ido-primary); color: #fff; font-weight: 700; font-size: 9px; letter-spacing: .03em; cursor: pointer; }
+.ic-document-quick-action.disabled { opacity: .55; cursor: wait; }
+.ic-document-quick-action input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 
 /* İlerleme çubuğu */
 .ic-progress { width: 100%; height: 6px; border-radius: 1px; background: var(--ido-blue-tint-2); overflow: hidden; }
@@ -720,6 +735,20 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ic-callout-title { margin: 0; font-weight: 600; font-size: 12px; }
 .ic-callout-detail { margin: 0; font-weight: 500; font-size: 10px; }
 .ic-callout-action { flex: 0 0 auto; background: none; border: 0; font-weight: 600; font-size: 11px; color: inherit; cursor: pointer; }
+.ic-callout-buttons { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.ic-callout-action.danger { color: var(--ido-red); }
+
+/* Günlük, kurumsal yolcu listesi çıkışı */
+.ic-list-export { display: grid; gap: 12px; background: var(--ido-primary-deep); color: #fff; border-radius: var(--ido-radius); padding: 13px 14px; box-shadow: 0 8px 24px rgba(9,42,67,.08); }
+.ic-list-export-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ic-list-export-head img { flex: 0 0 auto; width: 58px; height: 42px; border-radius: 5px; background: #fff; object-fit: contain; padding: 3px; }
+.ic-list-export-head div { min-width: 0; }
+.ic-list-export-head p { margin: 0; font-weight: 700; font-size: 14px; }
+.ic-list-export-head span { display: block; margin-top: 2px; color: #c9dce3; font-weight: 500; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ic-list-export-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ic-list-export-actions button { min-height: 42px; border: 1px solid rgba(255,255,255,.32); border-radius: var(--ido-radius-sm); background: rgba(255,255,255,.08); color: #fff; font-weight: 700; font-size: 9px; letter-spacing: .03em; cursor: pointer; }
+.ic-list-export-actions button.primary { border-color: #fff; background: #fff; color: var(--ido-primary-deep); }
+.ic-list-export-actions button:disabled { opacity: .5; cursor: not-allowed; }
 
 .ic-info-note { display: flex; align-items: flex-start; gap: 10px; background: var(--ido-blue-tint); border-radius: var(--ido-radius); padding: 10px 12px; }
 .ic-info-note .ic-info-mark { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 3px; background: #fff; color: var(--ido-primary); font-weight: 700; font-size: 13px; display: grid; place-items: center; }

@@ -3,6 +3,7 @@ import {
   createDeliveryZipBlob,
   createDocumentsZipBlob,
   createGateVisaTemplateXlsxBlob,
+  createIdoDailyPassengerListHtmlBlob,
   createManifestHtmlBlob,
   createPassengerCsvBlob,
   createPassengerXlsxBlob,
@@ -17,7 +18,7 @@ import {
   localPassengerDocumentFile,
 } from "./localApi";
 
-export type LocalDownloadKind = "template" | "excel" | "csv" | "manifest" | "photos" | "documents" | "package" | "backup";
+export type LocalDownloadKind = "template" | "excel" | "csv" | "manifest" | "daily-list" | "photos" | "documents" | "package" | "backup";
 
 export type LocalDownloadOptions = {
   scope?: DateScope;
@@ -28,6 +29,38 @@ export type LocalDownloadOptions = {
 function stamp(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function reportDates(rows: ReadonlyArray<{ departure_date?: string }>): string[] {
+  return ([...new Set(rows.map((row) => row.departure_date?.trim()).filter(Boolean))] as string[]).sort();
+}
+
+function reportDate(rows: ReadonlyArray<{ departure_date?: string }>): string {
+  const dates = reportDates(rows);
+  return dates.length === 1 ? dates[0] : stamp();
+}
+
+function reportLabel(rows: ReadonlyArray<{ departure_date?: string }>): string {
+  const dates = reportDates(rows);
+  if (!dates.length) return "Tarihsiz";
+  return dates.length === 1 ? dates[0] : `${dates[0]} – ${dates.at(-1)}`;
+}
+
+async function loadIdoLogoDataUrl(): Promise<string> {
+  if (typeof fetch !== "function" || typeof FileReader === "undefined") return "";
+  try {
+    const response = await fetch("/brand/ido-logo.jpg", { cache: "force-cache" });
+    if (!response.ok) return "";
+    const blob = await response.blob();
+    return await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => resolve("");
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return "";
+  }
 }
 
 export async function downloadLocal(kind: LocalDownloadKind, options: LocalDownloadOptions = {}): Promise<void> {
@@ -54,6 +87,18 @@ export async function downloadLocal(kind: LocalDownloadKind, options: LocalDownl
     await saveBlob(
       createManifestHtmlBlob(rows, { title: options.title ?? "Gate Visa Checklist Teslim Manifestosu" }),
       `gate-visa-checklist-manifest-${stamp()}.html`,
+    );
+    return;
+  }
+  if (kind === "daily-list") {
+    const date = reportDate(rows);
+    await saveBlob(
+      createIdoDailyPassengerListHtmlBlob(rows, {
+        title: options.title ?? "İDO Günlük Yolcu Listesi",
+        operationLabel: reportLabel(rows),
+        logoDataUrl: await loadIdoLogoDataUrl(),
+      }),
+      `ido-gunluk-yolcu-listesi-${date}.html`,
     );
     return;
   }

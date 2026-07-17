@@ -1,11 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Passenger, bulkDelete, fetchImportQueue, fetchPassengerPage } from "@/lib/api";
+import {
+  Passenger,
+  addPassengerDocuments,
+  bulkDelete,
+  fetchImportQueue,
+  fetchPassengerPage,
+  fetchPassengers,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
 import { PassengerCard } from "@/components/PassengerCard";
 import { PassengerDetail } from "@/components/PassengerDetail";
+import { downloadLocal } from "@/lib/offline/downloads";
 
 const FILTER_CHIPS: { key: string; label: (n: number) => string; tone?: "ok" | "warn" }[] = [
   { key: "", label: (n) => `TÜM KAYITLAR ${n}` },
@@ -30,6 +38,8 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [documentUploadId, setDocumentUploadId] = useState<number | null>(null);
+  const [outputBusy, setOutputBusy] = useState<"daily-list" | "excel" | "select" | "">("");
 
   useEffect(() => {
     setStatus(initialStatus);
@@ -37,6 +47,7 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
 
   useEffect(() => {
     setPage(0);
+    setSelected(new Set());
   }, [search, status, dateScope]);
 
   useEffect(() => {
@@ -139,6 +150,52 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
     bump();
   }
 
+  async function filteredPassengerIds(): Promise<number[]> {
+    const rows = await fetchPassengers({ search, status, sort: "name", scope: dateScope });
+    return rows.map((row) => row.id);
+  }
+
+  async function handleSelectAllFiltered() {
+    setOutputBusy("select");
+    try {
+      const ids = await filteredPassengerIds();
+      setSelected(new Set(ids));
+      notify(`${ids.length} filtrelenmiş yolcu seçildi`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Yolcular seçilemedi.", "error");
+    } finally {
+      setOutputBusy("");
+    }
+  }
+
+  async function handleOutput(kind: "daily-list" | "excel") {
+    setOutputBusy(kind);
+    try {
+      const ids = selected.size ? Array.from(selected) : await filteredPassengerIds();
+      if (!ids.length) throw new Error("Listeye eklenecek yolcu bulunmuyor.");
+      await downloadLocal(kind, { scope: dateScope, ids });
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Yolcu listesi hazırlanamadı.", "error");
+    } finally {
+      setOutputBusy("");
+    }
+  }
+
+  async function handleInlineDocuments(passengerId: number, files: File[]) {
+    if (!files.length) return;
+    setDocumentUploadId(passengerId);
+    try {
+      await addPassengerDocuments(passengerId, files);
+      notify(`${files.length} PDF evrak yolcuya eklendi`);
+      bump();
+      setRetryNonce((value) => value + 1);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "PDF evraklar yüklenemedi.", "error");
+    } finally {
+      setDocumentUploadId(null);
+    }
+  }
+
   if (!loading && !loadError && !search && !status && total === 0) {
     return (
       <div className="ic-empty">
@@ -200,15 +257,54 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
         </div>
       )}
 
-      {canWrite && selectMode && selected.size > 0 && (
-        <div className="ic-callout amber">
+      <section className="ic-list-export" aria-label="İDO yolcu listesi çıktıları">
+        <div className="ic-list-export-head">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/ido-logo.jpg" alt="İDO" />
+          <div>
+            <p>Günlük Yolcu Listesi</p>
+            <span>
+              {selected.size
+                ? `${selected.size} seçili yolcu`
+                : `${total} filtrelenmiş yolcu · ${dateScope.range === "Tümü" ? "tüm tarihler" : dateScope.range.toLocaleLowerCase("tr-TR")}`}
+            </span>
+          </div>
+        </div>
+        <div className="ic-list-export-actions">
+          <button
+            className="primary"
+            type="button"
+            onClick={() => void handleOutput("daily-list")}
+            disabled={Boolean(outputBusy) || total === 0}
+          >
+            {outputBusy === "daily-list" ? "HAZIRLANIYOR…" : "İDO LİSTESİ"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleOutput("excel")}
+            disabled={Boolean(outputBusy) || total === 0}
+          >
+            {outputBusy === "excel" ? "HAZIRLANIYOR…" : "EXCEL"}
+          </button>
+        </div>
+      </section>
+
+      {canWrite && selectMode && (
+        <div className="ic-callout blue">
           <div className="ic-callout-copy">
             <p className="ic-callout-title">{selected.size} kayıt seçildi</p>
-            <p className="ic-callout-detail">Toplu işlem uygulanacak</p>
+            <p className="ic-callout-detail">Seçim sayfalar arasında korunur</p>
           </div>
-          <button className="ic-callout-action" onClick={handleBulkDelete} type="button">
-            Sil
-          </button>
+          <div className="ic-callout-buttons">
+            <button className="ic-callout-action" onClick={() => void handleSelectAllFiltered()} disabled={Boolean(outputBusy)} type="button">
+              {outputBusy === "select" ? "Seçiliyor…" : `Tümünü seç (${total})`}
+            </button>
+            {selected.size > 0 && (
+              <button className="ic-callout-action danger" onClick={handleBulkDelete} type="button">
+                Sil
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -241,6 +337,9 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
             selected={selected.has(p.id)}
             onToggle={toggle}
             onOpen={setDetailId}
+            canAddDocuments={canWrite}
+            documentBusy={documentUploadId === p.id}
+            onAddDocuments={handleInlineDocuments}
           />
         ))}
       </div>

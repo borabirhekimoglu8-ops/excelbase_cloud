@@ -37,18 +37,26 @@ export function PassengerCard({
   selectable = false,
   selected = false,
   onToggle,
+  canAddDocuments = false,
+  documentBusy = false,
+  onAddDocuments,
 }: {
   passenger: Passenger;
   onOpen?: (id: number) => void;
   selectable?: boolean;
   selected?: boolean;
   onToggle?: (id: number, checked: boolean) => void;
+  canAddDocuments?: boolean;
+  documentBusy?: boolean;
+  onAddDocuments?: (id: number, files: File[]) => Promise<void> | void;
 }) {
   const { tone, label } = passengerStatusTone(passenger);
+  const documentCount = passenger.documents?.length ?? 0;
   const metaParts = [
     passenger.passport_no || "Pasaport yok",
     passenger.voucher,
     passenger.departure_date && `Gidiş ${passenger.departure_date}`,
+    `${documentCount} PDF`,
   ].filter(Boolean);
 
   return (
@@ -87,7 +95,31 @@ export function PassengerCard({
           <p className="ic-row-meta">{metaParts.join(" · ")}</p>
         </div>
       </div>
-      <span className={`ic-pill lg ic-pill-${tone}`}>{label}</span>
+      <div className="ic-passenger-actions">
+        <span className={`ic-pill lg ic-pill-${tone}`}>{label}</span>
+        {canAddDocuments && (
+          <label
+            className={`ic-inline-pdf${documentBusy ? " disabled" : ""}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {documentBusy ? "EKLENİYOR…" : "PDF EKLE"}
+            <input
+              type="file"
+              accept=".pdf,application/pdf"
+              multiple
+              disabled={documentBusy}
+              aria-label={`${passenger.full_name || "Yolcu"} için PDF evrak seç`}
+              onClick={(event) => event.stopPropagation()}
+              onChange={async (event) => {
+                const input = event.currentTarget;
+                const files = Array.from(input.files ?? []);
+                if (files.length) await onAddDocuments?.(passenger.id, files);
+                input.value = "";
+              }}
+            />
+          </label>
+        )}
+      </div>
     </div>
   );
 }

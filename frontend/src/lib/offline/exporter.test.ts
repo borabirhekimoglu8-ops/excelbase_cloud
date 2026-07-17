@@ -12,6 +12,7 @@ import {
   createDeliveryZipBlob,
   createDocumentsZipBlob,
   createGateVisaTemplateXlsxBlob,
+  createIdoDailyPassengerListHtmlBlob,
   createManifestHtmlBlob,
   createPassengerCsvBlob,
   createPassengerXlsxBlob,
@@ -144,6 +145,33 @@ describe("passenger exports", () => {
     expect(html).not.toContain("<img src=x");
     expect(html).toContain("2026-07-17T01:00:00.000Z");
     expect(html).toContain("<b>4</b><span>Fotoğraf dosyası</span>");
+  });
+
+  it("creates a self-contained IDO-branded printable daily passenger list", async () => {
+    const logo = "data:image/jpeg;base64,aWRvLWxvZ28=";
+    const blob = createIdoDailyPassengerListHtmlBlob(
+      [
+        { ...passenger, no: "2", full_name: "ZEYNEP ÖZTÜRK", documents: [{ id: "doc-1", filename: "evrak.pdf" }] },
+        { ...passenger, no: "1", full_name: '<img src=x onerror="alert(1)">', passport_no: "TR000001" },
+      ],
+      {
+        operationLabel: "2026-07-15",
+        generatedAt: new Date("2026-07-17T01:00:00.000Z"),
+        logoDataUrl: logo,
+      },
+    );
+    const html = await blob.text();
+
+    expect(blob.type).toBe("text/html;charset=utf-8");
+    expect(html).toContain(`src="${logo}"`);
+    expect(html).toContain("İDO Günlük Yolcu Listesi");
+    expect(html).toContain("2026-07-15");
+    expect(html).toContain("YAZDIR / PDF KAYDET");
+    expect(html).toContain("@page{size:A4 landscape");
+    expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
+    expect(html).not.toContain("<img src=x");
+    expect(html.indexOf("TR000001")).toBeLessThan(html.indexOf("ZEYNEP ÖZTÜRK"));
+    expect(html).not.toContain('src="/brand/ido-logo.jpg"');
   });
 });
 

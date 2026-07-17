@@ -283,6 +283,31 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
             <span>{hasIssues ? "!" : "✓"}</span>
           </div>
 
+          <section className="ic-document-quick" aria-label="PDF evrak yükleme alanı">
+            <div className="ic-document-quick-copy">
+              <span className="ic-filetype pdf">PDF</span>
+              <div>
+                <p>PDF Evrak Yükleme</p>
+                <span>{documents.length ? `${documents.length} evrak kayıtlı · yeni evrak ekleyebilirsiniz` : "Bir veya birden fazla PDF dosyası seçin"}</span>
+              </div>
+            </div>
+            {canWrite ? (
+              <label className={`ic-document-quick-action${documentsBusy ? " disabled" : ""}`}>
+                {documentsBusy ? "EKLENİYOR…" : "PDF SEÇ"}
+                <input
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  aria-label="Yolcu PDF evraklarını hızlı yükle"
+                  multiple
+                  onChange={handleDocuments}
+                  disabled={documentsBusy || busy}
+                />
+              </label>
+            ) : (
+              <span className="ic-pill ic-pill-neutral">SADECE GÖRÜNTÜLEME</span>
+            )}
+          </section>
+
           <div className="ic-detail-block">
             <p className="ic-detail-title">Kimlik / Sefer Bilgileri</p>
             {FIELDS.map((field) => (

@@ -63,6 +63,7 @@ export function PackageTab() {
           <LocalDownloadButton className="primary-btn wide" kind="package" scope={dateScope}>Teslim paketini indir</LocalDownloadButton>
           <p className="section-label">Tekil çıktılar</p>
           <div className="action-grid">
+            <LocalDownloadButton className="primary-btn" kind="daily-list" scope={dateScope}>İDO günlük liste</LocalDownloadButton>
             <LocalDownloadButton className="soft-btn" kind="manifest" scope={dateScope}>Manifest</LocalDownloadButton>
             <LocalDownloadButton className="soft-btn" kind="excel" scope={dateScope}>Excel</LocalDownloadButton>
             <LocalDownloadButton className="soft-btn" kind="csv" scope={dateScope}>CSV</LocalDownloadButton>
