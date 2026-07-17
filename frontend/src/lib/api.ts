@@ -1,4 +1,5 @@
 import { newId } from "@/lib/id";
+import { downloadLocalPassengerDocument } from "@/lib/offline/downloads";
 import {
   localArchive,
   localAssignUnmatched,
@@ -9,6 +10,7 @@ import {
   localClearAll,
   localDeleteJob,
   localDeletePassenger,
+  localDeletePassengerDocument,
   localDeleteUnmatched,
   localImportMail,
   localLogin,
@@ -16,6 +18,8 @@ import {
   localMatchPhotos,
   localMergeDuplicates,
   localPassengerPage,
+  localPassengerDocumentFile,
+  localPassengerDocuments,
   localPassengers,
   localPreview,
   localQueueImportFile,
@@ -32,10 +36,24 @@ import {
   localUpdatePassenger,
   localUploadPassengerFile,
   localUploadPassengerFiles,
+  localUploadPassengerDocuments,
   localUsers,
 } from "@/lib/offline/localApi";
 
 export type DateScope = { range: string; start: string; end: string };
+
+export type PassengerDocument = {
+  id: string;
+  filename: string;
+  mime: "application/pdf";
+  size: number;
+  created_at: string;
+};
+
+export type PassengerDocumentFile = {
+  metadata: PassengerDocument;
+  blob: Blob;
+};
 
 export type Passenger = {
   id: number;
@@ -53,6 +71,8 @@ export type Passenger = {
   sheet: string;
   photo: string;
   photo_url: string;
+  /** Passenger-specific PDF metadata. Payloads stay encrypted in the local vault. */
+  documents?: PassengerDocument[];
   issues: string[];
   duplicate: boolean;
 };
@@ -294,6 +314,17 @@ export function matchPhotos(files: FileList | File[]): Promise<MatchPhotosRespon
 }
 export const setPassengerPhoto = localSetPassengerPhoto;
 export const removePassengerPhoto = localRemovePassengerPhoto;
+export const fetchPassengerDocuments = localPassengerDocuments;
+export const openPassengerDocument = localPassengerDocumentFile;
+export function addPassengerDocuments(
+  passengerId: number,
+  files: FileList | File[],
+): Promise<PassengerDocument[]> {
+  return localUploadPassengerDocuments(passengerId, Array.from(files));
+}
+export const uploadPassengerDocuments = addPassengerDocuments;
+export const deletePassengerDocument = localDeletePassengerDocument;
+export const downloadPassengerDocument = downloadLocalPassengerDocument;
 export const fetchUnmatchedPhotos = localUnmatchedPhotos;
 export const assignUnmatchedPhoto = localAssignUnmatched;
 export const deleteUnmatchedPhoto = localDeleteUnmatched;

@@ -114,6 +114,16 @@ input[type="file"] { display: none; }
   font-size: 13px;
   letter-spacing: .08em;
 }
+.auth-logo-mark {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 82px;
+  height: 48px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--ido-primary);
+}
+.auth-logo-mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .header-account { gap: 14px; }
 .account-copy { text-align: right; }
 .account-copy strong { color: var(--navy-900); font-size: 13px; }
@@ -632,6 +642,7 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 /* Bölüm başlığı */
 .ic-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .ic-section-title { margin: 0; color: var(--ido-ink); font-weight: 600; font-size: 15px; }
+.ic-section-caption { margin: 2px 0 0; color: var(--ido-muted); font-weight: 500; font-size: 9px; }
 .ic-section-link { color: var(--ido-primary); font-weight: 600; font-size: 11px; background: none; border: 0; cursor: pointer; padding: 4px; }
 
 /* Durum rozetleri (pill) */
@@ -685,6 +696,15 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ic-row-copy { min-width: 0; flex: 1 1 auto; display: grid; gap: 2px; }
 .ic-row-title { margin: 0; color: var(--ido-ink); font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ic-row-meta { margin: 0; color: var(--ido-muted); font-weight: 500; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ic-document-heading { align-items: flex-start; margin-top: 4px; }
+.ic-document-list { display: grid; gap: 8px; }
+.ic-document-row { align-items: flex-start; }
+.ic-document-actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
+.ic-document-actions button { cursor: pointer; border: 0; min-height: 32px; }
+.ic-empty-document { display: flex; align-items: center; gap: 10px; min-height: 72px; background: #fff; border: 1px dashed var(--ido-border); border-radius: var(--ido-radius); padding: 12px; }
+.ic-empty-document p { margin: 0; color: var(--ido-ink); font-weight: 600; font-size: 12px; }
+.ic-empty-document span:not(.ic-filetype) { display: block; margin-top: 2px; color: var(--ido-muted); font-weight: 500; font-size: 9px; }
+.ic-document-upload { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; font-size: 11px; cursor: pointer; }
 
 /* İlerleme çubuğu */
 .ic-progress { width: 100%; height: 6px; border-radius: 1px; background: var(--ido-blue-tint-2); overflow: hidden; }
@@ -863,6 +883,8 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 }
 @media (max-width: 359px) {
   .ido-content { padding-left: 12px; padding-right: 12px; }
+  .ic-document-row { display: grid; }
+  .ic-document-actions { justify-content: flex-start; padding-left: 50px; }
 }
 
 /* iOS Safari, 16px altındaki form alanına odaklanınca sayfayı yakınlaştırır.

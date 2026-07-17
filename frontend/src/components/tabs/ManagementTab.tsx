@@ -61,7 +61,7 @@ export function ManagementTab() {
         <div>
           <p className="overline">YEREL KASA</p>
           <h2>Cihaz ve güvenlik</h2>
-          <p>Yolcu ve fotoğraf verileri bu iPhone&apos;da şifreli tutulur; çalışma sırasında sunucuya gönderilmez.</p>
+          <p>Yolcu, PDF evrak ve biyometrik fotoğraf verileri bu iPhone&apos;da şifreli tutulur; çalışma sırasında sunucuya gönderilmez.</p>
         </div>
       </div>
 

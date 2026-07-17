@@ -608,7 +608,7 @@ export async function restoreEncryptedVault(file: Blob): Promise<void> {
     throw new Error("Yedek dosyası geçerli JSON değil.");
   }
   if (parsed.format !== "excelbase-encrypted-vault" || parsed.version !== 1 || !parsed.stores) {
-    throw new Error("Bu dosya desteklenen bir Excelbase şifreli yedeği değil.");
+    throw new Error("Bu dosya desteklenen bir Gate Visa Checklist şifreli yedeği değil.");
   }
   const decoded = {} as Record<"config" | StoreName, Array<{ key: string | number; value: unknown }>>;
   for (const name of ["config", "passengers", "binaries", "jobs", "meta"] as const) {

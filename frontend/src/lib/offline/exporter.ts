@@ -25,6 +25,7 @@ export const PASSENGER_EXPORT_COLUMNS = [
 
 export type ExportPassengerRow = ParsedPassengerRow & {
   photo?: string;
+  documents?: ReadonlyArray<{ id: string; filename: string }>;
 };
 
 export type ExportPhoto = {
@@ -32,14 +33,22 @@ export type ExportPhoto = {
   blob: Blob;
 };
 
+export type ExportDocument = ExportPhoto & {
+  passengerId: number;
+  passengerName: string;
+  passportNo: string;
+};
+
 export type ManifestOptions = {
   title?: string;
   generatedAt?: Date;
   photoCount?: number;
+  documentCount?: number;
 };
 
 export type DeliveryZipOptions = ManifestOptions & {
   includeTemplate?: boolean;
+  documents?: readonly ExportDocument[];
 };
 
 export type SaveBlobResult = "shared" | "downloaded" | "cancelled";
@@ -119,9 +128,9 @@ export function createPassengerXlsxBlob(rows: readonly ExportPassengerRow[]): Bl
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Yolcular");
   workbook.Props = {
-    Title: "Excelbase Yolcu Listesi",
+    Title: "Gate Visa Checklist Yolcu Listesi",
     Subject: "Çevrimdışı yolcu verisi dışa aktarımı",
-    Company: "Excelbase",
+    Company: "İDO",
   };
   return blobFromBytes(workbookBytes(workbook), XLSX_MIME);
 }
@@ -175,7 +184,7 @@ export function createGateVisaTemplateXlsxBlob(): Blob {
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "PAX LIST");
-  workbook.Props = { Title: "GATE VISA PAX LIST", Company: "Excelbase" };
+  workbook.Props = { Title: "GATE VISA PAX LIST", Company: "İDO" };
   return blobFromBytes(workbookBytes(workbook), XLSX_MIME);
 }
 
@@ -193,12 +202,14 @@ export function createManifestHtmlBlob(
   options: ManifestOptions = {},
 ): Blob {
   const generatedAt = options.generatedAt ?? new Date();
-  const title = options.title ?? "Excelbase Teslim Manifestosu";
+  const title = options.title ?? "Gate Visa Checklist Teslim Manifestosu";
   const withPhoto = rows.filter((row) => text(row.photo)).length;
   const photoCount = options.photoCount ?? withPhoto;
+  const documentCount = options.documentCount
+    ?? rows.reduce((count, row) => count + (row.documents?.length ?? 0), 0);
   const tableRows = rows.map((row, index) => {
     const record = exportRecord(row);
-    return `<tr><td>${index + 1}</td><td>${escapeHtml(record["Yolcu Adı Soyadı"])}</td><td>${escapeHtml(record["Pasaport No"])}</td><td>${escapeHtml(record.Voucher)}</td><td>${escapeHtml(record["Gidiş Tarihi"])}</td><td>${escapeHtml(record["Varış Tarihi"])}</td><td>${record.Foto ? "Var" : "Yok"}</td></tr>`;
+    return `<tr><td>${index + 1}</td><td>${escapeHtml(record["Yolcu Adı Soyadı"])}</td><td>${escapeHtml(record["Pasaport No"])}</td><td>${escapeHtml(record.Voucher)}</td><td>${escapeHtml(record["Gidiş Tarihi"])}</td><td>${escapeHtml(record["Varış Tarihi"])}</td><td>${record.Foto ? "Var" : "Yok"}</td><td>${row.documents?.length ?? 0}</td></tr>`;
   }).join("");
 
   const html = `<!doctype html>
@@ -212,16 +223,16 @@ export function createManifestHtmlBlob(
     *{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     main{max-width:1120px;margin:32px auto;padding:0 24px}.head{display:flex;justify-content:space-between;gap:24px;align-items:end;margin-bottom:22px}
     h1{margin:0;font-size:28px;letter-spacing:-.02em}.eyebrow{color:var(--accent);font-weight:800;letter-spacing:.14em;text-transform:uppercase}.date{color:var(--muted)}
-    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}.stat{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px}.stat b{display:block;font-size:24px}.stat span{color:var(--muted)}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.stat{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px}.stat b{display:block;font-size:24px}.stat span{color:var(--muted)}
     .table{overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:12px}table{width:100%;border-collapse:collapse}th,td{padding:11px 13px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}th{background:#eaf3f7;font-size:12px;letter-spacing:.04em;text-transform:uppercase}tr:last-child td{border-bottom:0}
     footer{margin-top:16px;color:var(--muted);font-size:12px}@media(max-width:700px){main{margin:20px auto;padding:0 14px}.head{display:block}.date{margin-top:8px}.stats{grid-template-columns:1fr}}
   </style>
 </head>
 <body><main>
   <div class="head"><div><div class="eyebrow">Teslim kaydı</div><h1>${escapeHtml(title)}</h1></div><div class="date">${escapeHtml(generatedAt.toISOString())}</div></div>
-  <section class="stats"><div class="stat"><b>${rows.length}</b><span>Yolcu</span></div><div class="stat"><b>${photoCount}</b><span>Fotoğraf dosyası</span></div><div class="stat"><b>${withPhoto}</b><span>Fotoğrafı eşleşmiş yolcu</span></div></section>
-  <div class="table"><table><thead><tr><th>No</th><th>Yolcu</th><th>Pasaport</th><th>Voucher</th><th>Gidiş</th><th>Varış</th><th>Foto</th></tr></thead><tbody>${tableRows}</tbody></table></div>
-  <footer>Bu belge Excelbase çevrimdışı teslim paketiyle birlikte oluşturulmuştur.</footer>
+  <section class="stats"><div class="stat"><b>${rows.length}</b><span>Yolcu</span></div><div class="stat"><b>${photoCount}</b><span>Fotoğraf dosyası</span></div><div class="stat"><b>${withPhoto}</b><span>Fotoğrafı eşleşmiş yolcu</span></div><div class="stat"><b>${documentCount}</b><span>PDF evrak</span></div></section>
+  <div class="table"><table><thead><tr><th>No</th><th>Yolcu</th><th>Pasaport</th><th>Voucher</th><th>Gidiş</th><th>Varış</th><th>Foto</th><th>PDF</th></tr></thead><tbody>${tableRows}</tbody></table></div>
+  <footer>Bu belge Gate Visa Checklist çevrimdışı teslim paketiyle birlikte oluşturulmuştur.</footer>
 </main></body></html>`;
   return new Blob([html], { type: "text/html;charset=utf-8" });
 }
@@ -276,6 +287,34 @@ export async function createPhotosZipBlob(photos: readonly ExportPhoto[]): Promi
   return blobFromBytes(bytes, ZIP_MIME);
 }
 
+async function addDocuments(
+  writer: ZipWriter<Uint8Array>,
+  documents: readonly ExportDocument[],
+): Promise<void> {
+  const usedByFolder = new Map<string, Set<string>>();
+  for (const document of documents) {
+    const label = document.passportNo || document.passengerName || `yolcu-${document.passengerId}`;
+    const folder = sanitizeZipFilename(
+      document.passengerId ? `${label}-${document.passengerId}` : label,
+      `yolcu-${document.passengerId || "evrak"}`,
+    );
+    const used = usedByFolder.get(folder) ?? new Set<string>();
+    usedByFolder.set(folder, used);
+    const filename = uniqueFilename(document.filename, used);
+    await writer.add(`evraklar/${folder}/${filename}`, new BlobReader(document.blob), {
+      useWebWorkers: false,
+      level: 0,
+    });
+  }
+}
+
+export async function createDocumentsZipBlob(documents: readonly ExportDocument[]): Promise<Blob> {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { useWebWorkers: false });
+  await addDocuments(writer, documents);
+  const bytes = await writer.close();
+  return blobFromBytes(bytes, ZIP_MIME);
+}
+
 export async function createDeliveryZipBlob(
   rows: readonly ExportPassengerRow[],
   photos: readonly ExportPhoto[] = [],
@@ -284,7 +323,12 @@ export async function createDeliveryZipBlob(
   const writer = new ZipWriter(new Uint8ArrayWriter(), { useWebWorkers: false });
   const xlsx = createPassengerXlsxBlob(rows);
   const csv = createPassengerCsvBlob(rows);
-  const manifest = createManifestHtmlBlob(rows, { ...options, photoCount: options.photoCount ?? photos.length });
+  const documents = options.documents ?? [];
+  const manifest = createManifestHtmlBlob(rows, {
+    ...options,
+    photoCount: options.photoCount ?? photos.length,
+    documentCount: options.documentCount ?? documents.length,
+  });
 
   await writer.add("yolcu-listesi.xlsx", new BlobReader(xlsx), { useWebWorkers: false, level: 6 });
   await writer.add("yolcu-listesi.csv", new BlobReader(csv), { useWebWorkers: false, level: 6 });
@@ -296,13 +340,14 @@ export async function createDeliveryZipBlob(
     });
   }
   await addPhotos(writer, photos, "fotograflar/");
+  await addDocuments(writer, documents);
 
   const bytes = await writer.close();
   return blobFromBytes(bytes, ZIP_MIME);
 }
 
 export async function saveBlob(blob: Blob, filename: string): Promise<SaveBlobResult> {
-  const safeFilename = sanitizeZipFilename(filename, "excelbase-dosya");
+  const safeFilename = sanitizeZipFilename(filename, "gate-visa-checklist-dosya");
   if (typeof navigator !== "undefined" && typeof navigator.share === "function" && typeof File !== "undefined") {
     const file = new File([blob], safeFilename, { type: blob.type || "application/octet-stream" });
     const shareData: ShareData = { files: [file], title: safeFilename };

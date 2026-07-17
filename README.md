@@ -1,15 +1,16 @@
-# Excelbase — çevrimdışı yolcu operasyonları
+# Gate Visa Checklist — çevrimdışı yolcu operasyonları
 
-Excelbase; yolcu listelerini, biyometrik fotoğrafları ve teslim paketlerini iPhone'da işleyen kurulabilir bir PWA'dır. Ana uygulamanın çalışma verileri sunucuya gönderilmez: içe aktarma, eşleştirme, filtreleme ve dışa aktarma tarayıcıda yapılır.
+Gate Visa Checklist; yolcu listelerini, PDF evrakları, JPG biyometrik fotoğrafları ve teslim paketlerini iPhone'da işleyen kurulabilir bir PWA'dır. Ana uygulamanın çalışma verileri sunucuya gönderilmez: içe aktarma, eşleştirme, filtreleme ve dışa aktarma tarayıcıda yapılır.
 
 ## Neler yapar?
 
 - XLSX, XLS, XLSM, ODS ve CSV yolcu listelerini; ayrıca bu dosyaları içeren ZIP arşivlerini işler.
 - Dosya adedi sınırı koymaz; dosyaları sırayla işleyerek mobil cihaz belleğini korur.
-- Yolcu kayıtlarını ve kaynak dosyaları Web Crypto (AES-GCM) ile cihazda şifreli saklar.
-- Fotoğraf ve fotoğraf ZIP'lerini pasaport numarası veya benzersiz ad eşleşmesiyle yolculara bağlar.
+- Yolcu kayıtlarını, kaynak dosyaları ve yolcu evraklarını Web Crypto (AES-GCM) ile cihazda şifreli saklar.
+- Yolcu kartından birden fazla PDF evrak ekler; evrakları çevrimdışı açar, indirir ve teslim paketine dahil eder.
+- JPG/JPEG biyometrik fotoğrafları ve fotoğraf ZIP'lerini pasaport numarası veya benzersiz ad eşleşmesiyle yolculara bağlar.
 - Yolcuları tarih, durum ve metin ile filtreler; tekrarları ve eksik alanları gösterir.
-- Excel, CSV, manifest, fotoğraf ZIP'i ve eksiksiz teslim paketi üretir.
+- Excel, CSV, manifest, fotoğraf ZIP'i, PDF evrak ZIP'i ve eksiksiz teslim paketi üretir.
 - Şifreli cihaz yedeği alır ve geri yükler.
 - Uygulama kabuğu ilk başarılı açılıştan sonra çevrimdışı çalışır.
 
@@ -18,9 +19,9 @@ Excelbase; yolcu listelerini, biyometrik fotoğrafları ve teslim paketlerini iP
 1. Yayın adresini iPhone'da **Safari** ile açın.
 2. Uygulamanın “Çevrimdışı kullanıma hazır” durumuna gelmesini bekleyin.
 3. **Paylaş** → **Ana Ekrana Ekle** → **Ekle** yolunu izleyin.
-4. Excelbase'i bundan sonra ana ekran simgesinden açın.
+4. Gate Visa Checklist'i bundan sonra İDO ana ekran simgesinden açın.
 
-İlk kurulum ve yeni sürümü alma sırasında internet gerekir. Kurulumdan sonra yolcu listeleri, fotoğraflar ve çıktılar çevrimdışı kullanılabilir. iOS, ekran kapalıyken tarayıcı işlemini durdurabildiği için büyük bir içe aktarma tamamlanana kadar Excelbase'i ön planda tutun.
+İlk kurulum ve yeni sürümü alma sırasında internet gerekir. Kurulumdan sonra yolcu listeleri, PDF evraklar, fotoğraflar ve çıktılar çevrimdışı kullanılabilir. iOS, ekran kapalıyken tarayıcı işlemini durdurabildiği için büyük bir içe aktarma tamamlanana kadar Gate Visa Checklist'i ön planda tutun.
 
 ## Veri güvenliği ve yedek
 

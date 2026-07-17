@@ -21,6 +21,8 @@ import type {
   OperationMeta,
   OperationSummary,
   Passenger,
+  PassengerDocument,
+  PassengerDocumentFile,
   PassengerPage,
   SimpleResult,
   UnmatchedPhoto,
@@ -38,6 +40,7 @@ import {
   type StoredPassenger,
 } from "./domain";
 import { parsePassengerBytes, parseSelectedFile, type ParsedPassengerRow } from "./parser";
+import type { ExportDocument } from "./exporter";
 import {
   clearPassengers,
   clearMeta,
@@ -76,11 +79,14 @@ const META_OPERATION = "operation-meta";
 const META_UNMATCHED = "unmatched-photos";
 const META_LAST_UNDO = "last-undo";
 const META_BATCH_PREFIX = "import-batch:";
-const APP_VERSION = "7.3.0-offline";
+const APP_VERSION = "7.4.0-offline";
 const SOURCE_PREFIX = "source:";
 const PHOTO_PREFIX = "photo:";
+const DOCUMENT_PREFIX = "document:";
 const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
 const MAX_PHOTO_BATCH_BYTES = 350 * 1024 * 1024;
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+const MAX_DOCUMENT_BATCH_BYTES = 250 * 1024 * 1024;
 const MAX_EMAIL_BYTES = 100 * 1024 * 1024;
 const MAX_EMAIL_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const MAX_EMAIL_ATTACHMENTS_BYTES = 250 * 1024 * 1024;
@@ -96,7 +102,13 @@ type StoredImportJob = ImportJob & {
 type BatchState = { started: boolean; replaceConsumed: boolean };
 type UndoState = { batchId: string; passengers: StoredPassenger[] };
 type UnmatchedRecord = { id: string; binaryId: string; filename: string; createdAt: string };
-type BinaryMetadata = { kind: "source" | "photo"; filename: string; mime: string };
+type BinaryMetadata = {
+  kind: "source" | "photo" | "document";
+  filename: string;
+  mime: string;
+  passengerId?: number;
+  documentId?: string;
+};
 
 const photoUrlCache = new Map<string, string>();
 
@@ -133,6 +145,7 @@ function asStoredRow(row: ParsedPassengerRow, id: number, importJobId: string): 
     ...row,
     full_name: text(row.full_name) || [text(row.first_name), text(row.last_name)].filter(Boolean).join(" "),
     photo: "",
+    documents: [],
     _import_job_id: importJobId,
   };
 }
@@ -158,7 +171,15 @@ async function unmatchedRecords(): Promise<UnmatchedRecord[]> {
   return (await getMeta<UnmatchedRecord[]>(META_UNMATCHED)) ?? [];
 }
 
-async function garbageCollectPhotoBinaries(): Promise<void> {
+function documentBinaryId(documentId: string): string {
+  return `${DOCUMENT_PREFIX}${documentId}`;
+}
+
+function documentIds(row: Pick<StoredPassenger, "documents">): string[] {
+  return (row.documents ?? []).map((document) => documentBinaryId(document.id));
+}
+
+async function garbageCollectAttachmentBinaries(): Promise<void> {
   const [rows, unmatched, undo, binaryIds] = await Promise.all([
     listPassengers<StoredPassenger>(),
     unmatchedRecords(),
@@ -167,11 +188,13 @@ async function garbageCollectPhotoBinaries(): Promise<void> {
   ]);
   const referenced = new Set<string>();
   for (const row of rows) if (row.photo) referenced.add(row.photo);
+  for (const row of rows) for (const id of documentIds(row)) referenced.add(id);
   for (const item of unmatched) referenced.add(item.binaryId);
   for (const row of undo?.passengers ?? []) if (row.photo) referenced.add(row.photo);
+  for (const row of undo?.passengers ?? []) for (const id of documentIds(row)) referenced.add(id);
   for (const id of binaryIds) {
-    if (!id.startsWith(PHOTO_PREFIX) || referenced.has(id)) continue;
-    revokePhotoUrl(id);
+    if ((!id.startsWith(PHOTO_PREFIX) && !id.startsWith(DOCUMENT_PREFIX)) || referenced.has(id)) continue;
+    if (id.startsWith(PHOTO_PREFIX)) revokePhotoUrl(id);
     await deleteBinary(id);
   }
 }
@@ -268,14 +291,24 @@ export async function localUpdatePassenger(id: number, updates: Partial<Passenge
   return { ok: true, message: "Yolcu güncellendi.", passenger_count: (await listPassengers()).length };
 }
 
+async function deletePassengerAttachments(
+  passenger: StoredPassenger,
+  retained = new Set<string>(),
+): Promise<void> {
+  if (passenger.photo && !retained.has(passenger.photo)) {
+    revokePhotoUrl(passenger.photo);
+    await deleteBinary(passenger.photo);
+  }
+  for (const binaryId of documentIds(passenger)) {
+    if (!retained.has(binaryId)) await deleteBinary(binaryId);
+  }
+}
+
 export async function localDeletePassenger(id: number): Promise<SimpleResult> {
   const passenger = await getPassenger<StoredPassenger>(id);
   if (!passenger) throw new Error("Yolcu bulunamadı.");
   await deletePassengerRecord(id);
-  if (passenger.photo) {
-    revokePhotoUrl(passenger.photo);
-    await deleteBinary(passenger.photo);
-  }
+  await deletePassengerAttachments(passenger);
   return { ok: true, message: "Yolcu silindi.", passenger_count: (await listPassengers()).length };
 }
 
@@ -285,10 +318,7 @@ export async function localBulkDelete(ids: number[]): Promise<SimpleResult> {
   const removed = rows.filter((row) => wanted.has(row.id));
   for (const row of removed) {
     await deletePassengerRecord(row.id);
-    if (row.photo) {
-      revokePhotoUrl(row.photo);
-      await deleteBinary(row.photo);
-    }
+    await deletePassengerAttachments(row);
   }
   return { ok: true, message: `${removed.length} yolcu silindi.`, passenger_count: rows.length - removed.length };
 }
@@ -314,21 +344,24 @@ export async function localMergeDuplicates(passportKey = ""): Promise<{ removed:
   for (const group of groups.values()) {
     if (group.length < 2) continue;
     const [first, ...rest] = group;
-    const merged = { ...first };
+    const merged: StoredPassenger = {
+      ...first,
+      documents: [...new Map(
+        group.flatMap((row) => row.documents ?? []).map((document) => [document.id, document]),
+      ).values()],
+    };
     for (const duplicate of rest) {
       for (const key of Object.keys(merged) as Array<keyof StoredPassenger>) {
-        if (key !== "id" && !text(merged[key]) && text(duplicate[key])) {
+        if (key !== "id" && key !== "documents" && !text(merged[key]) && text(duplicate[key])) {
           (merged[key] as string | number) = duplicate[key] as string | number;
         }
       }
     }
     await putPassenger(merged);
+    const retained = new Set([merged.photo, ...documentIds(merged)].filter(Boolean));
     for (const duplicate of rest) {
       await deletePassengerRecord(duplicate.id);
-      if (duplicate.photo && duplicate.photo !== merged.photo) {
-        revokePhotoUrl(duplicate.photo);
-        await deleteBinary(duplicate.photo);
-      }
+      await deletePassengerAttachments(duplicate, retained);
       removed += 1;
     }
   }
@@ -382,7 +415,7 @@ async function applyParsedJob(job: StoredImportJob, bytes: ArrayBuffer): Promise
   }
   if (!batch.started) {
     await setMeta<UndoState>(META_LAST_UNDO, { batchId: job.batchId, passengers: allRows });
-    await garbageCollectPhotoBinaries();
+    await garbageCollectAttachmentBinaries();
     batch.started = true;
   }
 
@@ -408,7 +441,12 @@ async function applyParsedJob(job: StoredImportJob, bytes: ArrayBuffer): Promise
       duplicates += 1;
       if (job.dupStrategy === "skip") continue;
       if (job.dupStrategy === "overwrite") {
-        const updated: StoredPassenger = { ...candidate, id: existing.id, photo: existing.photo };
+        const updated: StoredPassenger = {
+          ...candidate,
+          id: existing.id,
+          photo: existing.photo,
+          documents: existing.documents ?? [],
+        };
         byIdentity.set(identity, updated);
         const pendingIndex = additions.findIndex((row) => row.id === existing.id);
         if (pendingIndex >= 0) additions[pendingIndex] = updated;
@@ -561,7 +599,7 @@ export async function localUndoImport(batchId = ""): Promise<SimpleResult> {
   if (!undo || (batchId && undo.batchId !== batchId)) throw new Error("Geri alınabilecek aktarım bulunamadı.");
   await replacePassengers(undo.passengers);
   await removeMeta(META_LAST_UNDO);
-  await garbageCollectPhotoBinaries();
+  await garbageCollectAttachmentBinaries();
   return { ok: true, message: "Son toplu aktarım geri alındı.", passenger_count: undo.passengers.length };
 }
 
@@ -620,6 +658,141 @@ function imageMime(filename: string, fallback = "application/octet-stream"): str
   return fallback;
 }
 
+function leafFilename(filename: string, fallback: string): string {
+  const leaf = filename.replaceAll("\\", "/").split("/").pop()?.trim() ?? "";
+  return leaf || fallback;
+}
+
+async function assertJpegBlob(blob: Blob, filename: string, declaredMime = blob.type): Promise<void> {
+  const extension = filename.split(".").pop()?.toLocaleLowerCase("en-US");
+  const signature = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
+  const hasJpegSignature = signature.length === 3
+    && signature[0] === 0xff
+    && signature[1] === 0xd8
+    && signature[2] === 0xff;
+  const mime = declaredMime.toLocaleLowerCase("en-US");
+  const acceptedMime = !mime || mime === "image/jpeg" || mime === "image/jpg" || mime === "application/octet-stream";
+  if (!hasJpegSignature || !acceptedMime || (extension !== "jpg" && extension !== "jpeg")) {
+    throw new Error("Biyometrik fotoğraf geçerli bir JPG/JPEG dosyası olmalıdır.");
+  }
+}
+
+async function assertJpegFile(file: File): Promise<void> {
+  await assertJpegBlob(file, file.name, file.type);
+}
+
+async function assertPdfFile(file: File): Promise<void> {
+  if (!file.size) throw new Error(`${file.name || "Evrak"}: PDF dosyası boş.`);
+  if (file.size > MAX_DOCUMENT_BYTES) throw new Error(`${file.name}: PDF 25 MB sınırını aşıyor.`);
+  if (file.name.split(".").pop()?.toLocaleLowerCase("en-US") !== "pdf") {
+    throw new Error(`${file.name}: yalnızca PDF evrak yüklenebilir.`);
+  }
+  const mime = file.type.toLocaleLowerCase("en-US");
+  if (mime && mime !== "application/pdf" && mime !== "application/octet-stream") {
+    throw new Error(`${file.name}: dosya türü PDF değil.`);
+  }
+  const header = new Uint8Array(await file.slice(0, Math.min(file.size, 1024)).arrayBuffer());
+  const signature = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
+  const hasSignature = header.some((_, index) => (
+    index + signature.length <= header.length
+      && signature.every((byte, offset) => header[index + offset] === byte)
+  ));
+  if (!hasSignature) throw new Error(`${file.name}: geçerli PDF imzası bulunamadı.`);
+}
+
+export async function localPassengerDocuments(passengerId: number): Promise<PassengerDocument[]> {
+  const row = await getPassenger<StoredPassenger>(passengerId);
+  if (!row) throw new Error("Yolcu bulunamadı.");
+  return row.documents ?? [];
+}
+
+export async function localUploadPassengerDocuments(
+  passengerId: number,
+  files: File[],
+): Promise<PassengerDocument[]> {
+  const row = await getPassenger<StoredPassenger>(passengerId);
+  if (!row) throw new Error("Yolcu bulunamadı.");
+  if (!files.length) return row.documents ?? [];
+
+  let totalBytes = 0;
+  for (const file of files) {
+    totalBytes += file.size;
+    if (totalBytes > MAX_DOCUMENT_BATCH_BYTES) {
+      throw new Error("PDF evrak seçimi toplam 250 MB güvenli cihaz sınırını aşıyor.");
+    }
+    await assertPdfFile(file);
+  }
+
+  const created: PassengerDocument[] = [];
+  try {
+    for (const file of files) {
+      const id = newId();
+      const filename = leafFilename(file.name, "evrak.pdf");
+      const normalized = new File([file], filename, {
+        type: "application/pdf",
+        lastModified: file.lastModified || Date.now(),
+      });
+      const document: PassengerDocument = {
+        id,
+        filename,
+        mime: "application/pdf",
+        size: normalized.size,
+        created_at: new Date().toISOString(),
+      };
+      await putBinary(documentBinaryId(id), normalized, {
+        kind: "document",
+        filename,
+        mime: "application/pdf",
+        passengerId,
+        documentId: id,
+      } satisfies BinaryMetadata);
+      created.push(document);
+    }
+    row.documents = [...(row.documents ?? []), ...created];
+    await putPassenger(row);
+  } catch (error) {
+    for (const document of created) await deleteBinary(documentBinaryId(document.id));
+    throw error;
+  }
+  return row.documents;
+}
+
+export async function localPassengerDocumentFile(
+  passengerId: number,
+  documentId: string,
+): Promise<PassengerDocumentFile> {
+  const row = await getPassenger<StoredPassenger>(passengerId);
+  if (!row) throw new Error("Yolcu bulunamadı.");
+  const document = (row.documents ?? []).find((item) => item.id === documentId);
+  if (!document) throw new Error("PDF evrak bulunamadı.");
+  const binary = await getBinary(documentBinaryId(document.id));
+  if (!binary) throw new Error("PDF evrakın şifreli dosyası bulunamadı.");
+  return {
+    metadata: document,
+    blob: binary.data.type === "application/pdf"
+      ? binary.data
+      : new Blob([binary.data], { type: "application/pdf" }),
+  };
+}
+
+export async function localDeletePassengerDocument(
+  passengerId: number,
+  documentId: string,
+): Promise<SimpleResult> {
+  const row = await getPassenger<StoredPassenger>(passengerId);
+  if (!row) throw new Error("Yolcu bulunamadı.");
+  const documents = row.documents ?? [];
+  if (!documents.some((document) => document.id === documentId)) throw new Error("PDF evrak bulunamadı.");
+  row.documents = documents.filter((document) => document.id !== documentId);
+  await putPassenger(row);
+  await deleteBinary(documentBinaryId(documentId));
+  return {
+    ok: true,
+    message: "PDF evrak silindi.",
+    passenger_count: (await listPassengers()).length,
+  };
+}
+
 function safeArchivePath(name: string): boolean {
   const normalized = name.replaceAll("\\", "/");
   return Boolean(normalized && !normalized.startsWith("/") && !/^[A-Za-z]:\//.test(normalized) && !normalized.split("/").includes(".."));
@@ -636,7 +809,7 @@ async function selectedPhotoFiles(files: File[]): Promise<Array<{ filename: stri
     const signature = new Uint8Array(await file.slice(0, 4).arrayBuffer());
     const isZip = signature[0] === 0x50 && signature[1] === 0x4b;
     if (!isZip) {
-      if (!file.type.startsWith("image/") && imageMime(file.name) === "application/octet-stream") continue;
+      await assertJpegFile(file);
       if (file.size > MAX_PHOTO_BYTES || total + file.size > MAX_PHOTO_BATCH_BYTES) {
         throw new Error("Fotoğraf seçimi güvenli cihaz boyutu sınırını aşıyor.");
       }
@@ -650,12 +823,16 @@ async function selectedPhotoFiles(files: File[]): Promise<Array<{ filename: stri
         if (entry.directory || !safeArchivePath(entry.filename) || entry.encrypted || isArchiveSymlink(entry)) continue;
         const mime = imageMime(entry.filename);
         if (!mime.startsWith("image/")) continue;
+        if (mime !== "image/jpeg") {
+          throw new Error(`${entry.filename}: biyometrik fotoğraf JPG/JPEG olmalıdır.`);
+        }
         if (entry.uncompressedSize > MAX_PHOTO_BYTES || total + entry.uncompressedSize > MAX_PHOTO_BATCH_BYTES) {
           throw new Error("Fotoğraf ZIP'i güvenli açılmış boyut sınırını aşıyor.");
         }
         const ratio = entry.uncompressedSize / Math.max(entry.compressedSize, 1);
         if (entry.uncompressedSize > 1024 * 1024 && ratio > 200) continue;
         const blob = await entry.getData(new BlobWriter(mime), { checkSignature: true, useWebWorkers: false });
+        await assertJpegBlob(blob, entry.filename, mime);
         if (blob.size > MAX_PHOTO_BYTES || total + blob.size > MAX_PHOTO_BATCH_BYTES) {
           throw new Error("Fotoğraf ZIP'i güvenli açılmış boyut sınırını aşıyor.");
         }
@@ -746,6 +923,7 @@ export async function localSetPassengerPhoto(id: number, file: File): Promise<Si
   const row = await getPassenger<StoredPassenger>(id);
   if (!row) throw new Error("Yolcu bulunamadı.");
   if (file.size > MAX_PHOTO_BYTES) throw new Error("Fotoğraf 25 MB sınırını aşıyor.");
+  await assertJpegFile(file);
   const previousPhoto = row.photo;
   const nextPhoto = await storePhoto(file.name, file);
   try {
@@ -894,6 +1072,26 @@ export async function localExportPhotos(rows: StoredPassenger[]): Promise<Array<
     if (!binary) continue;
     const extension = binary.name.includes(".") ? `.${binary.name.split(".").pop()}` : ".jpg";
     output.push({ filename: `${row.passport_no || row.full_name || row.id}${extension}`, blob: binary.data });
+  }
+  return output;
+}
+
+export async function localExportDocuments(rows: StoredPassenger[]): Promise<ExportDocument[]> {
+  const output: ExportDocument[] = [];
+  for (const row of rows) {
+    for (const document of row.documents ?? []) {
+      const binary = await getBinary(documentBinaryId(document.id));
+      if (!binary) continue;
+      output.push({
+        passengerId: row.id,
+        passengerName: row.full_name,
+        passportNo: row.passport_no,
+        filename: document.filename,
+        blob: binary.data.type === "application/pdf"
+          ? binary.data
+          : new Blob([binary.data], { type: "application/pdf" }),
+      });
+    }
   }
   return output;
 }
