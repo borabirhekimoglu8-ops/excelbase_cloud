@@ -21,7 +21,7 @@ export function SettingsTab({ onOpen }: { onOpen: (sub: SettingsSub) => void }) 
     { key: "issues", title: "Kontrol Merkezi", sub: "Eksik alan ve belgeleri düzelt", badge: issueTotal },
     { key: "gallery", title: "Fotoğraf Galerisi", sub: "Yüklenen biyometrik fotoğraflar" },
     { key: "archive", title: "Tarih Arşivi", sub: "Gün bazında dosyalar ve çıktılar" },
-    { key: "package", title: "Çıktılar ve Yedek", sub: "Excel, CSV, fotoğraf paketi ve cihaz yedeği" },
+    { key: "package", title: "Çıktılar ve Yedek", sub: "Excel, CSV, PDF evrak, fotoğraf ve cihaz yedeği" },
     { key: "management", title: "Cihaz ve Güvenlik", sub: "Depolama, çevrimdışı durum ve şifreli yedek", roles: ["admin"] },
   ];
 
@@ -65,7 +65,7 @@ export function SettingsTab({ onOpen }: { onOpen: (sub: SettingsSub) => void }) 
       <div className="ic-info-note">
         <span className="ic-info-mark">i</span>
         <div className="ic-info-note-copy">
-          <p className="ic-info-note-title">Excelbase Çevrimdışı Yolcu Yönetimi · v{UI_VERSION}</p>
+          <p className="ic-info-note-title">Gate Visa Checklist · v{UI_VERSION}</p>
           <p className="ic-info-note-detail">
             {connected ? "Çevrimdışı kullanıma hazır" : "Yerel kasa okunamadı"} · Veriler bu cihazda şifreli saklanıyor.
           </p>

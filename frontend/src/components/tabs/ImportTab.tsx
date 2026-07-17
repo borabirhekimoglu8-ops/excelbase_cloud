@@ -771,10 +771,11 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             <p className="ic-section-title">Fotoğrafları Eşleştirin</p>
           </div>
           <label className="ic-btn-outline" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", position: "relative" }}>
-            Fotoğraf / ZIP Seç
+            JPG / ZIP Seç
             <input
               type="file"
-              accept="image/*,.zip,.heic,.heif"
+              accept=".jpg,.jpeg,image/jpeg,.zip,application/zip"
+              aria-label="JPG biyometrik fotoğraf veya ZIP seç"
               multiple
               onChange={handlePhotos}
               disabled={summary.passenger_count === 0 || photoBusy}

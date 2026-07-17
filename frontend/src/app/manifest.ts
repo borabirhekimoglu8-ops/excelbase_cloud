@@ -5,9 +5,9 @@ export const dynamic = "force-static";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Excelbase · Yolcu Operasyonları",
-    short_name: "Excelbase",
-    description: "Yolcu listeleri, fotoğraflar ve teslim dosyaları için çevrimdışı operasyon uygulaması.",
+    name: "Gate Visa Checklist",
+    short_name: "Gate Visa Checklist",
+    description: "Yolcu listeleri, PDF evraklar, biyometrik fotoğraflar ve teslim dosyaları için çevrimdışı operasyon uygulaması.",
     start_url: "/",
     scope: "/",
     display: "standalone",

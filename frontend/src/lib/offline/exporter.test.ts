@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PASSENGER_EXPORT_COLUMNS,
   createDeliveryZipBlob,
+  createDocumentsZipBlob,
   createGateVisaTemplateXlsxBlob,
   createManifestHtmlBlob,
   createPassengerCsvBlob,
@@ -189,6 +190,38 @@ describe("ZIP exports", () => {
     ]);
     expect(contents.get("teslim-manifestosu.html")).toContain("AYŞE YILMAZ");
     expect([...(await zipEntryBytes(delivery, "yolcu-listesi.csv")).slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+  });
+
+  it("adds passenger PDF documents under isolated safe folders", async () => {
+    const documents = [
+      {
+        passengerId: 7,
+        passengerName: "AYŞE YILMAZ",
+        passportNo: "TR123456",
+        filename: "../pasaport.pdf",
+        blob: new Blob(["%PDF-1.7\npassport\n%%EOF"], { type: "application/pdf" }),
+      },
+      {
+        passengerId: 7,
+        passengerName: "AYŞE YILMAZ",
+        passportNo: "TR123456",
+        filename: "pasaport.pdf",
+        blob: new Blob(["%PDF-1.7\nvisa\n%%EOF"], { type: "application/pdf" }),
+      },
+    ];
+    const documentZip = await zipContents(await createDocumentsZipBlob(documents));
+    expect([...documentZip.keys()].sort()).toEqual([
+      "evraklar/TR123456-7/pasaport (2).pdf",
+      "evraklar/TR123456-7/pasaport.pdf",
+    ]);
+
+    const delivery = await zipContents(await createDeliveryZipBlob(
+      [{ ...passenger, documents: [{ id: "doc-1", filename: "pasaport.pdf" }] }],
+      [],
+      { documents },
+    ));
+    expect(delivery.get("evraklar/TR123456-7/pasaport.pdf")).toContain("passport");
+    expect(delivery.get("teslim-manifestosu.html")).toContain("<b>2</b><span>PDF evrak</span>");
   });
 });
 

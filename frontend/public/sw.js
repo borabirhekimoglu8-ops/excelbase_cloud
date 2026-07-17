@@ -1,15 +1,14 @@
-/* Excelbase offline application shell.
+/* Gate Visa Checklist offline application shell.
  *
  * Passenger records are handled by the application data layer. This worker
  * only keeps the static application shell available when the network is down.
  */
-const SHELL_VERSION = "2026.07.16.2";
+const SHELL_VERSION = "2026.07.17.1";
 const CACHE_PREFIX = "excelbase-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const CORE_ASSETS = [
   "/",
   "/manifest.webmanifest",
-  "/icon.svg",
   "/icon-192.png",
   "/icon-512.png",
   "/apple-touch-icon.png",
@@ -63,7 +62,7 @@ async function precacheShell() {
   const rootResponse = await fetch(new Request("/", { cache: "reload", credentials: "same-origin" }));
 
   if (!isCacheableResponse(rootResponse)) {
-    throw new Error("Excelbase application shell could not be fetched.");
+    throw new Error("Gate Visa Checklist application shell could not be fetched.");
   }
 
   await cache.put("/", rootResponse.clone());

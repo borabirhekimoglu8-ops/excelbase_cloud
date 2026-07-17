@@ -3,8 +3,13 @@
 import { ChangeEvent, useEffect, useState } from "react";
 import {
   Passenger,
+  PassengerDocument,
+  addPassengerDocuments,
   deletePassenger,
+  deletePassengerDocument,
+  downloadPassengerDocument,
   fetchPassengers,
+  openPassengerDocument,
   removePassengerPhoto,
   setPassengerPhoto,
   updatePassenger,
@@ -26,6 +31,25 @@ const FIELDS: { key: keyof Passenger; label: string; type?: string }[] = [
   { key: "child_fee", label: "Vize Ücreti Çocuk" },
 ];
 
+function formatDocumentSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / 1024 ** 2).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} MB`;
+}
+
+function formatDocumentDate(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Eklenme tarihi bilinmiyor";
+  return new Intl.DateTimeFormat("tr-TR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(parsed);
+}
+
+function releaseObjectUrl(url: string) {
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export function PassengerDetail({ id, onClose }: { id: number; onClose: () => void }) {
   const { notify, bump } = useStore();
   const { user } = useAuth();
@@ -34,6 +58,13 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [documentsBusy, setDocumentsBusy] = useState(false);
+  const [documentAction, setDocumentAction] = useState("");
+
+  async function refreshPassenger() {
+    const list = await fetchPassengers();
+    setPassenger(list.find((p) => p.id === id) ?? null);
+  }
 
   useEffect(() => {
     let active = true;
@@ -106,13 +137,19 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
   async function handlePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    const extensionIsJpeg = /\.jpe?g$/i.test(file.name);
+    const mimeIsJpeg = !file.type || file.type === "image/jpeg" || file.type === "image/jpg";
+    if (!extensionIsJpeg || !mimeIsJpeg) {
+      notify("Biyometrik fotoğraf yalnızca JPG/JPEG formatında yüklenebilir.", "error");
+      event.target.value = "";
+      return;
+    }
     setBusy(true);
     try {
       await setPassengerPhoto(id, file);
-      notify("Fotoğraf güncellendi");
+      notify("JPG biyometrik fotoğraf güncellendi");
       bump();
-      const list = await fetchPassengers();
-      setPassenger(list.find((p) => p.id === id) ?? null);
+      await refreshPassenger();
     } catch (err) {
       notify(err instanceof Error ? err.message : "Fotoğraf yüklenemedi", "error");
     } finally {
@@ -127,8 +164,7 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
       await removePassengerPhoto(id);
       notify("Fotoğraf silindi", "warn");
       bump();
-      const list = await fetchPassengers();
-      setPassenger(list.find((p) => p.id === id) ?? null);
+      await refreshPassenger();
     } catch (err) {
       notify(err instanceof Error ? err.message : "Silinemedi", "error");
     } finally {
@@ -136,8 +172,72 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
     }
   }
 
+  async function handleDocuments(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) return;
+    setDocumentsBusy(true);
+    try {
+      await addPassengerDocuments(id, files);
+      notify(`${files.length} PDF evrak yolcuya eklendi`);
+      bump();
+      await refreshPassenger();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "PDF evraklar yüklenemedi", "error");
+    } finally {
+      setDocumentsBusy(false);
+      event.target.value = "";
+    }
+  }
+
+  async function handleDocumentOpen(document: PassengerDocument) {
+    setDocumentAction(`${document.id}:open`);
+    try {
+      const file = await openPassengerDocument(id, document.id);
+      const url = URL.createObjectURL(file.blob);
+      const anchor = window.document.createElement("a");
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      window.document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      releaseObjectUrl(url);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "PDF evrak açılamadı", "error");
+    } finally {
+      setDocumentAction("");
+    }
+  }
+
+  async function handleDocumentDownload(document: PassengerDocument) {
+    setDocumentAction(`${document.id}:download`);
+    try {
+      await downloadPassengerDocument(id, document.id);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "PDF evrak indirilemedi", "error");
+    } finally {
+      setDocumentAction("");
+    }
+  }
+
+  async function handleDocumentDelete(document: PassengerDocument) {
+    if (!window.confirm(`“${document.filename}” evrakını silmek istediğinize emin misiniz?`)) return;
+    setDocumentAction(`${document.id}:delete`);
+    try {
+      await deletePassengerDocument(id, document.id);
+      notify("PDF evrak silindi", "warn");
+      bump();
+      await refreshPassenger();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "PDF evrak silinemedi", "error");
+    } finally {
+      setDocumentAction("");
+    }
+  }
+
   const { tone, label } = passengerStatusTone(passenger);
   const hasIssues = passenger.issues.length > 0;
+  const documents = passenger.documents ?? [];
 
   return (
     <div className="sheet-overlay" onClick={onClose}>
@@ -203,7 +303,7 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
           </div>
 
           <div className="ic-section-head">
-            <p className="ic-section-title">Biyometrik Fotoğraf</p>
+            <p className="ic-section-title">JPG Biyometrik Fotoğraf</p>
             <span className={passenger.photo ? "ic-pill ic-pill-ok" : "ic-pill ic-pill-bad"}>
               {passenger.photo ? "1 / 1 MEVCUT" : "0 / 1 EKSİK"}
             </span>
@@ -212,15 +312,22 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
             <div className="ic-row-id">
               <span className="ic-filetype pdf">FOTO</span>
               <div className="ic-row-copy">
-                <p className="ic-row-title">{passenger.photo ? "Biyometrik fotoğraf" : "Fotoğraf yüklenmedi"}</p>
-                <p className="ic-row-meta">{passenger.photo ? "Yolcu profilinde kullanılıyor" : "Kontrolden önce ekleyin"}</p>
+                <p className="ic-row-title">{passenger.photo ? "JPG biyometrik fotoğraf" : "JPG fotoğraf yüklenmedi"}</p>
+                <p className="ic-row-meta">{passenger.photo ? "Yolcu profilinde kullanılıyor" : "Yalnızca .jpg veya .jpeg kabul edilir"}</p>
               </div>
             </div>
             {canWrite && (
               <div style={{ display: "flex", gap: 8, flex: "0 0 auto" }}>
                 <label className="ic-pill ic-pill-info" style={{ cursor: "pointer" }}>
-                  {passenger.photo ? "DEĞİŞTİR" : "EKLE"}
-                  <input type="file" accept="image/*" onChange={handlePhoto} disabled={busy} style={{ display: "none" }} />
+                  {passenger.photo ? "JPG DEĞİŞTİR" : "JPG EKLE"}
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,image/jpeg"
+                    aria-label="JPG biyometrik fotoğraf seç"
+                    onChange={handlePhoto}
+                    disabled={busy}
+                    style={{ display: "none" }}
+                  />
                 </label>
                 {passenger.photo && (
                   <button
@@ -236,6 +343,87 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
               </div>
             )}
           </div>
+
+          <div className="ic-section-head ic-document-heading">
+            <div>
+              <p className="ic-section-title">PDF Evraklar</p>
+              <p className="ic-section-caption">Yolcuya ait başvuru evrakları şifreli cihaz kasasında saklanır.</p>
+            </div>
+            <span className={documents.length ? "ic-pill ic-pill-ok" : "ic-pill ic-pill-neutral"}>
+              {documents.length} EVRAK
+            </span>
+          </div>
+
+          {documents.length ? (
+            <div className="ic-document-list" aria-label="Yolcu PDF evrakları">
+              {documents.map((document) => (
+                <div className="ic-row compact ic-document-row" key={document.id}>
+                  <div className="ic-row-id">
+                    <span className="ic-filetype pdf">PDF</span>
+                    <div className="ic-row-copy">
+                      <p className="ic-row-title" title={document.filename}>{document.filename}</p>
+                      <p className="ic-row-meta">
+                        {formatDocumentSize(document.size)} · {formatDocumentDate(document.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="ic-document-actions">
+                    <button
+                      className="ic-pill ic-pill-info"
+                      type="button"
+                      onClick={() => void handleDocumentOpen(document)}
+                      disabled={Boolean(documentAction)}
+                      aria-label={`${document.filename} PDF evrakını görüntüle`}
+                    >
+                      {documentAction === `${document.id}:open` ? "AÇILIYOR…" : "GÖRÜNTÜLE"}
+                    </button>
+                    <button
+                      className="ic-pill ic-pill-neutral"
+                      type="button"
+                      onClick={() => void handleDocumentDownload(document)}
+                      disabled={Boolean(documentAction)}
+                      aria-label={`${document.filename} PDF evrakını indir`}
+                    >
+                      {documentAction === `${document.id}:download` ? "İNDİRİLİYOR…" : "İNDİR"}
+                    </button>
+                    {canWrite ? (
+                      <button
+                        className="ic-pill ic-pill-bad"
+                        type="button"
+                        onClick={() => void handleDocumentDelete(document)}
+                        disabled={Boolean(documentAction)}
+                        aria-label={`${document.filename} PDF evrakını sil`}
+                      >
+                        {documentAction === `${document.id}:delete` ? "SİLİNİYOR…" : "SİL"}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="ic-empty-document">
+              <span className="ic-filetype pdf">PDF</span>
+              <div>
+                <p>Henüz PDF evrak eklenmedi</p>
+                <span>Bir veya birden fazla PDF dosyasını aynı anda seçebilirsiniz.</span>
+              </div>
+            </div>
+          )}
+
+          {canWrite ? (
+            <label className={`ic-btn-outline ic-document-upload${documentsBusy ? " disabled" : ""}`}>
+              {documentsBusy ? "PDF EVRAKLAR EKLENİYOR…" : "PDF EVRAK EKLE"}
+              <input
+                type="file"
+                accept=".pdf,application/pdf"
+                aria-label="Yolcu PDF evraklarını seç"
+                multiple
+                onChange={handleDocuments}
+                disabled={documentsBusy || busy}
+              />
+            </label>
+          ) : null}
         </div>
 
         {canWrite && (

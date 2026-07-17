@@ -57,7 +57,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const value = useMemo(() => (status?.user ? { user: status.user, signOut } : null), [status]);
 
   if (!status) {
-    return <div className="auth-loading">Excelbase yerel kasası hazırlanıyor…</div>;
+    return <div className="auth-loading">Gate Visa Checklist yerel kasası hazırlanıyor…</div>;
   }
 
   if (!status.authenticated || !status.user || !value) {
@@ -66,9 +66,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <main className="auth-page">
         <section className="auth-panel">
           <div className="brand-lockup auth-brand">
-            <span className="brand-symbol">GV</span>
+            <span className="auth-logo-mark">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/brand/ido-logo.jpg" alt="İDO" />
+            </span>
             <div>
-              <strong>Excelbase</strong>
+              <strong>Gate Visa Checklist</strong>
               <small>Çevrimdışı Yolcu Yönetimi</small>
             </div>
           </div>

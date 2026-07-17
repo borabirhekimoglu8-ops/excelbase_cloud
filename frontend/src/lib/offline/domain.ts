@@ -108,6 +108,7 @@ export function toPassenger(row: StoredPassenger, duplicates: Set<string>, photo
     arrival_date: canonicalDate(row.arrival_date) || text(row.arrival_date),
     full_name: text(row.full_name) || [text(row.first_name), text(row.last_name)].filter(Boolean).join(" "),
     photo_url: photoUrl,
+    documents: row.documents ?? [],
     issues,
     duplicate: issues.includes("Tekrarlı"),
   };

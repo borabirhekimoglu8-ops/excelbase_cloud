@@ -67,6 +67,7 @@ export function PackageTab() {
             <LocalDownloadButton className="soft-btn" kind="excel" scope={dateScope}>Excel</LocalDownloadButton>
             <LocalDownloadButton className="soft-btn" kind="csv" scope={dateScope}>CSV</LocalDownloadButton>
             <LocalDownloadButton className="soft-btn" kind="photos" scope={dateScope}>Fotoğraf ZIP</LocalDownloadButton>
+            <LocalDownloadButton className="soft-btn" kind="documents" scope={dateScope}>PDF Evrak ZIP</LocalDownloadButton>
           </div>
         </>
       ) : (

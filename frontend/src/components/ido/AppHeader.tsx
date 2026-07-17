@@ -14,7 +14,7 @@ export function AppHeaderHome({ statusLabel = "SİSTEM AKTİF" }: { statusLabel?
       </span>
       <div className="ido-header-identity">
         <p className="ido-header-brand">İDO EGE ADALARI</p>
-        <p className="ido-header-sub">VİZE OPERASYON PORTALI</p>
+        <p className="ido-header-sub">GATE VISA CHECKLIST</p>
       </div>
       <span className="ido-header-badge">{statusLabel}</span>
     </header>

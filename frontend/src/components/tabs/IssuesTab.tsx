@@ -110,8 +110,8 @@ export function IssuesTab() {
                 </button>
                 {canWrite && category === "Fotosuz" && (
                   <label className="soft-btn">
-                    Foto ata
-                    <input type="file" accept="image/*" onChange={(e) => handlePhoto(p.id, e)} />
+                    JPG ata
+                    <input type="file" accept=".jpg,.jpeg,image/jpeg" onChange={(e) => handlePhoto(p.id, e)} />
                   </label>
                 )}
               </div>
