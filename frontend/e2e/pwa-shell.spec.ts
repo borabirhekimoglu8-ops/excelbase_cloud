@@ -102,7 +102,7 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
     mimeType: "application/pdf",
     buffer: Buffer.from("%PDF-1.7\nGate Visa Checklist test pasaportu\n%%EOF"),
   });
-  await expect(page.getByText("1 PDF", { exact: true })).toBeVisible();
+  await expect(page.locator(".ic-row-meta").filter({ hasText: "1 PDF" })).toBeVisible();
 
   await page.getByText("AYŞE YOLCU", { exact: true }).click();
   await expect(page.getByText("Yolcu Detayı", { exact: true })).toBeVisible();
