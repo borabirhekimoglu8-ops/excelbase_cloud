@@ -60,12 +60,20 @@ test("Claude Sonnet bağımsız çalışma alanı güvenli bağlamla gerçek soh
   expect(composerBox).not.toBeNull();
   expect(composerBox!.y + composerBox!.height).toBeLessThanOrEqual(844);
 
-  const composer = page.getByLabel("Sonnet mesajı");
+  const composer = page.getByRole("textbox", {
+    name: "Sonnet mesajı",
+    exact: true,
+  });
   await expect(composer).toBeDisabled();
   await page.getByText(/Yazdığım metnin Anthropic’e gönderileceğini biliyorum/).click();
   await expect(composer).toBeEnabled();
   await composer.fill("Bugünkü durumu özetle.");
-  await page.getByRole("button", { name: "Sonnet mesajını gönder" }).click();
+  await page
+    .getByRole("button", {
+      name: "Sonnet mesajını gönder",
+      exact: true,
+    })
+    .click();
 
   await expect(page.getByText("Operasyon hazır. <script>window.hacked=true</script>", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as typeof window & { hacked?: boolean }).hacked)).toBeUndefined();
@@ -143,9 +151,15 @@ test("hızlı çift gönderim tek ücretli istek açar ve yeni konuşmaya eski y
   await page.getByRole("button", { name: /Claude Sonnet Asistan/ }).click();
   await page.getByText(/Yazdığım metnin Anthropic’e gönderileceğini biliyorum/).click();
 
-  const composer = page.getByLabel("Sonnet mesajı");
+  const composer = page.getByRole("textbox", {
+    name: "Sonnet mesajı",
+    exact: true,
+  });
   await composer.fill("Tek kez gönder.");
-  const send = page.getByRole("button", { name: "Sonnet mesajını gönder" });
+  const send = page.getByRole("button", {
+    name: "Sonnet mesajını gönder",
+    exact: true,
+  });
   await send.evaluate((element) => {
     (element as HTMLButtonElement).click();
     (element as HTMLButtonElement).click();
