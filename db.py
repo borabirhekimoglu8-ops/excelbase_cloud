@@ -243,6 +243,41 @@ def _create_tables(engine: "Engine") -> None:
                 "ON v7_audit_events(occurred_at DESC)"
             )
         )
+        # Billable assistant calls need counters that survive Render cold
+        # starts and deploys.  The daily rows are deliberately content-free:
+        # only opaque actor/request IDs and token counts are persisted.
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS v7_assistant_usage_daily ("
+                "usage_day VARCHAR(10) NOT NULL, "
+                "scope VARCHAR(16) NOT NULL, "
+                "subject VARCHAR(128) NOT NULL, "
+                "request_count INTEGER NOT NULL DEFAULT 0, "
+                "input_tokens BIGINT NOT NULL DEFAULT 0, "
+                "output_tokens BIGINT NOT NULL DEFAULT 0, "
+                "updated_at VARCHAR(40) NOT NULL, "
+                "PRIMARY KEY (usage_day, scope, subject))"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS v7_assistant_requests ("
+                "id VARCHAR(128) PRIMARY KEY, "
+                "actor_id VARCHAR(128) NOT NULL, "
+                "usage_day VARCHAR(10) NOT NULL, "
+                "status VARCHAR(32) NOT NULL, "
+                "input_tokens BIGINT NOT NULL DEFAULT 0, "
+                "output_tokens BIGINT NOT NULL DEFAULT 0, "
+                "created_at VARCHAR(40) NOT NULL, "
+                "updated_at VARCHAR(40) NOT NULL)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_v7_assistant_requests_day_actor "
+                "ON v7_assistant_requests(usage_day, actor_id, created_at)"
+            )
+        )
 
 
 def save_state(payload: dict) -> bool:
@@ -1528,6 +1563,234 @@ def clear_legacy_import_job_documents() -> int:
     except Exception:
         logger.exception("Eski aktarım işi belgeleri temizlenemedi")
         return 0
+
+
+# ---------------------------------------------------------------------------
+# Billable assistant usage and idempotency
+
+_ASSISTANT_REQUEST_STATUSES = frozenset({"reserved", "completed", "failed", "cancelled"})
+
+
+def _assistant_identifier(value: object, label: str) -> str:
+    resolved = str(value or "").strip()
+    if (
+        not resolved
+        or len(resolved) > 128
+        or not all(character.isalnum() or character in "_.:-" for character in resolved)
+    ):
+        raise ValueError(f"{label} geçersiz.")
+    return resolved
+
+
+def _assistant_usage_day(value: object) -> str:
+    resolved = str(value or "").strip()
+    try:
+        parsed = date.fromisoformat(resolved)
+    except ValueError as exc:
+        raise ValueError("Asistan kullanım günü geçersiz.") from exc
+    if parsed.isoformat() != resolved:
+        raise ValueError("Asistan kullanım günü geçersiz.")
+    return resolved
+
+
+def reserve_assistant_request(
+    request_id: str,
+    actor_id: str,
+    usage_day: str,
+    *,
+    actor_limit: int,
+    global_limit: int,
+) -> str | None:
+    """Atomically reserve one billable assistant request.
+
+    Returns ``reserved``, ``duplicate``, ``actor_quota`` or ``global_quota``.
+    ``None`` means there is no database, allowing the explicitly documented
+    process fallback.  A configured database failure raises instead so a
+    transient outage can never silently reset a production spending limit.
+    """
+    engine = get_engine()
+    if engine is None:
+        return None
+    resolved_request_id = _assistant_identifier(request_id, "Asistan istek kimliği")
+    resolved_actor_id = _assistant_identifier(actor_id, "Asistan kullanıcı kimliği")
+    resolved_day = _assistant_usage_day(usage_day)
+    resolved_actor_limit = max(1, int(actor_limit))
+    resolved_global_limit = max(1, int(global_limit))
+    now = _utc_now()
+    lock_suffix = " FOR UPDATE" if engine.dialect.name == "postgresql" else ""
+
+    try:
+        with engine.begin() as conn:
+            # Fast retry path.  The second check below remains authoritative
+            # for two concurrent requests racing with the same id.
+            existing = conn.execute(
+                text("SELECT status FROM v7_assistant_requests WHERE id = :id"),
+                {"id": resolved_request_id},
+            ).fetchone()
+            if existing:
+                return "duplicate"
+
+            for scope, subject in (("actor", resolved_actor_id), ("global", "*")):
+                conn.execute(
+                    text(
+                        "INSERT INTO v7_assistant_usage_daily ("
+                        "usage_day, scope, subject, request_count, input_tokens, "
+                        "output_tokens, updated_at"
+                        ") VALUES (:usage_day, :scope, :subject, 0, 0, 0, :updated_at) "
+                        "ON CONFLICT (usage_day, scope, subject) DO NOTHING"
+                    ),
+                    {
+                        "usage_day": resolved_day,
+                        "scope": scope,
+                        "subject": subject,
+                        "updated_at": now,
+                    },
+                )
+
+            # Every request locks both rows in the same deterministic order.
+            # This serialises the small quota decision
+            # across Render workers without holding a lock during the API call.
+            rows = conn.execute(
+                text(
+                    "SELECT scope, subject, request_count "
+                    "FROM v7_assistant_usage_daily "
+                    "WHERE usage_day = :usage_day AND ("
+                    "(scope = 'actor' AND subject = :actor_id) OR "
+                    "(scope = 'global' AND subject = '*')) "
+                    f"ORDER BY scope, subject{lock_suffix}"
+                ),
+                {"usage_day": resolved_day, "actor_id": resolved_actor_id},
+            ).fetchall()
+            counts = {
+                (str(row[0]), str(row[1])): int(row[2] or 0)
+                for row in rows
+            }
+
+            # If another transaction with the same id was waiting on these
+            # quota rows, it is now committed and visible.
+            existing = conn.execute(
+                text("SELECT status FROM v7_assistant_requests WHERE id = :id"),
+                {"id": resolved_request_id},
+            ).fetchone()
+            if existing:
+                return "duplicate"
+            if counts.get(("global", "*"), 0) >= resolved_global_limit:
+                return "global_quota"
+            if counts.get(("actor", resolved_actor_id), 0) >= resolved_actor_limit:
+                return "actor_quota"
+
+            inserted = conn.execute(
+                text(
+                    "INSERT INTO v7_assistant_requests ("
+                    "id, actor_id, usage_day, status, input_tokens, output_tokens, "
+                    "created_at, updated_at"
+                    ") VALUES ("
+                    ":id, :actor_id, :usage_day, 'reserved', 0, 0, :created_at, :updated_at"
+                    ") ON CONFLICT (id) DO NOTHING"
+                ),
+                {
+                    "id": resolved_request_id,
+                    "actor_id": resolved_actor_id,
+                    "usage_day": resolved_day,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+            if not inserted.rowcount:
+                return "duplicate"
+            conn.execute(
+                text(
+                    "UPDATE v7_assistant_usage_daily "
+                    "SET request_count = request_count + 1, updated_at = :updated_at "
+                    "WHERE usage_day = :usage_day AND ("
+                    "(scope = 'actor' AND subject = :actor_id) OR "
+                    "(scope = 'global' AND subject = '*'))"
+                ),
+                {
+                    "usage_day": resolved_day,
+                    "actor_id": resolved_actor_id,
+                    "updated_at": now,
+                },
+            )
+        return "reserved"
+    except (TypeError, ValueError):
+        raise
+    except Exception as exc:
+        logger.exception("Asistan kullanım rezervasyonu veritabanına yazılamadı")
+        raise DatabaseUnavailableError("Asistan kullanım limiti doğrulanamadı.") from exc
+
+
+def settle_assistant_request(
+    request_id: str,
+    *,
+    status: str,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+) -> bool:
+    """Settle a reservation once without persisting prompt or response text."""
+    engine = get_engine()
+    if engine is None:
+        return False
+    resolved_request_id = _assistant_identifier(request_id, "Asistan istek kimliği")
+    resolved_status = str(status or "").strip().lower()
+    if resolved_status not in _ASSISTANT_REQUEST_STATUSES - {"reserved"}:
+        raise ValueError("Asistan istek durumu geçersiz.")
+    resolved_input = max(0, min(10_000_000, int(input_tokens)))
+    resolved_output = max(0, min(10_000_000, int(output_tokens)))
+    now = _utc_now()
+    lock_suffix = " FOR UPDATE" if engine.dialect.name == "postgresql" else ""
+
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT actor_id, usage_day, status FROM v7_assistant_requests "
+                    f"WHERE id = :id{lock_suffix}"
+                ),
+                {"id": resolved_request_id},
+            ).fetchone()
+            if not row or str(row[2]) != "reserved":
+                return False
+            actor_id = str(row[0])
+            usage_day = str(row[1])
+            conn.execute(
+                text(
+                    "UPDATE v7_assistant_requests SET status = :status, "
+                    "input_tokens = :input_tokens, output_tokens = :output_tokens, "
+                    "updated_at = :updated_at WHERE id = :id AND status = 'reserved'"
+                ),
+                {
+                    "id": resolved_request_id,
+                    "status": resolved_status,
+                    "input_tokens": resolved_input,
+                    "output_tokens": resolved_output,
+                    "updated_at": now,
+                },
+            )
+            conn.execute(
+                text(
+                    "UPDATE v7_assistant_usage_daily "
+                    "SET input_tokens = input_tokens + :input_tokens, "
+                    "output_tokens = output_tokens + :output_tokens, "
+                    "updated_at = :updated_at "
+                    "WHERE usage_day = :usage_day AND ("
+                    "(scope = 'actor' AND subject = :actor_id) OR "
+                    "(scope = 'global' AND subject = '*'))"
+                ),
+                {
+                    "usage_day": usage_day,
+                    "actor_id": actor_id,
+                    "input_tokens": resolved_input,
+                    "output_tokens": resolved_output,
+                    "updated_at": now,
+                },
+            )
+        return True
+    except (TypeError, ValueError):
+        raise
+    except Exception as exc:
+        logger.exception("Asistan kullanım rezervasyonu sonuçlandırılamadı")
+        raise DatabaseUnavailableError("Asistan kullanım kaydı sonuçlandırılamadı.") from exc
 
 
 # ---------------------------------------------------------------------------

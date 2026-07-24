@@ -8,12 +8,32 @@ import {
   localBackups,
   localBulkDelete,
   localClearAll,
+  localCreateCodeRecord,
   localCreatePassengerRecord,
+  localCreateWorkFile,
+  localCreateWorkspaceNote,
+  localCreateWorkspaceTask,
+  localDeleteCodeRecord,
   localDeleteJob,
+  localDeleteOfficeDocument,
   localDeletePassenger,
   localDeletePassengerDocument,
   localDeleteUnmatched,
+  localDeleteWorkFile,
+  localDeleteWorkspaceNote,
+  localDeleteWorkspaceTask,
+  localGetCodeRecord,
+  localGetWorkFile,
+  localGetWorkspaceNote,
+  localGetWorkspaceTask,
   localImportMail,
+  localLinkPassengerToWorkFile,
+  localListCodeRecords,
+  localListOfficeDocuments,
+  localListUnifiedDocuments,
+  localListWorkFiles,
+  localListWorkspaceNotes,
+  localListWorkspaceTasks,
   localLogin,
   localLogout,
   localMatchPhotos,
@@ -21,6 +41,7 @@ import {
   localPassengerPage,
   localPassengerDocumentFile,
   localPassengerDocuments,
+  localOpenOfficeDocument,
   localPassengers,
   localPreview,
   localQueueImportFile,
@@ -33,15 +54,24 @@ import {
   localSetPassengerPhoto,
   localSetup,
   localSummary,
+  localToggleWorkspaceTask,
   localUndoImport,
+  localUnlinkPassengerFromWorkFile,
   localUnmatchedPhotos,
+  localUpdateCodeRecord,
   localUpdatePassenger,
   localUpdatePassengerDocumentCategory,
+  localUpdateWorkFile,
+  localUpdateWorkspaceNote,
+  localUpdateWorkspaceTask,
+  localUploadOfficeDocument,
   localUploadPassengerFile,
   localUploadPassengerFiles,
   localUploadPassengerDocuments,
   localUsers,
 } from "@/lib/offline/localApi";
+
+export * from "@/lib/workspace";
 
 export type DateField = "departure" | "created";
 export type DateScope = { range: string; start: string; end: string; field?: DateField };
@@ -87,6 +117,8 @@ export type PassengerDocumentFile = {
 
 export type Passenger = {
   id: number;
+  /** Stable local identifier used by workspace links even when list row ids are rebuilt. */
+  record_uid: string;
   no: string;
   first_name: string;
   last_name: string;
@@ -332,6 +364,34 @@ export const bulkDelete = localBulkDelete;
 export const clearAll = localClearAll;
 export const mergeDuplicates = localMergeDuplicates;
 export const saveOperationMeta = localSaveOperationMeta;
+export const fetchWorkFiles = localListWorkFiles;
+export const getWorkFile = localGetWorkFile;
+export const createWorkFile = localCreateWorkFile;
+export const updateWorkFile = localUpdateWorkFile;
+export const deleteWorkFile = localDeleteWorkFile;
+export const linkPassengerToWorkFile = localLinkPassengerToWorkFile;
+export const unlinkPassengerFromWorkFile = localUnlinkPassengerFromWorkFile;
+export const fetchCodeRecords = localListCodeRecords;
+export const getCodeRecord = localGetCodeRecord;
+export const createCodeRecord = localCreateCodeRecord;
+export const updateCodeRecord = localUpdateCodeRecord;
+export const deleteCodeRecord = localDeleteCodeRecord;
+export const fetchOfficeDocuments = localListOfficeDocuments;
+export const uploadOfficeDocument = localUploadOfficeDocument;
+export const openOfficeDocument = localOpenOfficeDocument;
+export const deleteOfficeDocument = localDeleteOfficeDocument;
+export const fetchUnifiedDocuments = localListUnifiedDocuments;
+export const fetchWorkspaceTasks = localListWorkspaceTasks;
+export const getWorkspaceTask = localGetWorkspaceTask;
+export const createWorkspaceTask = localCreateWorkspaceTask;
+export const updateWorkspaceTask = localUpdateWorkspaceTask;
+export const toggleWorkspaceTask = localToggleWorkspaceTask;
+export const deleteWorkspaceTask = localDeleteWorkspaceTask;
+export const fetchWorkspaceNotes = localListWorkspaceNotes;
+export const getWorkspaceNote = localGetWorkspaceNote;
+export const createWorkspaceNote = localCreateWorkspaceNote;
+export const updateWorkspaceNote = localUpdateWorkspaceNote;
+export const deleteWorkspaceNote = localDeleteWorkspaceNote;
 export const previewPassengerFile = localPreview;
 export const uploadPassengerFile = localUploadPassengerFile;
 

@@ -1,5 +1,5 @@
 {
-  "name": "gate-visa-pax-next",
+  "name": "excelbase-operations",
   "private": true,
   "scripts": {
     "dev": "next dev",

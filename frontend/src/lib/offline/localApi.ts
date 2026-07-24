@@ -33,6 +33,33 @@ import type {
 } from "@/lib/api";
 import { newId } from "@/lib/id";
 import {
+  codeRecordSearchText,
+  normalizeWorkspaceCode,
+  normalizeWorkspaceSearch,
+  normalizeWorkspaceTags,
+  officeDocumentToUnified,
+  passengerDocumentToUnified,
+  workFileSearchText,
+  type CodeRecord,
+  type CodeRecordFilters,
+  type CodeRecordInput,
+  type OfficeDocument,
+  type OfficeDocumentFilters,
+  type OfficeDocumentUploadInput,
+  type UnifiedDocumentMetadata,
+  type UnifiedDocumentFilters,
+  type WorkFile,
+  type WorkFileFilters,
+  type WorkFileInput,
+  type WorkspaceEntityBase,
+  type WorkspaceNote,
+  type WorkspaceNoteFilters,
+  type WorkspaceNoteInput,
+  type WorkspaceTask,
+  type WorkspaceTaskFilters,
+  type WorkspaceTaskInput,
+} from "@/lib/workspace";
+import {
   buildArchive,
   buildRecordFolders,
   buildSummary,
@@ -48,23 +75,26 @@ import { parsePassengerBytes, parseSelectedFile, type ParsedPassengerRow } from 
 import type { ExportDocument, ExportPhoto } from "./exporter";
 import {
   clearPassengers,
-  clearMeta,
-  clearBinaries,
   clearJobs,
   deleteBinary,
+  deleteEntity,
   deleteJob,
   deletePassenger as deletePassengerRecord,
   exportEncryptedVault,
   getBinary,
+  getEntity,
   getJob,
   getMeta,
   getPassenger,
   listBinary,
   listBinaryIds,
+  listEntities,
   listJobs,
+  listMetaKeys,
   listPassengers,
   lockVault,
   putBinary,
+  putEntity,
   putJob,
   putPassenger,
   putPassengers,
@@ -84,14 +114,16 @@ const META_OPERATION = "operation-meta";
 const META_UNMATCHED = "unmatched-photos";
 const META_LAST_UNDO = "last-undo";
 const META_BATCH_PREFIX = "import-batch:";
-const APP_VERSION = "7.5.0-offline";
+const APP_VERSION = "7.6.1-offline";
 const SOURCE_PREFIX = "source:";
 const PHOTO_PREFIX = "photo:";
 const DOCUMENT_PREFIX = "document:";
+const OFFICE_DOCUMENT_PREFIX = "workspace-document:";
 const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
 const MAX_PHOTO_BATCH_BYTES = 350 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 const MAX_DOCUMENT_BATCH_BYTES = 250 * 1024 * 1024;
+const MAX_OFFICE_DOCUMENT_BYTES = 50 * 1024 * 1024;
 const MAX_EMAIL_BYTES = 100 * 1024 * 1024;
 const MAX_EMAIL_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const MAX_EMAIL_ATTACHMENTS_BYTES = 250 * 1024 * 1024;
@@ -109,7 +141,7 @@ type BatchState = { started: boolean; replaceConsumed: boolean };
 type UndoState = { batchId: string; passengers: StoredPassenger[] };
 type UnmatchedRecord = { id: string; binaryId: string; filename: string; createdAt: string };
 type BinaryMetadata = {
-  kind: "source" | "photo" | "document";
+  kind: "source" | "photo" | "document" | "office-document";
   filename: string;
   mime: string;
   passengerId?: number;
@@ -117,6 +149,16 @@ type BinaryMetadata = {
 };
 
 const photoUrlCache = new Map<string, string>();
+
+async function storedPassengerRows(): Promise<StoredPassenger[]> {
+  const rows = await listPassengers<StoredPassenger>();
+  const missing = rows.filter((row) => !text(row._record_uid));
+  if (missing.length) {
+    for (const row of missing) row._record_uid = newId();
+    await putPassengers(missing);
+  }
+  return rows;
+}
 
 function revokePhotoUrl(binaryId: string): void {
   const url = photoUrlCache.get(binaryId);
@@ -171,6 +213,7 @@ function asStoredRow(
     record_source: "import",
     photo: "",
     documents: [],
+    _record_uid: newId(),
     _import_job_id: importJobId,
   };
 }
@@ -244,7 +287,7 @@ export async function localLogout(): Promise<SimpleResult> {
 
 export async function localSummary(scope?: DateScope): Promise<OperationSummary> {
   const [rows, files, history, unmatched, undo] = await Promise.all([
-    listPassengers<StoredPassenger>(),
+    storedPassengerRows(),
     loadedFiles(),
     importHistory(),
     unmatchedRecords(),
@@ -263,7 +306,7 @@ export async function localSummary(scope?: DateScope): Promise<OperationSummary>
 export async function localPassengers(
   params: { search?: string; status?: string; sort?: string; scope?: DateScope } = {},
 ): Promise<Passenger[]> {
-  const allRows = await listPassengers<StoredPassenger>();
+  const allRows = await storedPassengerRows();
   const filtered = filterPassengers(allRows, params);
   return Promise.all(filtered.rows.map(async (row) => toPassenger(row, filtered.duplicates, await photoUrl(row.photo))));
 }
@@ -278,7 +321,7 @@ export async function localPassengerPage(
     limit?: number;
   } = {},
 ): Promise<PassengerPage> {
-  const allRows = await listPassengers<StoredPassenger>();
+  const allRows = await storedPassengerRows();
   const filtered = filterPassengers(allRows, params);
   const offset = Math.max(0, params.offset ?? 0);
   const limit = Math.max(1, Math.min(100, params.limit ?? 20));
@@ -291,19 +334,19 @@ export async function localPassengerPage(
 
 export async function localArchive(scope?: DateScope): Promise<ArchiveResponse> {
   const [rows, meta] = await Promise.all([
-    listPassengers<StoredPassenger>(),
+    storedPassengerRows(),
     getMeta<Record<string, OperationMeta>>(META_OPERATION),
   ]);
   return buildArchive(rows, scope, meta ?? {});
 }
 
 export async function localRecordFolders(scope?: DateScope): Promise<RecordFolderResponse> {
-  const rows = await listPassengers<StoredPassenger>();
+  const rows = await storedPassengerRows();
   return buildRecordFolders(rows, scope);
 }
 
 export async function localCreatePassengerRecord(input: ManualPassengerInput): Promise<Passenger> {
-  const rows = await listPassengers<StoredPassenger>();
+  const rows = await storedPassengerRows();
   const recordDate = canonicalDate(input.record_date);
   if (!recordDate) throw new Error("Geçerli bir kayıt tarihi seçin.");
   const firstName = text(input.first_name);
@@ -337,6 +380,7 @@ export async function localCreatePassengerRecord(input: ManualPassengerInput): P
     record_source: "manual",
     photo: "",
     documents: [],
+    _record_uid: newId(),
   };
   await putPassenger(row);
   const duplicates = filterPassengers([...rows, row]).duplicates;
@@ -385,7 +429,7 @@ export async function localDeletePassenger(id: number): Promise<SimpleResult> {
 
 export async function localBulkDelete(ids: number[]): Promise<SimpleResult> {
   const wanted = new Set(ids.filter(Number.isInteger));
-  const rows = await listPassengers<StoredPassenger>();
+  const rows = await storedPassengerRows();
   const removed = rows.filter((row) => wanted.has(row.id));
   for (const row of removed) {
     await deletePassengerRecord(row.id);
@@ -395,16 +439,54 @@ export async function localBulkDelete(ids: number[]): Promise<SimpleResult> {
 }
 
 export async function localClearAll(): Promise<SimpleResult> {
-  await clearBinaries();
+  const [binaryIds, metaKeys] = await Promise.all([listBinaryIds(), listMetaKeys()]);
+  for (const id of binaryIds) {
+    if (!id.startsWith(OFFICE_DOCUMENT_PREFIX)) await deleteBinary(id);
+  }
   await clearPassengers();
   await clearJobs();
-  await clearMeta();
+  const passengerMetaKeys = new Set([
+    META_LOADED_FILES,
+    META_IMPORT_HISTORY,
+    META_OPERATION,
+    META_UNMATCHED,
+    META_LAST_UNDO,
+  ]);
+  for (const key of metaKeys) {
+    if (passengerMetaKeys.has(key) || key.startsWith(META_BATCH_PREFIX)) await removeMeta(key);
+  }
+  const [workFiles, officeDocuments, tasks, notes] = await Promise.all([
+    workspaceEntities<WorkFile>(WORK_FILE_ENTITY_PREFIX, "work_file"),
+    workspaceEntities<OfficeDocument>(OFFICE_DOCUMENT_ENTITY_PREFIX, "office_document"),
+    workspaceEntities<WorkspaceTask>(TASK_ENTITY_PREFIX, "task"),
+    workspaceEntities<WorkspaceNote>(NOTE_ENTITY_PREFIX, "note"),
+  ]);
+  for (const workFile of workFiles) {
+    if (workFile.passenger_record_uids.length) {
+      await saveWorkspaceEntity({ ...changedWorkspaceBase(workFile), passenger_record_uids: [] });
+    }
+  }
+  for (const document of officeDocuments) {
+    if (document.passenger_record_uids.length) {
+      await saveWorkspaceEntity({ ...changedWorkspaceBase(document), passenger_record_uids: [] });
+    }
+  }
+  for (const task of tasks) {
+    if (task.passenger_record_uid) {
+      await saveWorkspaceEntity({ ...changedWorkspaceBase(task), passenger_record_uid: "" });
+    }
+  }
+  for (const note of notes) {
+    if (note.passenger_record_uid) {
+      await saveWorkspaceEntity({ ...changedWorkspaceBase(note), passenger_record_uid: "" });
+    }
+  }
   revokeAllPhotoUrls();
   return { ok: true, message: "Bu cihazdaki yolcu verileri temizlendi.", passenger_count: 0 };
 }
 
 export async function localMergeDuplicates(passportKey = ""): Promise<{ removed: number; passenger_count: number }> {
-  const rows = await listPassengers<StoredPassenger>();
+  const rows = await storedPassengerRows();
   const groups = new Map<string, StoredPassenger[]>();
   for (const row of rows) {
     const identity = passengerIdentity(row);
@@ -450,6 +532,606 @@ export async function localSaveOperationMeta(meta: OperationMeta): Promise<Simpl
   return { ok: true, message: "Tarih notu kaydedildi.", passenger_count: (await listPassengers()).length };
 }
 
+const WORK_FILE_ENTITY_PREFIX = "work_file:";
+const CODE_RECORD_ENTITY_PREFIX = "code_record:";
+const OFFICE_DOCUMENT_ENTITY_PREFIX = "office_document:";
+const TASK_ENTITY_PREFIX = "task:";
+const NOTE_ENTITY_PREFIX = "note:";
+
+function workspaceEntityKey(entityType: WorkspaceEntityBase["entity_type"], id: string): string {
+  return `${entityType}:${id}`;
+}
+
+function workspaceBase(
+  entityType: WorkspaceEntityBase["entity_type"],
+  id = newId(),
+): WorkspaceEntityBase {
+  const now = new Date().toISOString();
+  return {
+    entity_type: entityType,
+    schema_version: 1,
+    id,
+    revision: 1,
+    created_at: now,
+    updated_at: now,
+    archived_at: "",
+  };
+}
+
+function changedWorkspaceBase<T extends WorkspaceEntityBase>(entity: T): T {
+  return {
+    ...entity,
+    revision: entity.revision + 1,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function uniqueIds(values: readonly unknown[] | undefined): string[] {
+  return [...new Set((values ?? []).map(text).filter(Boolean))];
+}
+
+async function workspaceEntity<T extends WorkspaceEntityBase>(
+  entityType: T["entity_type"],
+  id: string,
+): Promise<T | null> {
+  const entity = await getEntity<T>(workspaceEntityKey(entityType, id));
+  if (!entity) return null;
+  if (entity.entity_type !== entityType || entity.id !== id || entity.schema_version !== 1) {
+    throw new Error("Çalışma alanı kaydı geçersiz veya bozulmuş.");
+  }
+  return entity;
+}
+
+async function workspaceEntities<T extends WorkspaceEntityBase>(
+  prefix: string,
+  entityType: T["entity_type"],
+): Promise<T[]> {
+  const entities = await listEntities<T>(prefix);
+  return entities.filter((entity) => (
+    entity.entity_type === entityType
+    && entity.schema_version === 1
+    && Boolean(entity.id)
+  ));
+}
+
+async function saveWorkspaceEntity<T extends WorkspaceEntityBase>(entity: T): Promise<T> {
+  await putEntity(workspaceEntityKey(entity.entity_type, entity.id), entity);
+  return entity;
+}
+
+async function requireWorkFile(id: string): Promise<WorkFile> {
+  const workFile = await workspaceEntity<WorkFile>("work_file", id);
+  if (!workFile) throw new Error("İş dosyası bulunamadı.");
+  return workFile;
+}
+
+async function validatePassengerRecordUids(recordUids: string[]): Promise<void> {
+  if (!recordUids.length) return;
+  const rows = await storedPassengerRows();
+  const available = new Set(rows.map((row) => text(row._record_uid)));
+  const missing = recordUids.find((uid) => !available.has(uid));
+  if (missing) throw new Error("Bağlanmak istenen yolcu kaydı bulunamadı.");
+}
+
+export async function localListWorkFiles(filters: WorkFileFilters = {}): Promise<WorkFile[]> {
+  const query = normalizeWorkspaceSearch(filters.search);
+  return (await workspaceEntities<WorkFile>(WORK_FILE_ENTITY_PREFIX, "work_file"))
+    .filter((workFile) => !query || workFileSearchText(workFile).includes(query))
+    .filter((workFile) => !filters.status || workFile.status === filters.status)
+    .filter((workFile) => !filters.category || workFile.category === filters.category)
+    .filter((workFile) => !filters.company || workFile.company === filters.company)
+    .filter((workFile) => !filters.route || workFile.route === filters.route)
+    .toSorted((left, right) => right.updated_at.localeCompare(left.updated_at));
+}
+
+export async function localGetWorkFile(id: string): Promise<WorkFile> {
+  return requireWorkFile(id);
+}
+
+export async function localCreateWorkFile(input: WorkFileInput): Promise<WorkFile> {
+  const title = text(input.title);
+  if (!title) throw new Error("İş dosyası başlığı boş bırakılamaz.");
+  const passengerRecordUids = uniqueIds(input.passenger_record_uids);
+  await validatePassengerRecordUids(passengerRecordUids);
+  const base = workspaceBase("work_file");
+  const status = input.status ?? "open";
+  const workFile: WorkFile = {
+    ...base,
+    entity_type: "work_file",
+    file_no: text(input.file_no) || `İŞ-${new Date().getFullYear()}-${base.id.slice(0, 6).toLocaleUpperCase("tr-TR")}`,
+    title,
+    category: text(input.category) || "Genel",
+    status,
+    priority: input.priority ?? "normal",
+    owner: text(input.owner),
+    company: text(input.company),
+    route: text(input.route),
+    description: text(input.description),
+    start_date: canonicalDate(input.start_date),
+    due_date: canonicalDate(input.due_date),
+    tags: normalizeWorkspaceTags(input.tags),
+    passenger_record_uids: passengerRecordUids,
+    archived_at: status === "archived" ? base.updated_at : "",
+  };
+  return saveWorkspaceEntity(workFile);
+}
+
+export async function localUpdateWorkFile(
+  id: string,
+  updates: Partial<WorkFileInput>,
+): Promise<WorkFile> {
+  const current = await requireWorkFile(id);
+  const passengerRecordUids = updates.passenger_record_uids === undefined
+    ? current.passenger_record_uids
+    : uniqueIds(updates.passenger_record_uids);
+  if (updates.passenger_record_uids !== undefined) {
+    await validatePassengerRecordUids(passengerRecordUids);
+  }
+  const status = updates.status ?? current.status;
+  const next: WorkFile = {
+    ...changedWorkspaceBase(current),
+    file_no: updates.file_no === undefined ? current.file_no : text(updates.file_no),
+    title: updates.title === undefined ? current.title : text(updates.title),
+    category: updates.category === undefined ? current.category : text(updates.category),
+    status,
+    priority: updates.priority ?? current.priority,
+    owner: updates.owner === undefined ? current.owner : text(updates.owner),
+    company: updates.company === undefined ? current.company : text(updates.company),
+    route: updates.route === undefined ? current.route : text(updates.route),
+    description: updates.description === undefined ? current.description : text(updates.description),
+    start_date: updates.start_date === undefined ? current.start_date : canonicalDate(updates.start_date),
+    due_date: updates.due_date === undefined ? current.due_date : canonicalDate(updates.due_date),
+    tags: updates.tags === undefined ? current.tags : normalizeWorkspaceTags(updates.tags),
+    passenger_record_uids: passengerRecordUids,
+    archived_at: status === "archived"
+      ? (current.archived_at || new Date().toISOString())
+      : "",
+  };
+  if (!next.title) throw new Error("İş dosyası başlığı boş bırakılamaz.");
+  return saveWorkspaceEntity(next);
+}
+
+export async function localDeleteWorkFile(id: string): Promise<void> {
+  await requireWorkFile(id);
+  const [codes, documents, tasks, notes] = await Promise.all([
+    localListCodeRecords({ work_file_id: id }),
+    localListOfficeDocuments({ work_file_id: id }),
+    localListWorkspaceTasks({ work_file_id: id }),
+    localListWorkspaceNotes({ work_file_id: id }),
+  ]);
+  for (const record of codes) await localUpdateCodeRecord(record.id, { work_file_id: "" });
+  for (const document of documents) {
+    await saveWorkspaceEntity({
+      ...changedWorkspaceBase(document),
+      work_file_id: "",
+    });
+  }
+  for (const task of tasks) await localUpdateWorkspaceTask(task.id, { work_file_id: "" });
+  for (const note of notes) await localUpdateWorkspaceNote(note.id, { work_file_id: "" });
+  await deleteEntity(workspaceEntityKey("work_file", id));
+}
+
+export async function localLinkPassengerToWorkFile(
+  workFileId: string,
+  passengerRecordUid: string,
+): Promise<WorkFile> {
+  const uid = text(passengerRecordUid);
+  if (!uid) throw new Error("Yolcu kayıt kimliği eksik.");
+  await validatePassengerRecordUids([uid]);
+  const current = await requireWorkFile(workFileId);
+  if (current.passenger_record_uids.includes(uid)) return current;
+  return localUpdateWorkFile(workFileId, {
+    passenger_record_uids: [...current.passenger_record_uids, uid],
+  });
+}
+
+export async function localUnlinkPassengerFromWorkFile(
+  workFileId: string,
+  passengerRecordUid: string,
+): Promise<WorkFile> {
+  const current = await requireWorkFile(workFileId);
+  return localUpdateWorkFile(workFileId, {
+    passenger_record_uids: current.passenger_record_uids.filter((uid) => uid !== passengerRecordUid),
+  });
+}
+
+export async function localListCodeRecords(filters: CodeRecordFilters = {}): Promise<CodeRecord[]> {
+  const query = normalizeWorkspaceSearch(filters.search);
+  return (await workspaceEntities<CodeRecord>(CODE_RECORD_ENTITY_PREFIX, "code_record"))
+    .filter((record) => !query || codeRecordSearchText(record).includes(query))
+    .filter((record) => !filters.status || record.status === filters.status)
+    .filter((record) => !filters.category || record.category === filters.category)
+    .filter((record) => !filters.work_file_id || record.work_file_id === filters.work_file_id)
+    .toSorted((left, right) => left.code.localeCompare(right.code, "tr"));
+}
+
+export async function localGetCodeRecord(id: string): Promise<CodeRecord> {
+  const record = await workspaceEntity<CodeRecord>("code_record", id);
+  if (!record) throw new Error("C kodu kaydı bulunamadı.");
+  return record;
+}
+
+async function assertUniqueCode(code: string, excludeId = ""): Promise<void> {
+  const existing = (await localListCodeRecords()).find((record) => (
+    record.id !== excludeId && normalizeWorkspaceCode(record.code) === code
+  ));
+  if (existing) throw new Error(`Bu C kodu zaten kayıtlı: ${existing.code}`);
+}
+
+export async function localCreateCodeRecord(input: CodeRecordInput): Promise<CodeRecord> {
+  const code = normalizeWorkspaceCode(input.code);
+  const title = text(input.title);
+  if (!code) throw new Error("C kodu boş bırakılamaz.");
+  if (!title) throw new Error("C kodu başlığı boş bırakılamaz.");
+  await assertUniqueCode(code);
+  if (input.work_file_id) await requireWorkFile(input.work_file_id);
+  const base = workspaceBase("code_record");
+  const status = input.status ?? "active";
+  const record: CodeRecord = {
+    ...base,
+    entity_type: "code_record",
+    code,
+    title,
+    category: text(input.category) || "Genel",
+    status,
+    description: text(input.description),
+    valid_from: canonicalDate(input.valid_from),
+    valid_to: canonicalDate(input.valid_to),
+    tags: normalizeWorkspaceTags(input.tags),
+    work_file_id: text(input.work_file_id),
+    archived_at: status === "archived" ? base.updated_at : "",
+  };
+  return saveWorkspaceEntity(record);
+}
+
+export async function localUpdateCodeRecord(
+  id: string,
+  updates: Partial<CodeRecordInput>,
+): Promise<CodeRecord> {
+  const current = await localGetCodeRecord(id);
+  const code = updates.code === undefined ? current.code : normalizeWorkspaceCode(updates.code);
+  if (!code) throw new Error("C kodu boş bırakılamaz.");
+  await assertUniqueCode(code, id);
+  const workFileId = updates.work_file_id === undefined ? current.work_file_id : text(updates.work_file_id);
+  if (workFileId) await requireWorkFile(workFileId);
+  const status = updates.status ?? current.status;
+  const next: CodeRecord = {
+    ...changedWorkspaceBase(current),
+    code,
+    title: updates.title === undefined ? current.title : text(updates.title),
+    category: updates.category === undefined ? current.category : text(updates.category),
+    status,
+    description: updates.description === undefined ? current.description : text(updates.description),
+    valid_from: updates.valid_from === undefined ? current.valid_from : canonicalDate(updates.valid_from),
+    valid_to: updates.valid_to === undefined ? current.valid_to : canonicalDate(updates.valid_to),
+    tags: updates.tags === undefined ? current.tags : normalizeWorkspaceTags(updates.tags),
+    work_file_id: workFileId,
+    archived_at: status === "archived"
+      ? (current.archived_at || new Date().toISOString())
+      : "",
+  };
+  if (!next.title) throw new Error("C kodu başlığı boş bırakılamaz.");
+  return saveWorkspaceEntity(next);
+}
+
+export async function localDeleteCodeRecord(id: string): Promise<void> {
+  await localGetCodeRecord(id);
+  await deleteEntity(workspaceEntityKey("code_record", id));
+}
+
+export async function localListOfficeDocuments(
+  filters: OfficeDocumentFilters = {},
+): Promise<OfficeDocument[]> {
+  const query = normalizeWorkspaceSearch(filters.search);
+  return (await workspaceEntities<OfficeDocument>(OFFICE_DOCUMENT_ENTITY_PREFIX, "office_document"))
+    .filter((document) => (
+      !query
+      || normalizeWorkspaceSearch([
+        document.title,
+        document.filename,
+        document.category,
+        ...document.tags,
+      ].join(" ")).includes(query)
+    ))
+    .filter((document) => !filters.category || document.category === filters.category)
+    .filter((document) => !filters.work_file_id || document.work_file_id === filters.work_file_id)
+    .filter((document) => (
+      !filters.passenger_record_uid
+      || document.passenger_record_uids.includes(filters.passenger_record_uid)
+    ))
+    .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+}
+
+export async function localUploadOfficeDocument(
+  file: File,
+  input: OfficeDocumentUploadInput = {},
+): Promise<OfficeDocument> {
+  if (!file.size) throw new Error("Boş dosya yüklenemez.");
+  if (file.size > MAX_OFFICE_DOCUMENT_BYTES) {
+    throw new Error("Evrak 50 MB cihaz güvenlik sınırını aşıyor.");
+  }
+  if (input.work_file_id) await requireWorkFile(input.work_file_id);
+  const passengerRecordUids = uniqueIds(input.passenger_record_uids);
+  await validatePassengerRecordUids(passengerRecordUids);
+  const base = workspaceBase("office_document");
+  const filename = leafFilename(file.name, "evrak");
+  const binaryId = `${OFFICE_DOCUMENT_PREFIX}${base.id}`;
+  const document: OfficeDocument = {
+    ...base,
+    entity_type: "office_document",
+    title: text(input.title) || filename.replace(/\.[^.]+$/, ""),
+    filename,
+    mime: text(file.type) || "application/octet-stream",
+    size: file.size,
+    category: input.category ?? "other",
+    document_date: canonicalDate(input.document_date),
+    binary_id: binaryId,
+    work_file_id: text(input.work_file_id),
+    passenger_record_uids: passengerRecordUids,
+    tags: normalizeWorkspaceTags(input.tags),
+  };
+  try {
+    await putBinary(binaryId, file, {
+      kind: "office-document",
+      filename,
+      mime: document.mime,
+      documentId: document.id,
+    } satisfies BinaryMetadata);
+    return await saveWorkspaceEntity(document);
+  } catch (error) {
+    await deleteBinary(binaryId);
+    throw error;
+  }
+}
+
+export async function localOpenOfficeDocument(
+  id: string,
+): Promise<{ metadata: OfficeDocument; blob: Blob }> {
+  const metadata = await workspaceEntity<OfficeDocument>("office_document", id);
+  if (!metadata) throw new Error("Evrak bulunamadı.");
+  const binary = await getBinary(metadata.binary_id);
+  if (!binary) throw new Error("Evrak dosyası şifreli kasada bulunamadı.");
+  return { metadata, blob: binary.data };
+}
+
+export async function localDeleteOfficeDocument(id: string): Promise<void> {
+  const document = await workspaceEntity<OfficeDocument>("office_document", id);
+  if (!document) throw new Error("Evrak bulunamadı.");
+  await deleteEntity(workspaceEntityKey("office_document", id));
+  await deleteBinary(document.binary_id);
+}
+
+export async function localListUnifiedDocuments(
+  filters: UnifiedDocumentFilters = {},
+): Promise<UnifiedDocumentMetadata[]> {
+  const [officeDocuments, passengerRows, workFiles] = await Promise.all([
+    filters.source === "passenger" ? [] : localListOfficeDocuments(filters),
+    filters.source === "office" ? [] : storedPassengerRows(),
+    localListWorkFiles(),
+  ]);
+  const output = officeDocuments.map(officeDocumentToUnified);
+  const query = normalizeWorkspaceSearch(filters.search);
+  const workFile = filters.work_file_id
+    ? workFiles.find((item) => item.id === filters.work_file_id)
+    : null;
+  for (const passenger of passengerRows) {
+    const recordUid = text(passenger._record_uid);
+    if (filters.passenger_record_uid && recordUid !== filters.passenger_record_uid) continue;
+    if (workFile && !workFile.passenger_record_uids.includes(recordUid)) continue;
+    const linkedWorkFile = workFile
+      ?? workFiles.find((item) => item.passenger_record_uids.includes(recordUid));
+    for (const document of passenger.documents ?? []) {
+      if (filters.category && document.category !== filters.category) continue;
+      const unified = {
+        ...passengerDocumentToUnified(
+          { id: passenger.id, record_uid: recordUid, full_name: passenger.full_name },
+          document,
+        ),
+        work_file_id: linkedWorkFile?.id ?? "",
+      };
+      if (
+        query
+        && !normalizeWorkspaceSearch([
+          unified.title,
+          unified.filename,
+          unified.category,
+          unified.passenger_name,
+        ].join(" ")).includes(query)
+      ) continue;
+      output.push(unified);
+    }
+  }
+  return output.toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+}
+
+export async function localListWorkspaceTasks(
+  filters: WorkspaceTaskFilters = {},
+): Promise<WorkspaceTask[]> {
+  const query = normalizeWorkspaceSearch(filters.search);
+  return (await workspaceEntities<WorkspaceTask>(TASK_ENTITY_PREFIX, "task"))
+    .filter((task) => (
+      !query
+      || normalizeWorkspaceSearch([task.title, task.description, task.assignee, ...task.tags].join(" "))
+        .includes(query)
+    ))
+    .filter((task) => !filters.status || task.status === filters.status)
+    .filter((task) => !filters.priority || task.priority === filters.priority)
+    .filter((task) => !filters.work_file_id || task.work_file_id === filters.work_file_id)
+    .filter((task) => (
+      !filters.passenger_record_uid || task.passenger_record_uid === filters.passenger_record_uid
+    ))
+    .toSorted((left, right) => (
+      (left.status === "done" ? 1 : 0) - (right.status === "done" ? 1 : 0)
+      || (left.due_at || "9999").localeCompare(right.due_at || "9999")
+      || right.updated_at.localeCompare(left.updated_at)
+    ));
+}
+
+export async function localGetWorkspaceTask(id: string): Promise<WorkspaceTask> {
+  const task = await workspaceEntity<WorkspaceTask>("task", id);
+  if (!task) throw new Error("Görev bulunamadı.");
+  return task;
+}
+
+export async function localCreateWorkspaceTask(input: WorkspaceTaskInput): Promise<WorkspaceTask> {
+  const title = text(input.title);
+  if (!title) throw new Error("Görev başlığı boş bırakılamaz.");
+  if (input.work_file_id) await requireWorkFile(input.work_file_id);
+  if (input.passenger_record_uid) await validatePassengerRecordUids([input.passenger_record_uid]);
+  const base = workspaceBase("task");
+  const status = input.status ?? "todo";
+  const task: WorkspaceTask = {
+    ...base,
+    entity_type: "task",
+    title,
+    description: text(input.description),
+    status,
+    priority: input.priority ?? "normal",
+    due_at: text(input.due_at),
+    completed_at: status === "done" ? (text(input.completed_at) || base.updated_at) : "",
+    assignee: text(input.assignee),
+    work_file_id: text(input.work_file_id),
+    passenger_record_uid: text(input.passenger_record_uid),
+    code_record_id: text(input.code_record_id),
+    document_id: text(input.document_id),
+    tags: normalizeWorkspaceTags(input.tags),
+  };
+  return saveWorkspaceEntity(task);
+}
+
+export async function localUpdateWorkspaceTask(
+  id: string,
+  updates: Partial<WorkspaceTaskInput>,
+): Promise<WorkspaceTask> {
+  const current = await localGetWorkspaceTask(id);
+  const workFileId = updates.work_file_id === undefined ? current.work_file_id : text(updates.work_file_id);
+  if (workFileId) await requireWorkFile(workFileId);
+  const passengerRecordUid = updates.passenger_record_uid === undefined
+    ? current.passenger_record_uid
+    : text(updates.passenger_record_uid);
+  if (updates.passenger_record_uid !== undefined && passengerRecordUid) {
+    await validatePassengerRecordUids([passengerRecordUid]);
+  }
+  const status = updates.status ?? current.status;
+  const next: WorkspaceTask = {
+    ...changedWorkspaceBase(current),
+    title: updates.title === undefined ? current.title : text(updates.title),
+    description: updates.description === undefined ? current.description : text(updates.description),
+    status,
+    priority: updates.priority ?? current.priority,
+    due_at: updates.due_at === undefined ? current.due_at : text(updates.due_at),
+    completed_at: status === "done"
+      ? (updates.completed_at === undefined
+        ? (current.completed_at || new Date().toISOString())
+        : text(updates.completed_at))
+      : "",
+    assignee: updates.assignee === undefined ? current.assignee : text(updates.assignee),
+    work_file_id: workFileId,
+    passenger_record_uid: passengerRecordUid,
+    code_record_id: updates.code_record_id === undefined
+      ? current.code_record_id
+      : text(updates.code_record_id),
+    document_id: updates.document_id === undefined ? current.document_id : text(updates.document_id),
+    tags: updates.tags === undefined ? current.tags : normalizeWorkspaceTags(updates.tags),
+  };
+  if (!next.title) throw new Error("Görev başlığı boş bırakılamaz.");
+  return saveWorkspaceEntity(next);
+}
+
+export async function localToggleWorkspaceTask(
+  id: string,
+  done?: boolean,
+): Promise<WorkspaceTask> {
+  const current = await localGetWorkspaceTask(id);
+  const nextDone = done ?? current.status !== "done";
+  return localUpdateWorkspaceTask(id, { status: nextDone ? "done" : "todo" });
+}
+
+export async function localDeleteWorkspaceTask(id: string): Promise<void> {
+  await localGetWorkspaceTask(id);
+  await deleteEntity(workspaceEntityKey("task", id));
+}
+
+export async function localListWorkspaceNotes(
+  filters: WorkspaceNoteFilters = {},
+): Promise<WorkspaceNote[]> {
+  const query = normalizeWorkspaceSearch(filters.search);
+  return (await workspaceEntities<WorkspaceNote>(NOTE_ENTITY_PREFIX, "note"))
+    .filter((note) => (
+      !query || normalizeWorkspaceSearch([note.body, note.author, ...note.tags].join(" ")).includes(query)
+    ))
+    .filter((note) => !filters.work_file_id || note.work_file_id === filters.work_file_id)
+    .filter((note) => (
+      !filters.passenger_record_uid || note.passenger_record_uid === filters.passenger_record_uid
+    ))
+    .filter((note) => filters.pinned === undefined || note.pinned === filters.pinned)
+    .toSorted((left, right) => (
+      Number(right.pinned) - Number(left.pinned)
+      || right.updated_at.localeCompare(left.updated_at)
+    ));
+}
+
+export async function localGetWorkspaceNote(id: string): Promise<WorkspaceNote> {
+  const note = await workspaceEntity<WorkspaceNote>("note", id);
+  if (!note) throw new Error("Not bulunamadı.");
+  return note;
+}
+
+export async function localCreateWorkspaceNote(input: WorkspaceNoteInput): Promise<WorkspaceNote> {
+  const body = text(input.body);
+  if (!body) throw new Error("Not boş bırakılamaz.");
+  if (input.work_file_id) await requireWorkFile(input.work_file_id);
+  if (input.passenger_record_uid) await validatePassengerRecordUids([input.passenger_record_uid]);
+  const note: WorkspaceNote = {
+    ...workspaceBase("note"),
+    entity_type: "note",
+    body,
+    pinned: Boolean(input.pinned),
+    author: text(input.author),
+    work_file_id: text(input.work_file_id),
+    passenger_record_uid: text(input.passenger_record_uid),
+    code_record_id: text(input.code_record_id),
+    document_id: text(input.document_id),
+    tags: normalizeWorkspaceTags(input.tags),
+  };
+  return saveWorkspaceEntity(note);
+}
+
+export async function localUpdateWorkspaceNote(
+  id: string,
+  updates: Partial<WorkspaceNoteInput>,
+): Promise<WorkspaceNote> {
+  const current = await localGetWorkspaceNote(id);
+  const workFileId = updates.work_file_id === undefined ? current.work_file_id : text(updates.work_file_id);
+  if (workFileId) await requireWorkFile(workFileId);
+  const passengerRecordUid = updates.passenger_record_uid === undefined
+    ? current.passenger_record_uid
+    : text(updates.passenger_record_uid);
+  if (updates.passenger_record_uid !== undefined && passengerRecordUid) {
+    await validatePassengerRecordUids([passengerRecordUid]);
+  }
+  const next: WorkspaceNote = {
+    ...changedWorkspaceBase(current),
+    body: updates.body === undefined ? current.body : text(updates.body),
+    pinned: updates.pinned ?? current.pinned,
+    author: updates.author === undefined ? current.author : text(updates.author),
+    work_file_id: workFileId,
+    passenger_record_uid: passengerRecordUid,
+    code_record_id: updates.code_record_id === undefined
+      ? current.code_record_id
+      : text(updates.code_record_id),
+    document_id: updates.document_id === undefined ? current.document_id : text(updates.document_id),
+    tags: updates.tags === undefined ? current.tags : normalizeWorkspaceTags(updates.tags),
+  };
+  if (!next.body) throw new Error("Not boş bırakılamaz.");
+  return saveWorkspaceEntity(next);
+}
+
+export async function localDeleteWorkspaceNote(id: string): Promise<void> {
+  await localGetWorkspaceNote(id);
+  await deleteEntity(workspaceEntityKey("note", id));
+}
+
 export async function localPreview(file: File): Promise<ImportPreviewResponse> {
   const parsed = await parseSelectedFile(file);
   return {
@@ -469,7 +1151,7 @@ async function applyParsedJob(job: StoredImportJob, bytes: ArrayBuffer): Promise
     throw new Error(parsed.errors[0] || "Dosyada aktarılabilir yolcu satırı bulunamadı.");
   }
 
-  const allRows = await listPassengers<StoredPassenger>();
+  const allRows = await storedPassengerRows();
   const batchKey = `${META_BATCH_PREFIX}${job.batchId}`;
   const batch = (await getMeta<BatchState>(batchKey)) ?? { started: false, replaceConsumed: false };
   const alreadyApplied = allRows.filter((row) => row._import_job_id === job.id);
@@ -499,6 +1181,11 @@ async function applyParsedJob(job: StoredImportJob, bytes: ArrayBuffer): Promise
   await setMeta(batchKey, batch);
 
   let nextId = baseRows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const previousByIdentity = new Map<string, StoredPassenger>();
+  for (const row of allRows) {
+    const identity = passengerIdentity(row);
+    if (identity && !previousByIdentity.has(identity)) previousByIdentity.set(identity, row);
+  }
   const byIdentity = new Map<string, StoredPassenger>();
   for (const row of baseRows) {
     const identity = passengerIdentity(row);
@@ -511,6 +1198,9 @@ async function applyParsedJob(job: StoredImportJob, bytes: ArrayBuffer): Promise
   for (const parsedRow of parsed.rows) {
     const candidate = asStoredRow(parsedRow, nextId, job.id, job.created_at, job.createdBy);
     const identity = passengerIdentity(candidate);
+    if (shouldReplace && identity) {
+      candidate._record_uid = previousByIdentity.get(identity)?._record_uid ?? candidate._record_uid;
+    }
     const existing = identity ? byIdentity.get(identity) : undefined;
     if (existing) {
       duplicates += 1;
@@ -526,6 +1216,7 @@ async function applyParsedJob(job: StoredImportJob, bytes: ArrayBuffer): Promise
           created_by: existing.created_by,
           record_status: existing.record_status,
           record_source: existing.record_source,
+          _record_uid: existing._record_uid ?? candidate._record_uid,
         };
         byIdentity.set(identity, updated);
         const pendingIndex = additions.findIndex((row) => row.id === existing.id);
@@ -981,7 +1672,7 @@ async function storePhoto(filename: string, blob: Blob): Promise<string> {
 }
 
 export async function localMatchPhotos(files: File[]): Promise<MatchPhotosResponse> {
-  const [photos, rows] = await Promise.all([selectedPhotoFiles(files), listPassengers<StoredPassenger>()]);
+  const [photos, rows] = await Promise.all([selectedPhotoFiles(files), storedPassengerRows()]);
   const unmatched = await unmatchedRecords();
   const matches: MatchPhotosResponse["matches"] = [];
   const unmatchedNames: string[] = [];
@@ -1165,7 +1856,7 @@ export async function localBackups(): Promise<BackupInfo[]> {
 }
 
 export async function localExportRows(scope?: DateScope, ids?: number[]): Promise<StoredPassenger[]> {
-  const rows = await listPassengers<StoredPassenger>();
+  const rows = await storedPassengerRows();
   const wanted = ids?.length ? new Set(ids) : null;
   const selected = wanted ? rows.filter((row) => wanted.has(row.id)) : rows;
   return filterPassengers(selected, { scope }).rows;

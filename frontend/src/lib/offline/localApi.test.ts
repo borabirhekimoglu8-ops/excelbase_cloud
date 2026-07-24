@@ -5,20 +5,32 @@ import { deleteDB } from "idb";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createPassengerXlsxBlob } from "./exporter";
 import {
+  localClearAll,
+  localCreateCodeRecord,
   localCreatePassengerRecord,
+  localCreateWorkFile,
+  localCreateWorkspaceNote,
+  localCreateWorkspaceTask,
   localDeletePassengerDocument,
   localDeletePassenger,
+  localListCodeRecords,
+  localListOfficeDocuments,
+  localListWorkFiles,
+  localListWorkspaceNotes,
   localPassengers,
   localMatchPhotos,
   localMergeDuplicates,
+  localOpenOfficeDocument,
   localPassengerDocumentFile,
   localPassengerDocuments,
   localQueueImportFile,
   localSetPassengerPhoto,
   localSummary,
+  localToggleWorkspaceTask,
   localUpdatePassenger,
   localUpdatePassengerDocumentCategory,
   localUploadPassengerDocuments,
+  localUploadOfficeDocument,
 } from "./localApi";
 import {
   VAULT_DATABASE_NAME,
@@ -107,6 +119,7 @@ describe("local offline API", () => {
       record_source: "manual",
       record_status: "review",
     });
+    expect(created.record_uid).toMatch(/^[0-9a-f-]{20,}$/i);
     expect(created.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect((await localPassengers())[0]).toMatchObject({ id: created.id, record_source: "manual" });
 
@@ -238,12 +251,114 @@ describe("local offline API", () => {
     const [after] = await localPassengers();
     expect(after).toMatchObject({
       id: before.id,
+      record_uid: before.record_uid,
       full_name: "Yenilenen Yolcu",
       record_date: "2026-05-12",
       created_at: before.created_at,
       created_by: before.created_by,
       record_source: "import",
     });
+  });
+
+  it("tam liste değişiminde aynı yolcunun kararlı kayıt kimliğini korur", async () => {
+    await localQueueImportFile(
+      workbookFile("ilk.xlsx", "İlk Yolcu", "STABLE123"),
+      false,
+      "skip",
+      "stable-first",
+      "stable-first-job",
+    );
+    const before = (await localPassengers())[0];
+
+    await localQueueImportFile(
+      workbookFile("yenilenen.xlsx", "Yenilenen Yolcu", "STABLE123"),
+      true,
+      "skip",
+      "stable-replace",
+      "stable-replace-job",
+    );
+
+    const [after] = await localPassengers();
+    expect(after.record_uid).toBe(before.record_uid);
+    expect(after.full_name).toBe("Yenilenen Yolcu");
+  });
+
+  it("iş dosyası, C kodu, görev, not ve genel evrak kayıtlarını yerel kasada yönetir", async () => {
+    const passenger = await localCreatePassengerRecord({
+      no: "",
+      first_name: "Bağlı",
+      last_name: "Yolcu",
+      passport_no: "LINK1234",
+      voucher: "V-1",
+      departure_date: "2026-08-01",
+      arrival_date: "2026-08-05",
+      adult_fee: "30",
+      child_fee: "0",
+      record_date: "2026-07-24",
+      created_by: "Yerel Yönetici",
+    });
+    const workFile = await localCreateWorkFile({
+      title: "Samos Ağustos Operasyonu",
+      company: "İDO",
+      route: "Kuşadası - Samos",
+      tags: ["Samos", "samos", " Ağustos "],
+      passenger_record_uids: [passenger.record_uid],
+    });
+    expect(workFile).toMatchObject({
+      company: "İDO",
+      route: "Kuşadası - Samos",
+      tags: ["Samos", "Ağustos"],
+      passenger_record_uids: [passenger.record_uid],
+    });
+    expect((await localListWorkFiles({ search: "KUSADASI" }))[0].id).toBe(workFile.id);
+
+    const code = await localCreateCodeRecord({
+      code: " c - 42 ",
+      title: "Operasyon C Kodu",
+      category: "Kapı vizesi",
+      work_file_id: workFile.id,
+    });
+    expect(code.code).toBe("C-42");
+    expect((await localListCodeRecords({ search: "operasyon" }))[0].id).toBe(code.id);
+    await expect(localCreateCodeRecord({ code: "c-42", title: "Tekrar" }))
+      .rejects.toThrow(/zaten kayıtlı/i);
+
+    const task = await localCreateWorkspaceTask({
+      title: "Listeyi kontrol et",
+      work_file_id: workFile.id,
+      passenger_record_uid: passenger.record_uid,
+    });
+    expect((await localToggleWorkspaceTask(task.id, true)).status).toBe("done");
+    const note = await localCreateWorkspaceNote({
+      body: "Konsolosluğa teslim edilecek.",
+      work_file_id: workFile.id,
+      pinned: true,
+    });
+    expect((await localListWorkspaceNotes({ pinned: true }))[0].id).toBe(note.id);
+
+    const officeFile = new File(["%PDF-1.7\ngenel evrak\n%%EOF"], "dilekce.pdf", {
+      type: "application/pdf",
+    });
+    const document = await localUploadOfficeDocument(officeFile, {
+      title: "Teslim dilekçesi",
+      category: "letter",
+      work_file_id: workFile.id,
+      passenger_record_uids: [passenger.record_uid],
+    });
+    expect((await localListOfficeDocuments({ work_file_id: workFile.id }))[0].id).toBe(document.id);
+    expect(await (await localOpenOfficeDocument(document.id)).blob.text()).toContain("genel evrak");
+
+    await localClearAll();
+    expect(await localPassengers()).toEqual([]);
+    expect((await localListWorkFiles())[0]).toMatchObject({
+      id: workFile.id,
+      passenger_record_uids: [],
+    });
+    expect((await localListOfficeDocuments())[0]).toMatchObject({
+      id: document.id,
+      passenger_record_uids: [],
+    });
+    expect(await (await localOpenOfficeDocument(document.id)).blob.text()).toContain("genel evrak");
   });
 
   it("sahte PDF içeren çoklu seçimi atomik olarak reddeder", async () => {

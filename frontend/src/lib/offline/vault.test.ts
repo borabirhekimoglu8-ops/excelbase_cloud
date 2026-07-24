@@ -12,14 +12,17 @@ import {
   deletePassenger,
   exportEncryptedVault,
   getBinary,
+  getEntity,
   getJob,
   getMeta,
   getPassenger,
   listBinary,
+  listEntities,
   listJobs,
   listPassengers,
   lockVault,
   putBinary,
+  putEntity,
   putJob,
   putPassenger,
   putPassengers,
@@ -36,6 +39,7 @@ Object.defineProperty(globalThis, "crypto", { configurable: true, value: webcryp
 
 type Person = { id: number; full_name: string; passport_no: string };
 type Job = { id: string; filename: string; status: string };
+type WorkspaceItem = { id: string; entity_type: "work_file"; title: string };
 
 async function resetDatabase(): Promise<void> {
   lockVault();
@@ -108,20 +112,38 @@ describe("encrypted offline vault", () => {
     expect(await getBinary("photo-1")).toBeNull();
   });
 
+  it("stores workspace entities in the encrypted v2 entity store", async () => {
+    await setupVault("Yerel Yönetici", "123456");
+    const entity: WorkspaceItem = { id: "wf-1", entity_type: "work_file", title: "Samos Temmuz" };
+    await putEntity("work_file:wf-1", entity);
+    await putEntity("work_file:wf-2", { ...entity, id: "wf-2", title: "Patmos Ağustos" });
+
+    expect(await getEntity<WorkspaceItem>("work_file:wf-1")).toEqual(entity);
+    expect((await listEntities<WorkspaceItem>("work_file:")).map((item) => item.id))
+      .toEqual(["wf-1", "wf-2"]);
+
+    await restoreEncryptedVault(await exportEncryptedVault());
+    await unlockVault("123456");
+    expect((await listEntities<WorkspaceItem>("work_file:")).map((item) => item.title))
+      .toEqual(["Samos Temmuz", "Patmos Ağustos"]);
+  });
+
   it("does not leave passenger, profile, metadata or binary contents in plaintext", async () => {
     const secret = "VERY-UNIQUE-PASSPORT-SECRET-90817";
     await setupVault(secret, "123456");
     await putPassenger<Person>({ id: 1, full_name: secret, passport_no: secret });
     await putJob<Job>({ id: "job-1", filename: secret, status: secret });
     await setMeta("fixed-meta-key", { value: secret });
+    await putEntity("work_file:fixed", { id: "fixed", title: secret });
     await putBinary("fixed-binary-key", new Blob([secret]), { filename: secret });
 
-    const db = await openDB(VAULT_DATABASE_NAME, 1);
+    const db = await openDB(VAULT_DATABASE_NAME, 2);
     const rawValues = [
       await db.get("config", "vault"),
       ...(await db.getAll("passengers")),
       ...(await db.getAll("jobs")),
       ...(await db.getAll("meta")),
+      ...(await db.getAll("entities")),
       ...(await db.getAll("binaries")),
     ];
     db.close();
@@ -139,7 +161,7 @@ describe("encrypted offline vault", () => {
     await setupVault("Yerel Yönetici", "123456");
     await putPassenger<Person>({ id: 1, full_name: "Ayşe", passport_no: "TR123456" });
 
-    const db = await openDB(VAULT_DATABASE_NAME, 1);
+    const db = await openDB(VAULT_DATABASE_NAME, 2);
     const record = await db.get("passengers", 1) as {
       version: 1;
       iv: ArrayBuffer;
@@ -168,6 +190,28 @@ describe("encrypted offline vault", () => {
     backup.stores.config[0].value.iterations = 1;
     const unsafe = new Blob([JSON.stringify(backup)], { type: "application/json" });
     await expect(restoreEncryptedVault(unsafe)).rejects.toThrow("kasa anahtarı geçersiz");
+  });
+
+  it("restores a version 1 backup with an empty v2 entity store", async () => {
+    await setupVault("Yerel Yönetici", "123456");
+    await putPassenger<Person>({ id: 1, full_name: "Eski Yedek", passport_no: "V1PASS" });
+    const backup = JSON.parse(await (await exportEncryptedVault()).text()) as {
+      version: 1 | 2;
+      stores: Record<string, unknown>;
+    };
+    backup.version = 1;
+    delete backup.stores.entities;
+    await putEntity("work_file:later", {
+      id: "later",
+      entity_type: "work_file",
+      title: "Yedekten sonra",
+    } satisfies WorkspaceItem);
+
+    await restoreEncryptedVault(new Blob([JSON.stringify(backup)], { type: "application/json" }));
+    await unlockVault("123456");
+
+    expect((await listPassengers<Person>())[0].passport_no).toBe("V1PASS");
+    expect(await listEntities("work_file:")).toEqual([]);
   });
 });
 

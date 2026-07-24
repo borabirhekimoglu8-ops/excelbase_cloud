@@ -57,7 +57,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const value = useMemo(() => (status?.user ? { user: status.user, signOut } : null), [status]);
 
   if (!status) {
-    return <div className="auth-loading">Gate Visa Checklist yerel kasası hazırlanıyor…</div>;
+    return <div className="auth-loading">Excelbase Operations yerel kasası hazırlanıyor…</div>;
   }
 
   if (!status.authenticated || !status.user || !value) {
@@ -71,8 +71,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
               <img src="/brand/ido-logo.jpg" alt="İDO" />
             </span>
             <div>
-              <strong>Gate Visa Checklist</strong>
-              <small>Çevrimdışı Yolcu Yönetimi</small>
+              <strong>Excelbase Operations</strong>
+              <small>Çevrimdışı Operasyon Merkezi</small>
             </div>
           </div>
           <div className="auth-copy">
@@ -81,7 +81,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
             <p>
               {setup
                 ? "Veriler bu iPhone’da şifreli saklanır. En az 6 haneli, tahmin edilmesi zor bir erişim kodu belirleyin."
-                : "Cihazdaki şifreli yolcu verilerini açmak için erişim kodunuzu girin."}
+                : "Cihazdaki şifreli operasyon verilerini açmak için erişim kodunuzu girin."}
             </p>
           </div>
           <form className="auth-form" onSubmit={setup ? handleSetup : handleLogin}>

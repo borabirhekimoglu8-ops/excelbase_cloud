@@ -22,6 +22,7 @@ from .config import (
     SESSION_DAYS,
     allowed_origins,
     api_key,
+    assistant_settings,
 )
 from .models import (
     ArchiveResponse,
@@ -49,15 +50,46 @@ from .models import (
     UserCreateRequest,
     UserView,
 )
+from .assistant.provider import (
+    AssistantProviderError,
+    AssistantRateLimitError,
+    AssistantTimeoutError,
+    AssistantUnavailableError,
+)
+from .assistant.body_limit import AssistantBodyLimitMiddleware
+from .assistant.schemas import (
+    AssistantChatRequest,
+    AssistantChatResponse,
+    AssistantSessionResponse,
+    AssistantStatusResponse,
+)
+from .assistant.service import (
+    AssistantDuplicateRequestError,
+    AssistantInputError,
+    AssistantQuotaError,
+    assistant_status,
+    generate_assistant_reply,
+)
 from .auth import (
+    ASSISTANT_SESSION_COOKIE,
+    ASSISTANT_SESSION_PATH,
+    ASSISTANT_SESSION_SECONDS,
+    Actor,
+    assistant_csrf_token,
+    assistant_csrf_token_for_session,
+    bootstrap_token_required,
     create_user,
     deactivate_user,
+    issue_assistant_session,
     issue_session,
     list_users,
     optional_actor,
+    optional_assistant_actor,
     require_admin_access,
     require_api_key,
     require_api_key_flexible,
+    require_assistant_session,
+    require_bootstrap_token,
     require_write_access,
     setup_admin,
     setup_required,
@@ -69,7 +101,11 @@ from persistence import StorePersistenceError  # noqa: E402  (kök dizin yolu .s
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Gate Visa Operations API", version=APP_VERSION)
+app = FastAPI(title="Excelbase Operations API", version=APP_VERSION)
+app.add_middleware(
+    AssistantBodyLimitMiddleware,
+    max_bytes=assistant_settings().max_request_bytes,
+)
 
 
 @app.exception_handler(StorePersistenceError)
@@ -98,7 +134,7 @@ app.add_middleware(
     allow_origins=allowed_origins(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["content-type", "x-api-key", "x-request-id"],
+    allow_headers=["accept", "content-type", "x-api-key", "x-csrf-token", "x-request-id"],
     expose_headers=["x-request-id"],
 )
 
@@ -193,6 +229,139 @@ def health() -> dict:
     }
 
 
+@app.get("/api/assistant/v1/status", response_model=AssistantStatusResponse)
+def assistant_public_status() -> AssistantStatusResponse:
+    """Safe public discovery endpoint; never returns provider or secret data."""
+    return assistant_status()
+
+
+@app.get("/api/assistant/v1/session", response_model=AssistantSessionResponse)
+def assistant_session(request: Request) -> AssistantSessionResponse:
+    """Return only the online Sonnet session state and its derived CSRF token."""
+    needs_setup = setup_required()
+    actor = optional_assistant_actor(request)
+    return AssistantSessionResponse(
+        setup_required=needs_setup,
+        bootstrap_required=needs_setup and bootstrap_token_required(),
+        authenticated=actor is not None,
+        user={"id": actor.id, "name": actor.name, "role": actor.role} if actor else None,
+        csrf_token=assistant_csrf_token(request) if actor else "",
+    )
+
+
+@app.post("/api/assistant/v1/session/setup", response_model=AssistantSessionResponse)
+def assistant_session_setup(
+    payload: AuthSetupRequest,
+    request: Request,
+    response: Response,
+) -> AssistantSessionResponse:
+    """Create the first user and issue only a short-lived Sonnet session."""
+    require_bootstrap_token(payload.bootstrap_token)
+    actor = setup_admin(payload.display_name, payload.pin)
+    token = issue_assistant_session(actor)
+    _set_assistant_session_cookie(response, token)
+    request.state.actor = actor
+    return AssistantSessionResponse(
+        setup_required=False,
+        bootstrap_required=False,
+        authenticated=True,
+        user={"id": actor.id, "name": actor.name, "role": actor.role},
+        csrf_token=assistant_csrf_token_for_session(token),
+    )
+
+
+@app.post("/api/assistant/v1/session/login", response_model=AssistantSessionResponse)
+def assistant_session_login(
+    payload: AuthLoginRequest,
+    request: Request,
+    response: Response,
+) -> AssistantSessionResponse:
+    """Authenticate an existing user without minting a global app session."""
+    actor = authenticate(payload.pin, request.client.host if request.client else "unknown")
+    token = issue_assistant_session(actor)
+    _set_assistant_session_cookie(response, token)
+    request.state.actor = actor
+    return AssistantSessionResponse(
+        setup_required=False,
+        bootstrap_required=False,
+        authenticated=True,
+        user={"id": actor.id, "name": actor.name, "role": actor.role},
+        csrf_token=assistant_csrf_token_for_session(token),
+    )
+
+
+@app.post("/api/assistant/v1/session/logout", response_model=SimpleResult)
+def assistant_session_logout(
+    response: Response,
+    _actor: Actor = Depends(require_assistant_session),
+) -> SimpleResult:
+    response.delete_cookie(
+        ASSISTANT_SESSION_COOKIE,
+        path=ASSISTANT_SESSION_PATH,
+        secure=os.environ.get("APP_ENV", "development").lower() == "production",
+        httponly=True,
+        samesite="strict",
+    )
+    return SimpleResult(ok=True, message="Sonnet oturumu kapatıldı.")
+
+
+@app.post("/api/assistant/v1/chat", response_model=AssistantChatResponse)
+async def assistant_chat(
+    payload: AssistantChatRequest,
+    request: Request,
+    actor: Actor = Depends(require_assistant_session),
+) -> AssistantChatResponse:
+    """Run one authenticated, read-only Claude Sonnet turn.
+
+    Prompts and answers are intentionally not persisted or logged by the
+    server. Only token counts and opaque request identifiers reach logs.
+    """
+    request_id = str(getattr(request.state, "request_id", ""))
+    try:
+        return await generate_assistant_reply(
+            payload,
+            actor_id=actor.id,
+            request_id=request_id,
+        )
+    except AssistantInputError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from None
+    except AssistantDuplicateRequestError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bu Sonnet isteği daha önce alındı.",
+        ) from None
+    except (AssistantQuotaError, AssistantRateLimitError) as exc:
+        retry_after = str(getattr(exc, "retry_after", 30))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Sonnet kullanım sınırına ulaşıldı. Kısa süre sonra tekrar deneyin.",
+            headers={"Retry-After": retry_after},
+        ) from None
+    except AssistantTimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Claude Sonnet zamanında yanıt vermedi. Tekrar deneyin.",
+        ) from None
+    except AssistantUnavailableError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Claude Sonnet henüz kullanıma hazır değil.",
+        ) from None
+    except AssistantProviderError:
+        logger.warning(
+            "assistant provider failure request_id=%s actor_id=%s",
+            request_id,
+            actor.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Claude Sonnet hizmetine şu anda ulaşılamıyor.",
+        ) from None
+
+
 # ---------------------------------------------------------------- authentication
 def _set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(
@@ -203,6 +372,18 @@ def _set_session_cookie(response: Response, token: str) -> None:
         secure=os.environ.get("APP_ENV", "development").lower() == "production",
         samesite="lax",
         path="/",
+    )
+
+
+def _set_assistant_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=ASSISTANT_SESSION_COOKIE,
+        value=token,
+        max_age=ASSISTANT_SESSION_SECONDS,
+        httponly=True,
+        secure=os.environ.get("APP_ENV", "development").lower() == "production",
+        samesite="strict",
+        path=ASSISTANT_SESSION_PATH,
     )
 
 
@@ -218,6 +399,7 @@ def auth_status(request: Request) -> AuthStatusResponse:
 
 @app.post("/api/auth/setup", response_model=AuthStatusResponse)
 def auth_setup(payload: AuthSetupRequest, response: Response) -> AuthStatusResponse:
+    require_bootstrap_token(payload.bootstrap_token)
     actor = setup_admin(payload.display_name, payload.pin)
     _set_session_cookie(response, issue_session(actor))
     return AuthStatusResponse(

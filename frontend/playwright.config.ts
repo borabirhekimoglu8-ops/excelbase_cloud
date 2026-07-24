@@ -6,14 +6,14 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["html", { open: "never" }], ["line"]] : "line",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: "http://127.0.0.1:3000",
     trace: "retain-on-failure",
   },
   webServer: {
     // The app is built with `output: export`, so the static bundle in `out/`
     // is served the same way FastAPI serves it in production.
-    command: "npx serve out -l 3000 -n",
-    url: "http://localhost:3000",
+    command: "python3 -m http.server 3000 --bind 127.0.0.1 --directory out",
+    url: "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

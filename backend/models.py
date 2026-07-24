@@ -166,6 +166,7 @@ class SimpleResult(BaseModel):
 class AuthSetupRequest(BaseModel):
     display_name: str
     pin: str
+    bootstrap_token: str = Field(default="", max_length=512)
 
 
 class AuthLoginRequest(BaseModel):

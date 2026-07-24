@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import * as XLSX from "@e965/xlsx";
 import { readFile } from "node:fs/promises";
 
@@ -12,12 +12,26 @@ function passengerWorkbook(name: string, passport: string, index = 1): Buffer {
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
 
+async function openBulkImport(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Hızlı ekle" }).click();
+  await page.getByRole("dialog", { name: "Yeni oluştur" })
+    .getByRole("button", { name: "Toplu yolcu listesi" })
+    .click();
+}
+
+async function openRecordFolders(page: Page): Promise<void> {
+  await page.getByRole("navigation", { name: "Ana gezinme" })
+    .getByRole("button", { name: "RAPORLAR", exact: true })
+    .click();
+  await page.getByRole("button", { name: /Günlük Kayıt Klasörleri/ }).click();
+}
+
 test("PWA manifesti ve çevrimdışı uygulama kabuğu hazır", async ({ context, page, request }) => {
   const manifestResponse = await request.get("/manifest.webmanifest");
   expect(manifestResponse.ok()).toBeTruthy();
   const manifest = await manifestResponse.json();
-  expect(manifest.name).toBe("Gate Visa Checklist");
-  expect(manifest.short_name).toBe("Gate Visa Checklist");
+  expect(manifest.name).toBe("Excelbase Operations");
+  expect(manifest.short_name).toBe("Excelbase Operations");
   expect(manifest.display).toBe("standalone");
   expect(manifest.icons).toEqual(expect.arrayContaining([
     expect.objectContaining({ src: "/icon-192.png", sizes: "192x192", type: "image/png" }),
@@ -29,9 +43,9 @@ test("PWA manifesti ve çevrimdışı uygulama kabuğu hazır", async ({ context
   expect(await workerResponse.text()).toContain("excelbase-shell-");
 
   await page.goto("/");
-  await expect(page).toHaveTitle(/Gate Visa Checklist/);
-  await expect(page.locator('meta[name="application-name"]')).toHaveAttribute("content", "Gate Visa Checklist");
-  await expect(page.locator('meta[name="apple-mobile-web-app-title"]')).toHaveAttribute("content", "Gate Visa Checklist");
+  await expect(page).toHaveTitle(/Excelbase Operations/);
+  await expect(page.locator('meta[name="application-name"]')).toHaveAttribute("content", "Excelbase Operations");
+  await expect(page.locator('meta[name="apple-mobile-web-app-title"]')).toHaveAttribute("content", "Excelbase Operations");
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
   });
@@ -45,7 +59,7 @@ test("PWA manifesti ve çevrimdışı uygulama kabuğu hazır", async ({ context
 
   await context.setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page).toHaveTitle(/Gate Visa Checklist/);
+  await expect(page).toHaveTitle(/Excelbase Operations/);
   await context.setOffline(false);
 });
 
@@ -55,7 +69,7 @@ test("uçak modunda yerel kasa açılır ve içe aktarılan yolcu kalır", async
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
 
-  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YÜKLE", exact: true }).click();
+  await openBulkImport(page);
   await page.getByLabel("ZIP veya Excel listelerini seç").setInputFiles({
     name: "yolcular.xlsx",
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -84,7 +98,7 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
 
-  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YÜKLE", exact: true }).click();
+  await openBulkImport(page);
   await page.getByLabel("ZIP veya Excel listelerini seç").setInputFiles({
     name: "evrak-yolcusu.xlsx",
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -151,8 +165,7 @@ test("manuel yolcu kaydı günlük klasörde ve Yolcular ekranında kalıcıdır
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
 
-  const navigation = page.getByRole("navigation", { name: "Ana gezinme" });
-  await navigation.getByRole("button", { name: "KAYITLAR", exact: true }).click();
+  await openRecordFolders(page);
   await expect(page.getByRole("heading", { name: "Günlük kayıt klasörleri" })).toBeVisible();
   await page.getByRole("button", { name: "+ YENİ YOLCU KAYDI", exact: true }).click();
   await expect(page.getByText("Yeni Yolcu Kaydı", { exact: true })).toBeVisible();
@@ -195,7 +208,7 @@ test("manuel yolcu kaydı günlük klasörde ve Yolcular ekranında kalıcıdır
   await expect(page.getByText("ECE DENİZ", { exact: true })).toBeVisible();
   await expect(page.locator(".ic-row-meta").filter({ hasText: "2 PDF" })).toBeVisible();
 
-  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "KAYITLAR", exact: true }).click();
+  await openRecordFolders(page);
   const folder = page.locator(".ic-folder-card").filter({ hasText: "17 Temmuz 2026" });
   await expect(folder).toContainText("1 yolcu · 2 PDF · 1 JPG");
   await folder.getByRole("button", { expanded: false }).click();
@@ -209,7 +222,7 @@ test("manuel yolcu kaydı günlük klasörde ve Yolcular ekranında kalıcıdır
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Giriş yap" }).click();
 
-  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "KAYITLAR", exact: true }).click();
+  await openRecordFolders(page);
   await expect(page.locator(".ic-folder-card").filter({ hasText: "17 Temmuz 2026" }))
     .toContainText("1 yolcu · 2 PDF · 1 JPG");
   await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
@@ -224,7 +237,7 @@ test("49 Excel dosyası sırayla işlenir ve çevrimdışı soğuk açılışta 
   await page.locator('input[name="name"]').fill("Toplu Test");
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
-  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YÜKLE", exact: true }).click();
+  await openBulkImport(page);
 
   const files = Array.from({ length: 49 }, (_, offset) => {
     const index = offset + 1;

@@ -11,10 +11,11 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from fastapi import Header, HTTPException, Query, Request, status
 
-from .config import SESSION_COOKIE, SESSION_DAYS, api_key, require_auth
+from .config import SESSION_COOKIE, SESSION_DAYS, allowed_origins, api_key, require_auth
 from .state import load_state, save_state
 import db
 
@@ -36,11 +37,33 @@ class _AuthSnapshot:
 
 
 ROLE_LABELS = {"admin": "Yonetici", "operator": "Operasyon", "viewer": "Goruntuleme"}
+_assistant_cookie_name = os.environ.get(
+    "EXCELBASE_ASSISTANT_SESSION_COOKIE",
+    "excelbase_assistant_session",
+).strip()
+# Fail closed if an operator accidentally configures both authentication
+# surfaces with the same cookie name. The Sonnet session must never grant
+# access to the legacy API, and the legacy session must never authorize spend.
+ASSISTANT_SESSION_COOKIE = (
+    _assistant_cookie_name
+    if _assistant_cookie_name and _assistant_cookie_name != SESSION_COOKIE
+    else f"{SESSION_COOKIE}_sonnet"
+)
+ASSISTANT_SESSION_PATH = "/api/assistant/"
+ASSISTANT_SESSION_SECONDS = 12 * 60 * 60
 _LOGIN_WINDOW_SECONDS = 15 * 60
 _LOGIN_MAX_FAILURES = 6
 _LOGIN_FAILURES: dict[str, list[float]] = {}
 _LOGIN_LOCK = threading.Lock()
 _AUTH_STATE_LOCK = threading.RLock()
+try:
+    _MAX_CONCURRENT_SCRYPT = max(
+        1,
+        min(8, int(os.environ.get("GATEVISA_MAX_CONCURRENT_LOGINS", "2"))),
+    )
+except ValueError:
+    _MAX_CONCURRENT_SCRYPT = 2
+_LOGIN_SCRYPT_GATE = threading.BoundedSemaphore(_MAX_CONCURRENT_SCRYPT)
 
 
 def _b64(data: bytes) -> str:
@@ -64,6 +87,29 @@ def _validate_pin(pin: str) -> str:
             detail="Erisim kodu en az 6 karakter olmalidir.",
         )
     return normalized
+
+
+def bootstrap_token_required() -> bool:
+    """Production setup is possible only with an out-of-band bootstrap token."""
+    return os.environ.get("APP_ENV", "development").strip().lower() == "production"
+
+
+def require_bootstrap_token(provided: str | None) -> None:
+    """Fail closed before the first production administrator can be created."""
+    if not bootstrap_token_required():
+        return
+    expected = os.environ.get("GATEVISA_BOOTSTRAP_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="İlk kurulum güvenlik anahtarı yapılandırılmadı.",
+        )
+    candidate = str(provided or "").strip()
+    if not candidate or not secrets.compare_digest(candidate, expected):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="İlk kurulum güvenlik anahtarı geçersiz.",
+        )
 
 
 def _auth_database_required() -> bool:
@@ -178,31 +224,40 @@ def authenticate(pin: str, client_key: str = "unknown") -> Actor:
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Cok fazla hatali deneme. Lutfen daha sonra tekrar deneyin.",
             )
-    auth = _auth_state().auth
-    for user in auth.get("users", []):
-        if not user.get("active", True):
-            continue
-        try:
-            actual = _pin_hash(pin, _unb64(str(user["salt"])))
-        except Exception:
-            continue
-        if hmac.compare_digest(actual, str(user.get("pin_hash", ""))):
-            with _LOGIN_LOCK:
-                _LOGIN_FAILURES.pop(client_key, None)
-            return Actor(id=str(user["id"]), name=str(user["name"]), role=str(user["role"]))
+    if not _LOGIN_SCRYPT_GATE.acquire(timeout=1.0):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Çok fazla eşzamanlı giriş denemesi var. Kısa süre sonra tekrar deneyin.",
+        )
+    try:
+        auth = _auth_state().auth
+        for user in auth.get("users", []):
+            if not user.get("active", True):
+                continue
+            try:
+                actual = _pin_hash(pin, _unb64(str(user["salt"])))
+            except Exception:
+                continue
+            if hmac.compare_digest(actual, str(user.get("pin_hash", ""))):
+                with _LOGIN_LOCK:
+                    _LOGIN_FAILURES.pop(client_key, None)
+                return Actor(id=str(user["id"]), name=str(user["name"]), role=str(user["role"]))
+    finally:
+        _LOGIN_SCRYPT_GATE.release()
     with _LOGIN_LOCK:
         _LOGIN_FAILURES.setdefault(client_key, []).append(now)
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Erisim kodu hatali.")
 
 
-def issue_session(actor: Actor) -> str:
+def _issue_session(actor: Actor, *, audience: str, ttl_seconds: int) -> str:
     auth = _auth_state().auth
     secret = str(auth.get("session_secret", ""))
     if not secret:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Oturum anahtari bulunamadi.")
     payload = {
         "sub": actor.id,
-        "exp": int(time.time()) + SESSION_DAYS * 24 * 60 * 60,
+        "aud": audience,
+        "exp": int(time.time()) + ttl_seconds,
         "nonce": secrets.token_hex(8),
     }
     encoded = _b64(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
@@ -210,7 +265,23 @@ def issue_session(actor: Actor) -> str:
     return f"{encoded}.{signature}"
 
 
-def _actor_from_token(token: str | None) -> Actor | None:
+def issue_session(actor: Actor) -> str:
+    return _issue_session(
+        actor,
+        audience="app",
+        ttl_seconds=SESSION_DAYS * 24 * 60 * 60,
+    )
+
+
+def issue_assistant_session(actor: Actor) -> str:
+    return _issue_session(
+        actor,
+        audience="assistant",
+        ttl_seconds=ASSISTANT_SESSION_SECONDS,
+    )
+
+
+def _actor_from_token(token: str | None, *, audience: str = "app") -> Actor | None:
     if not token or "." not in token:
         return None
     encoded, signature = token.split(".", 1)
@@ -225,6 +296,8 @@ def _actor_from_token(token: str | None) -> Actor | None:
         payload = json.loads(_unb64(encoded))
         if int(payload.get("exp", 0)) < int(time.time()):
             return None
+        if not hmac.compare_digest(str(payload.get("aud", "")), audience):
+            return None
         user_id = str(payload.get("sub", ""))
     except Exception:
         return None
@@ -235,7 +308,18 @@ def _actor_from_token(token: str | None) -> Actor | None:
 
 
 def optional_actor(request: Request) -> Actor | None:
-    return _actor_from_token(request.cookies.get(SESSION_COOKIE))
+    return _actor_from_token(
+        request.cookies.get(SESSION_COOKIE),
+        audience="app",
+    )
+
+
+def optional_assistant_actor(request: Request) -> Actor | None:
+    """Resolve only the dedicated Sonnet session cookie."""
+    return _actor_from_token(
+        request.cookies.get(ASSISTANT_SESSION_COOKIE),
+        audience="assistant",
+    )
 
 
 def _api_key_actor(provided: str | None) -> Actor | None:
@@ -272,6 +356,75 @@ def require_api_key_flexible(
     actor = _resolve_actor(request, x_api_key or k)
     if actor is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Oturum acmaniz gerekiyor.")
+    request.state.actor = actor
+    return actor
+
+
+def assistant_csrf_token_for_session(session_token: str) -> str:
+    """Derive the public double-submit value for one assistant session."""
+    if not session_token:
+        return ""
+    digest = hmac.new(
+        session_token.encode("utf-8"),
+        b"excelbase-assistant-csrf-v1",
+        hashlib.sha256,
+    ).digest()
+    return _b64(digest)
+
+
+def assistant_csrf_token(request: Request) -> str:
+    """Derive a CSRF token from the dedicated, HttpOnly Sonnet cookie.
+
+    The browser can read this derived token through the same-origin assistant
+    session endpoint, but JavaScript never gains access to either the global
+    application cookie or the assistant cookie itself.
+    """
+    return assistant_csrf_token_for_session(
+        request.cookies.get(ASSISTANT_SESSION_COOKIE, "")
+    )
+
+
+def _assistant_origin_allowed(request: Request) -> bool:
+    origin = request.headers.get("origin", "").strip()
+    if not origin:
+        return os.environ.get("APP_ENV", "development").lower() != "production"
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+    # Same-origin browser requests always have the same authority as Host even
+    # behind Render's TLS proxy. Explicit CORS development origins are accepted
+    # as well; arbitrary third-party origins are not.
+    return parsed.netloc == request.headers.get("host", "") or origin in allowed_origins()
+
+
+def require_assistant_session(
+    request: Request,
+    x_csrf_token: str | None = Header(default=None),
+) -> Actor:
+    """Authorize a billable assistant call with session + CSRF only.
+
+    The legacy shared API key intentionally cannot authorize Sonnet spending.
+    """
+    actor = optional_assistant_actor(request)
+    if actor is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Çevrimiçi asistan oturumu açmanız gerekiyor.",
+        )
+    if not _assistant_origin_allowed(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Asistan isteğinin kaynağı doğrulanamadı.",
+        )
+    expected = assistant_csrf_token(request)
+    if not expected or not x_csrf_token or not secrets.compare_digest(x_csrf_token, expected):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Asistan güvenlik doğrulaması başarısız.",
+        )
     request.state.actor = actor
     return actor
 
