@@ -17,8 +17,17 @@ export const ASSISTANT_READ_ONLY_CAPABILITIES = [
 
 export type AssistantCapability = (typeof ASSISTANT_READ_ONLY_CAPABILITIES)[number];
 
+export type AssistantConfigurationState =
+  | "ready"
+  | "disabled"
+  | "provider_mismatch"
+  | "model_mismatch"
+  | "api_key_missing"
+  | "privacy_mismatch";
+
 export type AssistantStatus = {
   available: boolean;
+  configuration_state?: AssistantConfigurationState;
   online_required: true;
   privacy_mode: "aggregate_context_only";
   capabilities: AssistantCapability[];
@@ -63,6 +72,14 @@ export class AssistantClientError extends Error {
 }
 
 const CAPABILITY_SET = new Set<string>(ASSISTANT_READ_ONLY_CAPABILITIES);
+const CONFIGURATION_STATE_SET = new Set<string>([
+  "ready",
+  "disabled",
+  "provider_mismatch",
+  "model_mismatch",
+  "api_key_missing",
+  "privacy_mismatch",
+]);
 
 function isAssistantStatus(value: unknown): value is AssistantStatus {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -73,8 +90,16 @@ function isAssistantStatus(value: unknown): value is AssistantStatus {
     && status.model_label.trim().length > 0
     && status.model_label.length <= 80
   );
+  const validConfigurationState = (
+    status.configuration_state === undefined
+    || (
+      typeof status.configuration_state === "string"
+      && CONFIGURATION_STATE_SET.has(status.configuration_state)
+    )
+  );
   return (
     typeof status.available === "boolean"
+    && validConfigurationState
     && status.online_required === true
     && status.privacy_mode === "aggregate_context_only"
     && validModelMetadata

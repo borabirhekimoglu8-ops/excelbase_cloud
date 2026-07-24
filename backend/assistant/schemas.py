@@ -55,6 +55,14 @@ class AssistantStatusResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     available: bool
+    configuration_state: Literal[
+        "ready",
+        "disabled",
+        "provider_mismatch",
+        "model_mismatch",
+        "api_key_missing",
+        "privacy_mismatch",
+    ]
     online_required: bool = True
     privacy_mode: Literal["aggregate_context_only"] = "aggregate_context_only"
     model_family: Literal["sonnet"] = "sonnet"

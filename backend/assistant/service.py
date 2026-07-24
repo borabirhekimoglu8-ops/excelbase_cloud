@@ -321,26 +321,46 @@ def sanitize_context_summary(payload: Mapping[str, Any]) -> dict[str, int | floa
     return sanitized
 
 
-def get_assistant_provider() -> AssistantProvider:
-    """Resolve a real provider only when every server-side control is present."""
-    settings = assistant_settings()
+def assistant_configuration_state(settings: AssistantSettings) -> str:
+    """Return a bounded, non-secret reason suitable for public diagnostics."""
     if not settings.enabled:
-        return DisabledProvider()
+        return "disabled"
     if settings.provider != "anthropic":
-        return DisabledProvider("Desteklenen asistan sağlayıcısı yapılandırılmadı.")
+        return "provider_mismatch"
     if settings.model not in SUPPORTED_SONNET_MODELS:
-        return DisabledProvider("Desteklenen Claude Sonnet modeli yapılandırılmadı.")
+        return "model_mismatch"
     if not settings.api_key:
-        return DisabledProvider("Anthropic API anahtarı yapılandırılmadı.")
+        return "api_key_missing"
     if settings.pii_mode != "strict" or settings.allow_raw_documents:
-        return DisabledProvider("Asistan gizlilik ayarları güvenli değil.")
-    return AnthropicProvider(settings)
+        return "privacy_mismatch"
+    return "ready"
+
+
+def get_assistant_provider(
+    settings: AssistantSettings | None = None,
+) -> AssistantProvider:
+    """Resolve a real provider only when every server-side control is present."""
+    resolved = settings or assistant_settings()
+    configuration_state = assistant_configuration_state(resolved)
+    if configuration_state == "ready":
+        return AnthropicProvider(resolved)
+    messages = {
+        "disabled": "Asistan sunucu tarafından devre dışı bırakıldı.",
+        "provider_mismatch": "Desteklenen asistan sağlayıcısı yapılandırılmadı.",
+        "model_mismatch": "Desteklenen Claude Sonnet modeli yapılandırılmadı.",
+        "api_key_missing": "Anthropic API anahtarı yapılandırılmadı.",
+        "privacy_mismatch": "Asistan gizlilik ayarları güvenli değil.",
+    }
+    return DisabledProvider(messages[configuration_state])
 
 
 def assistant_status() -> AssistantStatusResponse:
-    provider = get_assistant_provider()
+    settings = assistant_settings()
+    configuration_state = assistant_configuration_state(settings)
+    provider = get_assistant_provider(settings)
     return AssistantStatusResponse(
         available=provider.available,
+        configuration_state=configuration_state,
         online_required=True,
         privacy_mode="aggregate_context_only",
         model_family="sonnet",

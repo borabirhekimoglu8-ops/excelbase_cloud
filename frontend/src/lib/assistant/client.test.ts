@@ -20,6 +20,7 @@ describe("fetchAssistantStatus", () => {
       ok: true,
       json: async () => ({
         available: false,
+        configuration_state: "api_key_missing",
         online_required: true,
         privacy_mode: "aggregate_context_only",
         model_family: "sonnet",
@@ -32,6 +33,7 @@ describe("fetchAssistantStatus", () => {
     const status = await fetchAssistantStatus();
 
     expect(status.available).toBe(false);
+    expect(status.configuration_state).toBe("api_key_missing");
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/assistant/v1/status",

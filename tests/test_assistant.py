@@ -76,6 +76,7 @@ def test_public_status_reports_readiness_and_never_leaks_provider_configuration(
     assert response.status_code == 200
     assert response.json() == {
         "available": True,
+        "configuration_state": "ready",
         "online_required": True,
         "privacy_mode": "aggregate_context_only",
         "model_family": "sonnet",
@@ -100,6 +101,7 @@ def test_public_status_rejects_a_non_sonnet_or_unapproved_model(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["available"] is False
+    assert response.json()["configuration_state"] == "model_mismatch"
     assert response.json()["model_family"] == "sonnet"
     assert response.json()["model_label"] == "Claude Sonnet"
     assert "opus" not in response.text.lower()
@@ -116,6 +118,34 @@ def test_public_status_stays_fail_closed_without_server_key(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["available"] is False
+    assert response.json()["configuration_state"] == "api_key_missing"
+
+
+def test_server_key_enables_safe_sonnet_defaults_without_blueprint_flags(monkeypatch):
+    for name in (
+        "EXCELBASE_ASSISTANT_ENABLED",
+        "EXCELBASE_ASSISTANT_PROVIDER",
+        "EXCELBASE_ASSISTANT_MODEL",
+        "EXCELBASE_ASSISTANT_PII_MODE",
+        "EXCELBASE_ASSISTANT_ALLOW_RAW_DOCUMENTS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "server-secret")
+
+    settings = assistant_settings()
+    assert settings.enabled is True
+    assert settings.provider == "anthropic"
+    assert settings.model == "claude-sonnet-5"
+    assert settings.pii_mode == "strict"
+    assert settings.allow_raw_documents is False
+
+    with TestClient(app) as client:
+        response = client.get("/api/assistant/v1/status")
+
+    assert response.status_code == 200
+    assert response.json()["available"] is True
+    assert response.json()["configuration_state"] == "ready"
+    assert "server-secret" not in response.text
 
 
 def test_context_summary_is_structurally_allowlisted_and_pii_free():

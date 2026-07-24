@@ -46,6 +46,36 @@ const RANGE_LABELS: Record<string, string> = {
   custom: "Özel aralık",
 };
 
+const CONFIGURATION_MESSAGES: Record<
+  NonNullable<AssistantStatus["configuration_state"]>,
+  { title: string; body: string }
+> = {
+  ready: {
+    title: "Claude Sonnet hazır",
+    body: "Sunucu yapılandırması doğrulandı.",
+  },
+  disabled: {
+    title: "Sonnet sunucuda kapalı",
+    body: "Excelbase servisinde EXCELBASE_ASSISTANT_ENABLED değerini 1 olarak tanımlayın.",
+  },
+  provider_mismatch: {
+    title: "Sağlayıcı ayarı uyuşmuyor",
+    body: "Excelbase servisinde EXCELBASE_ASSISTANT_PROVIDER değerini anthropic olarak tanımlayın.",
+  },
+  model_mismatch: {
+    title: "Sonnet model ayarı uyuşmuyor",
+    body: "Excelbase servisinde EXCELBASE_ASSISTANT_MODEL değerini claude-sonnet-5 olarak tanımlayın.",
+  },
+  api_key_missing: {
+    title: "Anthropic anahtarı bu serviste görünmüyor",
+    body: "ANTHROPIC_API_KEY değişkenini excelbase Web Service ortamına ekleyip yeniden deploy edin; excelbase-v8 ayrı servistir.",
+  },
+  privacy_mismatch: {
+    title: "Gizlilik koruması doğrulanamadı",
+    body: "PII modunu strict, ham evrak erişimini 0 olarak ayarlayıp yeniden deploy edin.",
+  },
+};
+
 function newMessage(
   role: AssistantConversationMessage["role"],
   content: string,
@@ -324,6 +354,12 @@ export function AssistantWorkspace({
   const modelLabel = verifiedSonnet
     ? status.model_label?.trim() || "Claude Sonnet"
     : "Çevrimiçi asistan";
+  const configurationMessage = status?.configuration_state
+    ? CONFIGURATION_MESSAGES[status.configuration_state]
+    : {
+        title: "Sonnet yapılandırması tamamlanmadı",
+        body: "Render üzerindeki excelbase Web Service ortam değişkenlerini doğrulayıp yeniden deploy edin.",
+      };
 
   return (
     <main
@@ -403,11 +439,8 @@ export function AssistantWorkspace({
       {!checking && online && status && !status.available && (
         <section className="assistant-state-card warning">
           <p>SONNET BAĞLANTISI</p>
-          <h2>Sunucu anahtarı bekleniyor</h2>
-          <p>
-            Entegrasyon hazır. Render servisinde Anthropic anahtarı güvenli ortam
-            değişkeni olarak tanımlandığında bu ekran otomatik açılır.
-          </p>
+          <h2>{configurationMessage.title}</h2>
+          <p>{configurationMessage.body}</p>
           <button type="button" onClick={() => void refreshConnection()}>YENİDEN KONTROL ET</button>
         </section>
       )}
