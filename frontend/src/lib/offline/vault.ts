@@ -1,7 +1,7 @@
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
 
 const DATABASE_NAME = "excelbase-offline-vault";
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const VAULT_CONFIG_KEY = "vault";
 const PBKDF2_ITERATIONS = 310_000;
 const CRYPTO_VERSION = 1;
@@ -9,7 +9,7 @@ const CRYPTO_VERSION = 1;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-type StoreName = "passengers" | "binaries" | "jobs" | "meta";
+type StoreName = "passengers" | "binaries" | "jobs" | "meta" | "entities";
 type StoreKey = number | string;
 
 type EncryptedPayload = {
@@ -33,6 +33,7 @@ interface VaultSchema extends DBSchema {
   binaries: { key: string; value: EncryptedPayload };
   jobs: { key: string; value: EncryptedPayload };
   meta: { key: string; value: EncryptedPayload };
+  entities: { key: string; value: EncryptedPayload };
 }
 
 export type VaultAuthUser = {
@@ -78,6 +79,7 @@ function database(): Promise<IDBPDatabase<VaultSchema>> {
         if (!db.objectStoreNames.contains("binaries")) db.createObjectStore("binaries");
         if (!db.objectStoreNames.contains("jobs")) db.createObjectStore("jobs");
         if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
+        if (!db.objectStoreNames.contains("entities")) db.createObjectStore("entities");
       },
       blocked() {
         throw new Error("Yerel kasa başka bir sekmede açık. Diğer sekmeleri kapatıp yeniden deneyin.");
@@ -214,7 +216,7 @@ export async function setupVault(name: string, pin: string): Promise<VaultAuthSt
     };
 
     const transaction = db.transaction(
-      ["config", "passengers", "binaries", "jobs", "meta"],
+      ["config", "passengers", "binaries", "jobs", "meta", "entities"],
       "readwrite",
     );
     await Promise.all([
@@ -222,6 +224,7 @@ export async function setupVault(name: string, pin: string): Promise<VaultAuthSt
       transaction.objectStore("binaries").clear(),
       transaction.objectStore("jobs").clear(),
       transaction.objectStore("meta").clear(),
+      transaction.objectStore("entities").clear(),
       transaction.objectStore("config").put(config, VAULT_CONFIG_KEY),
       transaction.done,
     ]);
@@ -411,9 +414,53 @@ export async function removeMeta(key: string): Promise<void> {
   announceChange();
 }
 
+export async function listMetaKeys(): Promise<string[]> {
+  activeKey();
+  return (await database()).getAllKeys("meta");
+}
+
 export async function clearMeta(): Promise<void> {
   activeKey();
   await (await database()).clear("meta");
+  announceChange();
+}
+
+export async function listEntities<T>(prefix = ""): Promise<T[]> {
+  activeKey();
+  const db = await database();
+  const transaction = db.transaction("entities");
+  const [keys, values] = await Promise.all([transaction.store.getAllKeys(), transaction.store.getAll()]);
+  await transaction.done;
+  const output: T[] = [];
+  for (const [index, key] of keys.entries()) {
+    if (prefix && !key.startsWith(prefix)) continue;
+    output.push(await decryptRecord<T>("entities", key, values[index]));
+  }
+  return output;
+}
+
+export async function getEntity<T>(key: string): Promise<T | null> {
+  activeKey();
+  const value = await (await database()).get("entities", key);
+  return value ? decryptRecord<T>("entities", key, value) : null;
+}
+
+export async function putEntity<T>(key: string, value: T): Promise<void> {
+  if (!key || key.length > 512) throw new Error("Çalışma alanı kayıt anahtarı geçersiz.");
+  const encrypted = await encryptRecord("entities", key, value);
+  await (await database()).put("entities", encrypted, key);
+  announceChange();
+}
+
+export async function deleteEntity(key: string): Promise<void> {
+  activeKey();
+  await (await database()).delete("entities", key);
+  announceChange();
+}
+
+export async function clearEntities(): Promise<void> {
+  activeKey();
+  await (await database()).clear("entities");
   announceChange();
 }
 
@@ -522,11 +569,12 @@ export async function clearBinaries(): Promise<void> {
 }
 
 type EncodedBuffer = { $buffer: string };
+type BackupStoreName = "config" | StoreName;
 type VaultBackup = {
   format: "excelbase-encrypted-vault";
-  version: 1;
+  version: 1 | 2;
   createdAt: string;
-  stores: Record<"config" | StoreName, Array<{ key: string | number; value: unknown }>>;
+  stores: Partial<Record<BackupStoreName, Array<{ key: string | number; value: unknown }>>>;
 };
 
 function bufferToBase64(buffer: ArrayBuffer): string {
@@ -581,8 +629,8 @@ function validEncryptedPayload(value: unknown): value is EncryptedPayload {
 export async function exportEncryptedVault(): Promise<Blob> {
   activeKey();
   const db = await database();
-  const names = ["config", "passengers", "binaries", "jobs", "meta"] as const;
-  const stores = {} as VaultBackup["stores"];
+  const names = ["config", "passengers", "binaries", "jobs", "meta", "entities"] as const;
+  const stores: VaultBackup["stores"] = {};
   for (const name of names) {
     const transaction = db.transaction(name);
     const [keys, values] = await Promise.all([transaction.store.getAllKeys(), transaction.store.getAll()]);
@@ -591,7 +639,7 @@ export async function exportEncryptedVault(): Promise<Blob> {
   }
   const backup: VaultBackup = {
     format: "excelbase-encrypted-vault",
-    version: 1,
+    version: 2,
     createdAt: new Date().toISOString(),
     stores,
   };
@@ -607,12 +655,16 @@ export async function restoreEncryptedVault(file: Blob): Promise<void> {
   } catch {
     throw new Error("Yedek dosyası geçerli JSON değil.");
   }
-  if (parsed.format !== "excelbase-encrypted-vault" || parsed.version !== 1 || !parsed.stores) {
-    throw new Error("Bu dosya desteklenen bir Gate Visa Checklist şifreli yedeği değil.");
+  if (
+    parsed.format !== "excelbase-encrypted-vault"
+    || (parsed.version !== 1 && parsed.version !== 2)
+    || !parsed.stores
+  ) {
+    throw new Error("Bu dosya desteklenen bir Excelbase Operations şifreli yedeği değil.");
   }
-  const decoded = {} as Record<"config" | StoreName, Array<{ key: string | number; value: unknown }>>;
-  for (const name of ["config", "passengers", "binaries", "jobs", "meta"] as const) {
-    const records = parsed.stores[name];
+  const decoded = {} as Record<BackupStoreName, Array<{ key: string | number; value: unknown }>>;
+  for (const name of ["config", "passengers", "binaries", "jobs", "meta", "entities"] as const) {
+    const records = parsed.stores[name] ?? (parsed.version === 1 && name === "entities" ? [] : null);
     if (!Array.isArray(records)) throw new Error(`Yedekte ${name} bölümü eksik.`);
     decoded[name] = records.map((record) => ({ key: record.key, value: decodeBackupValue(record.value) }));
   }
@@ -623,7 +675,7 @@ export async function restoreEncryptedVault(file: Blob): Promise<void> {
     || !validEncryptedPayload(configRecord.wrappedDek) || !validEncryptedPayload(configRecord.verifier)) {
     throw new Error("Yedek kasa anahtarı geçersiz veya eksik.");
   }
-  for (const name of ["passengers", "binaries", "jobs", "meta"] as const) {
+  for (const name of ["passengers", "binaries", "jobs", "meta", "entities"] as const) {
     if (decoded[name].some((record) => !validEncryptedPayload(record.value))) {
       throw new Error(`Yedekteki ${name} kayıtlarından biri bozuk.`);
     }
@@ -637,8 +689,8 @@ export async function restoreEncryptedVault(file: Blob): Promise<void> {
   }
 
   const db = await database();
-  const transaction = db.transaction(["config", "passengers", "binaries", "jobs", "meta"], "readwrite");
-  for (const name of ["config", "passengers", "binaries", "jobs", "meta"] as const) {
+  const transaction = db.transaction(["config", "passengers", "binaries", "jobs", "meta", "entities"], "readwrite");
+  for (const name of ["config", "passengers", "binaries", "jobs", "meta", "entities"] as const) {
     const store = transaction.objectStore(name);
     await store.clear();
     for (const record of decoded[name]) {

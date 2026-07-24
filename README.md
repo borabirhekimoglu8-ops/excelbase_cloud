@@ -1,17 +1,22 @@
-# Gate Visa Checklist — çevrimdışı yolcu operasyonları
+# Excelbase Operations — çevrimdışı iş ve evrak merkezi
 
-Gate Visa Checklist; yolcu listelerini, PDF evrakları, JPG biyometrik fotoğrafları ve teslim paketlerini iPhone'da işleyen kurulabilir bir PWA'dır. Ana uygulamanın çalışma verileri sunucuya gönderilmez: içe aktarma, eşleştirme, filtreleme ve dışa aktarma tarayıcıda yapılır.
+Excelbase Operations; iş dosyalarını, C kodlarını, görevleri, notları, evrakları ve Gate Visa yolcu operasyonlarını iPhone'da tek yerde yöneten kurulabilir bir PWA'dır. Ana çalışma verileri sunucuya gönderilmez: kayıt, içe aktarma, eşleştirme, filtreleme ve dışa aktarma tarayıcıda yapılır.
 
 ## Neler yapar?
 
-- XLSX, XLS, XLSM, ODS ve CSV yolcu listelerini; ayrıca bu dosyaları içeren ZIP arşivlerini işler.
-- Dosya adedi sınırı koymaz; dosyaları sırayla işleyerek mobil cihaz belleğini korur.
-- Yolcu kayıtlarını, kaynak dosyaları ve yolcu evraklarını Web Crypto (AES-GCM) ile cihazda şifreli saklar.
-- Yolcu kartından veya detay ekranındaki görünür yükleme alanından birden fazla PDF evrak ekler; evrakları çevrimdışı açar, indirir ve teslim paketine dahil eder.
-- JPG/JPEG biyometrik fotoğrafları ve fotoğraf ZIP'lerini pasaport numarası veya benzersiz ad eşleşmesiyle yolculara bağlar.
-- Yolcuları tarih, durum ve metin ile filtreler; tekrarları ve eksik alanları gösterir.
-- Seçili ya da filtrelenmiş tüm yolcular için İDO logolu, A4 yatay yazdırılabilir günlük liste üretir; 20 kayıtlık ekran sayfalamasından etkilenmez.
-- Excel, CSV, manifest, fotoğraf ZIP'i, PDF evrak ZIP'i ve eksiksiz teslim paketi üretir.
+- İş dosyalarını C kodu/dosya no, firma, güzergâh, sorumlu, durum, öncelik ve tarihlerle takip eder.
+- Yolcu, görev, operasyon notu ve genel ofis evraklarını aynı iş dosyasına bağlar.
+- C kodlarını açıklama, geçerlilik tarihi ve etiketlerle aranabilir bir arşivde tutar.
+- Yolcu evraklarıyla genel PDF, Word, Excel, görsel ve yazışmaları birleşik Evrak Merkezi'nde gösterir.
+- ANA, İŞLER, YOLCULAR, EVRAKLAR ve RAPORLAR için tek bir mobil çalışma alanı sunar.
+- Asistan için yalnız toplu sayıları hazırlayan, kişisel veriyi dışarı taşımayan ve varsayılan olarak kapalı güvenli bir entegrasyon temeli içerir.
+- Gate Visa modülünde:
+  - XLSX, XLS, XLSM, ODS ve CSV yolcu listelerini; ayrıca bu dosyaları içeren ZIP arşivlerini işler.
+  - Dosya adedi sınırı koymaz; dosyaları sırayla işleyerek mobil cihaz belleğini korur.
+  - Yolcu kartından birden fazla PDF evrak ve JPG/JPEG biyometrik fotoğraf ekler.
+  - Yolcuları tarih, durum ve metin ile filtreler; tekrarları ve eksik alanları gösterir.
+  - İDO logolu günlük liste, Excel, CSV, manifest, fotoğraf/evrak ZIP'i ve teslim paketi üretir.
+- Yolcu, çalışma alanı ve ikili dosya kayıtlarını Web Crypto (AES-GCM) ile cihazda şifreli saklar.
 - Şifreli cihaz yedeği alır ve geri yükler.
 - Uygulama kabuğu ilk başarılı açılıştan sonra çevrimdışı çalışır.
 
@@ -20,15 +25,15 @@ Gate Visa Checklist; yolcu listelerini, PDF evrakları, JPG biyometrik fotoğraf
 1. Yayın adresini iPhone'da **Safari** ile açın.
 2. Uygulamanın “Çevrimdışı kullanıma hazır” durumuna gelmesini bekleyin.
 3. **Paylaş** → **Ana Ekrana Ekle** → **Ekle** yolunu izleyin.
-4. Gate Visa Checklist'i bundan sonra İDO ana ekran simgesinden açın.
+4. Excelbase Operations'ı bundan sonra İDO ana ekran simgesinden açın.
 
-İlk kurulum ve yeni sürümü alma sırasında internet gerekir. Kurulumdan sonra yolcu listeleri, PDF evraklar, fotoğraflar ve çıktılar çevrimdışı kullanılabilir. iOS, ekran kapalıyken tarayıcı işlemini durdurabildiği için büyük bir içe aktarma tamamlanana kadar Gate Visa Checklist'i ön planda tutun.
+İlk kurulum ve yeni sürümü alma sırasında internet gerekir. Kurulumdan sonra iş dosyaları, yolcu listeleri, PDF evraklar, fotoğraflar ve çıktılar çevrimdışı kullanılabilir. iOS, ekran kapalıyken tarayıcı işlemini durdurabildiği için büyük bir içe aktarma tamamlanana kadar Excelbase Operations'ı ön planda tutun.
 
 ## Veri güvenliği ve yedek
 
 - Kasa kodu sunucuya gönderilmez ve kurtarılamaz.
 - Şifreleme anahtarı yalnızca kasa açıkken bellekte tutulur.
-- IndexedDB'deki yolcu, iş ve dosya kayıtları şifreli içerik taşır.
+- IndexedDB'deki yolcu, iş dosyası, C kodu, görev, not ve evrak kayıtları şifreli içerik taşır.
 - Kasa kodunu unutmak cihazdaki veriyi erişilemez yapar.
 - Safari verisini silmeden, cihaz değiştirmeden veya uygulamayı kaldırmadan önce **Paket → Şifreli yedek al** ile yedeği Dosyalar'a kaydedin.
 

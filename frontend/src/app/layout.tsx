@@ -3,16 +3,16 @@ import { PwaBootstrap } from "@/components/pwa/PwaBootstrap";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  applicationName: "Gate Visa Checklist",
-  title: "Gate Visa Checklist · Yolcu Operasyonları",
-  description: "Yolcu listeleri, PDF evraklar, biyometrik fotoğraflar ve teslim dosyaları için çevrimdışı operasyon uygulaması.",
+  applicationName: "Excelbase Operations",
+  title: "Excelbase Operations · Operasyon ve Evrak Merkezi",
+  description: "İş dosyaları, yolcular, evraklar, raporlar ve Gate Visa süreçleri için çevrimdışı operasyon merkezi.",
   manifest: "/manifest.webmanifest",
   formatDetection: {
     telephone: false,
   },
   appleWebApp: {
     capable: true,
-    title: "Gate Visa Checklist",
+    title: "Excelbase Operations",
     statusBarStyle: "default",
   },
   icons: {

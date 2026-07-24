@@ -19,6 +19,7 @@ export type StoredPassenger = Omit<
   | "issues"
   | "duplicate"
   | "photo_url"
+  | "record_uid"
   | "documents"
   | "created_at"
   | "record_date"
@@ -32,6 +33,8 @@ export type StoredPassenger = Omit<
   created_by?: string;
   record_status?: RecordStatus;
   record_source?: "manual" | "import";
+  /** Stable local identifier for links from work files, tasks and documents. */
+  _record_uid?: string;
   /** Internal idempotency marker; never exported to the passenger workbook. */
   _import_job_id?: string;
 };
@@ -139,9 +142,14 @@ export function resolvedRecordStatus(row: StoredPassenger, issues: string[]): Re
 
 export function toPassenger(row: StoredPassenger, duplicates: Set<string>, photoUrl = ""): Passenger {
   const issues = rowIssues(row, duplicates);
-  const { _import_job_id: _internalJobId, ...publicRow } = row;
+  const {
+    _import_job_id: _internalJobId,
+    _record_uid: recordUid,
+    ...publicRow
+  } = row;
   return {
     ...publicRow,
+    record_uid: text(recordUid),
     departure_date: canonicalDate(row.departure_date) || text(row.departure_date),
     arrival_date: canonicalDate(row.arrival_date) || text(row.arrival_date),
     full_name: text(row.full_name) || [text(row.first_name), text(row.last_name)].filter(Boolean).join(" "),

@@ -4,8 +4,13 @@ import { useState } from "react";
 import { AuthGate, useAuth } from "@/lib/auth";
 import { StoreProvider, useStore } from "@/lib/store";
 import { AppHeaderHome, AppHeaderScreen } from "@/components/ido/AppHeader";
-import { BottomNav, NavKey } from "@/components/ido/BottomNav";
+import { BottomNav, NavKey, PrimaryNavKey } from "@/components/ido/BottomNav";
+import { QuickCreateSheet } from "@/components/QuickCreateSheet";
+import { AssistantPanel } from "@/components/AssistantPanel";
 import { HomeTab } from "@/components/tabs/HomeTab";
+import { WorkFilesTab } from "@/components/tabs/WorkFilesTab";
+import { DocumentsTab } from "@/components/tabs/DocumentsTab";
+import { ReportsTab, ReportDestination } from "@/components/tabs/ReportsTab";
 import { PassengersTab } from "@/components/tabs/PassengersTab";
 import { ImportTab } from "@/components/tabs/ImportTab";
 import { SettingsTab, SettingsSub } from "@/components/tabs/SettingsTab";
@@ -17,15 +22,32 @@ import { ManagementTab } from "@/components/tabs/ManagementTab";
 import { DateScopeBar } from "@/components/DateScopeBar";
 import { PassengerRecordForm } from "@/components/PassengerRecordForm";
 import { RecordsTab } from "@/components/tabs/RecordsTab";
+import { WorkFileForm } from "@/components/WorkFileForm";
+import { WorkFileDetail } from "@/components/WorkFileDetail";
+
+type RootScreen = {
+  kind: "root";
+  tab: PrimaryNavKey;
+  passengerStatus?: string;
+  openDocumentUpload?: boolean;
+};
 
 type Screen =
-  | { kind: "home" }
-  | { kind: "records" }
-  | { kind: "passengers"; status: string }
-  | { kind: "new-record" }
+  | RootScreen
+  | { kind: "work-file"; id: string }
+  | { kind: "new-work-file" }
+  | { kind: "new-passenger" }
   | { kind: "import" }
+  | { kind: "records" }
   | { kind: "settings" }
   | { kind: "settings-sub"; sub: SettingsSub };
+
+const ROOT_TITLES: Record<Exclude<PrimaryNavKey, "home">, string> = {
+  "work-files": "İş Dosyaları",
+  passengers: "Gate Visa · Yolcular",
+  documents: "Evrak Merkezi",
+  reports: "Raporlar",
+};
 
 const SETTINGS_TITLES: Record<SettingsSub, string> = {
   issues: "Kontrol Merkezi",
@@ -38,111 +60,169 @@ const SETTINGS_TITLES: Record<SettingsSub, string> = {
 function Shell() {
   const { toasts } = useStore();
   const { user } = useAuth();
-  const [screen, setScreen] = useState<Screen>({ kind: "home" });
+  const [screen, setScreen] = useState<Screen>({ kind: "root", tab: "home" });
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+
+  function goRoot(tab: PrimaryNavKey, extras: Partial<RootScreen> = {}) {
+    setScreen({ kind: "root", tab, ...extras });
+  }
 
   function navigate(target: string) {
     if (target === "passengers-fotosuz") {
-      setScreen({ kind: "passengers", status: "Fotosuz" });
+      goRoot("passengers", { passengerStatus: "Fotosuz" });
       return;
     }
     if (target === "passengers-eksik") {
-      setScreen({ kind: "passengers", status: "Eksik" });
+      goRoot("passengers", { passengerStatus: "Eksik" });
       return;
     }
-    if (target === "home" || target === "records" || target === "import") {
-      setScreen({ kind: target });
+    if (target === "home" || target === "work-files" || target === "passengers" || target === "documents" || target === "reports") {
+      goRoot(target);
       return;
     }
-    if (target === "passengers") {
-      setScreen({ kind: "passengers", status: "" });
+    if (target === "records") {
+      setScreen({ kind: "records" });
       return;
     }
-    setScreen({ kind: "home" });
+    if (target === "import") {
+      setScreen({ kind: "import" });
+      return;
+    }
+    goRoot("home");
   }
 
   function onNavSelect(key: NavKey) {
-    if (key === "home") setScreen({ kind: "home" });
-    else if (key === "records") setScreen({ kind: "records" });
-    else if (key === "passengers") setScreen({ kind: "passengers", status: "" });
+    if (key === "home" || key === "work-files" || key === "passengers" || key === "documents" || key === "reports") {
+      goRoot(key);
+      return;
+    }
+    if (key === "records") setScreen({ kind: "records" });
     else if (key === "import") setScreen({ kind: "import" });
     else setScreen({ kind: "settings" });
   }
 
-  const activeNav: NavKey =
-    screen.kind === "home"
-      ? "home"
-      : screen.kind === "records"
-        ? "records"
-        : screen.kind === "passengers"
-          ? "passengers"
-          : screen.kind === "import"
-            ? "import"
-            : "settings";
+  function openReport(destination: ReportDestination) {
+    if (destination === "records") {
+      setScreen({ kind: "records" });
+      return;
+    }
+    setScreen({ kind: "settings-sub", sub: destination });
+  }
+
+  const rootTab = screen.kind === "root" ? screen.tab : null;
+  const showDateScope = (
+    (screen.kind === "root" && (screen.tab === "passengers" || screen.tab === "reports"))
+    || screen.kind === "records"
+  );
+  const stickyContent = screen.kind === "import" || screen.kind === "new-passenger" || screen.kind === "new-work-file";
 
   return (
     <div className="ido-app">
       <div className="ido-frame">
-        {screen.kind === "home" && <AppHeaderHome />}
+        {screen.kind === "root" && screen.tab === "home" && (
+          <AppHeaderHome
+            onAssistant={() => setAssistantOpen(true)}
+            onSettings={() => setScreen({ kind: "settings" })}
+          />
+        )}
+        {screen.kind === "root" && screen.tab !== "home" && (
+          <AppHeaderScreen
+            title={ROOT_TITLES[screen.tab]}
+            brand={screen.tab === "passengers" ? "ido" : "operations"}
+            onAssistant={() => setAssistantOpen(true)}
+            onSettings={() => setScreen({ kind: "settings" })}
+          />
+        )}
+        {screen.kind === "work-file" && (
+          <AppHeaderScreen title="İş Dosyası" brand="operations" onBack={() => goRoot("work-files")} />
+        )}
+        {screen.kind === "new-work-file" && (
+          <AppHeaderScreen title="Yeni İş Dosyası" brand="operations" onBack={() => goRoot("work-files")} />
+        )}
         {screen.kind === "records" && (
           <AppHeaderScreen
             title="Kayıt Klasörleri"
-            onBack={() => navigate("home")}
+            brand="ido"
+            onBack={() => goRoot("reports")}
             action={
               user.role !== "viewer" ? (
-                <button className="ido-header-action" onClick={() => setScreen({ kind: "new-record" })} type="button">
+                <button className="ido-header-action" onClick={() => setScreen({ kind: "new-passenger" })} type="button">
                   + YENİ
                 </button>
               ) : undefined
             }
           />
         )}
-        {screen.kind === "passengers" && (
-          <AppHeaderScreen
-            title="Yolcular"
-            onBack={() => navigate("home")}
-            action={
-              user.role !== "viewer" ? (
-                <button className="ido-header-action" onClick={() => setScreen({ kind: "new-record" })} type="button">
-                  + YENİ
-                </button>
-              ) : undefined
-            }
-          />
-        )}
-        {screen.kind === "new-record" && (
+        {screen.kind === "new-passenger" && (
           <AppHeaderScreen
             title="Yeni Yolcu Kaydı"
+            brand="ido"
             onBack={() => {
               if (window.confirm("Yeni kayıt ekranından çıkılsın mı? Kaydedilmemiş bilgiler silinir.")) {
-                setScreen({ kind: "records" });
+                goRoot("passengers");
               }
             }}
           />
         )}
-        {screen.kind === "import" && <AppHeaderScreen title="Toplu Yükleme" onBack={() => navigate("home")} />}
-        {screen.kind === "settings" && <AppHeaderScreen title="Ayarlar" onBack={() => navigate("home")} />}
+        {screen.kind === "import" && (
+          <AppHeaderScreen title="Toplu Yolcu Yükleme" brand="ido" onBack={() => goRoot("passengers")} />
+        )}
+        {screen.kind === "settings" && (
+          <AppHeaderScreen title="Ayarlar" brand="operations" onBack={() => goRoot("home")} />
+        )}
         {screen.kind === "settings-sub" && (
-          <AppHeaderScreen title={SETTINGS_TITLES[screen.sub]} onBack={() => setScreen({ kind: "settings" })} />
+          <AppHeaderScreen
+            title={SETTINGS_TITLES[screen.sub]}
+            brand={screen.sub === "management" ? "operations" : "ido"}
+            onBack={() => setScreen({ kind: "settings" })}
+          />
         )}
 
-        <div className={`ido-content${screen.kind === "import" || screen.kind === "new-record" ? " has-sticky" : ""}`}>
-          {screen.kind !== "import" && screen.kind !== "new-record" && (
+        <div className={`ido-content${stickyContent ? " has-sticky" : ""}`}>
+          {showDateScope && (
             <div style={{ marginBottom: -2 }}>
               <DateScopeBar fixedField={screen.kind === "records" ? "created" : undefined} />
             </div>
           )}
-          {screen.kind === "home" && <HomeTab onNavigate={navigate} />}
-          {screen.kind === "records" && (
-            <RecordsTab
-              canCreate={user.role !== "viewer"}
-              onCreate={() => setScreen({ kind: "new-record" })}
+
+          {screen.kind === "root" && screen.tab === "home" && (
+            <HomeTab
+              onNavigate={navigate}
+              onOpenWorkFile={(id) => setScreen({ kind: "work-file", id })}
+              onAssistant={() => setAssistantOpen(true)}
             />
           )}
-          {screen.kind === "passengers" && <PassengersTab initialStatus={screen.status} />}
-          {screen.kind === "new-record" && (
+          {screen.kind === "root" && screen.tab === "work-files" && (
+            <WorkFilesTab
+              onCreate={() => setScreen({ kind: "new-work-file" })}
+              onOpen={(id) => setScreen({ kind: "work-file", id })}
+            />
+          )}
+          {screen.kind === "root" && screen.tab === "passengers" && (
+            <PassengersTab initialStatus={screen.passengerStatus ?? ""} />
+          )}
+          {screen.kind === "root" && screen.tab === "documents" && (
+            <DocumentsTab
+              autoOpenUpload={Boolean(screen.openDocumentUpload)}
+              onOpenGallery={() => setScreen({ kind: "settings-sub", sub: "gallery" })}
+            />
+          )}
+          {screen.kind === "root" && screen.tab === "reports" && <ReportsTab onOpen={openReport} />}
+          {screen.kind === "work-file" && <WorkFileDetail id={screen.id} onBack={() => goRoot("work-files")} />}
+          {screen.kind === "new-work-file" && (
+            <WorkFileForm
+              onCancel={() => goRoot("work-files")}
+              onSaved={(id) => setScreen({ kind: "work-file", id })}
+            />
+          )}
+          {screen.kind === "records" && (
+            <RecordsTab canCreate={user.role !== "viewer"} onCreate={() => setScreen({ kind: "new-passenger" })} />
+          )}
+          {screen.kind === "new-passenger" && (
             <PassengerRecordForm
-              onCancel={() => setScreen({ kind: "records" })}
-              onSaved={() => setScreen({ kind: "passengers", status: "" })}
+              onCancel={() => goRoot("passengers")}
+              onSaved={() => goRoot("passengers")}
             />
           )}
           {screen.kind === "import" && <ImportTab onNavigate={navigate} />}
@@ -156,7 +236,23 @@ function Shell() {
           {screen.kind === "settings-sub" && screen.sub === "management" && <ManagementTab />}
         </div>
 
-        {screen.kind !== "new-record" && <BottomNav active={activeNav} onSelect={onNavSelect} />}
+        {screen.kind === "root" && (
+          <BottomNav
+            active={rootTab ?? "home"}
+            onSelect={onNavSelect}
+            onQuickCreate={user.role !== "viewer" ? () => setQuickCreateOpen(true) : undefined}
+          />
+        )}
+
+        <QuickCreateSheet
+          open={quickCreateOpen}
+          onClose={() => setQuickCreateOpen(false)}
+          onNewWorkFile={() => setScreen({ kind: "new-work-file" })}
+          onNewPassenger={() => setScreen({ kind: "new-passenger" })}
+          onUploadDocument={() => goRoot("documents", { openDocumentUpload: true })}
+          onBulkImport={() => setScreen({ kind: "import" })}
+        />
+        <AssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} />
 
         <div className="toast-stack" aria-live="polite">
           {toasts.map((toast) => (

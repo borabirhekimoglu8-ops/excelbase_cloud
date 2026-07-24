@@ -26,6 +26,20 @@ services:
           property: connectionString
       - key: GATEVISA_DATA_SECRET
         generateValue: true
+      # Excelbase Assistant is fail-closed until a reviewed provider adapter
+      # and a server-side user identity flow are enabled.
+      - key: EXCELBASE_ASSISTANT_ENABLED
+        value: "0"
+      - key: EXCELBASE_ASSISTANT_PROVIDER
+        value: disabled
+      - key: EXCELBASE_ASSISTANT_PII_MODE
+        value: strict
+      - key: EXCELBASE_ASSISTANT_ALLOW_RAW_DOCUMENTS
+        value: "0"
+      - key: EXCELBASE_ASSISTANT_MODEL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
   # V8 — ilişkisel çekirdek API'si. Gizli anahtarlar Render tarafından
   # otomatik üretilir (generateValue) ve asla repoya yazılmaz.
   - type: web

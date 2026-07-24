@@ -49,6 +49,8 @@ from .models import (
     UserCreateRequest,
     UserView,
 )
+from .assistant.schemas import AssistantStatusResponse
+from .assistant.service import assistant_status
 from .auth import (
     create_user,
     deactivate_user,
@@ -69,7 +71,7 @@ from persistence import StorePersistenceError  # noqa: E402  (kök dizin yolu .s
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Gate Visa Operations API", version=APP_VERSION)
+app = FastAPI(title="Excelbase Operations API", version=APP_VERSION)
 
 
 @app.exception_handler(StorePersistenceError)
@@ -191,6 +193,12 @@ def health() -> dict:
         "persistence": "database" if db_enabled else "local-fallback",
         "database_writable": services.db.probe_write() if db_enabled else False,
     }
+
+
+@app.get("/api/assistant/v1/status", response_model=AssistantStatusResponse)
+def assistant_public_status() -> AssistantStatusResponse:
+    """Safe public discovery endpoint; never returns provider or secret data."""
+    return assistant_status()
 
 
 # ---------------------------------------------------------------- authentication
