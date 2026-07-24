@@ -25,7 +25,7 @@ from passenger_schema import (  # noqa: E402
 from persistence import load_store, save_store  # noqa: E402
 from photo_store import _norm_key  # noqa: E402
 
-APP_VERSION = "7.6.0"
+APP_VERSION = "7.6.1"
 
 # Durum tek JSON blob olarak yükle-değiştir-kaydet döngüsüyle güncellenir.
 # Arka plan aktarım işleyicisi eklendiğinden bu döngüler artık gerçekten

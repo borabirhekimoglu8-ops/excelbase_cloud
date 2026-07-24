@@ -41,9 +41,11 @@ class AssistantSettings:
     max_input_chars: int = 12_000
     max_history_turns: int = 8
     max_output_tokens: int = 1_200
+    max_request_bytes: int = 64 * 1024
     timeout_seconds: int = 35
     requests_per_minute: int = 6
     requests_per_day: int = 100
+    global_requests_per_day: int = 200
     max_concurrency: int = 2
 
 
@@ -58,7 +60,7 @@ def assistant_settings() -> AssistantSettings:
     return AssistantSettings(
         enabled=_env_bool("EXCELBASE_ASSISTANT_ENABLED"),
         provider=provider,
-        model=os.environ.get("EXCELBASE_ASSISTANT_MODEL", "").strip()[:200],
+        model=os.environ.get("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5").strip()[:200],
         api_key=os.environ.get("ANTHROPIC_API_KEY", "").strip(),
         pii_mode=pii_mode,
         allow_raw_documents=_env_bool("EXCELBASE_ASSISTANT_ALLOW_RAW_DOCUMENTS"),
@@ -66,9 +68,21 @@ def assistant_settings() -> AssistantSettings:
         max_input_chars=_bounded_env_int("EXCELBASE_ASSISTANT_MAX_INPUT_CHARS", 12_000, 1_000, 100_000),
         max_history_turns=_bounded_env_int("EXCELBASE_ASSISTANT_MAX_HISTORY_TURNS", 8, 0, 30),
         max_output_tokens=_bounded_env_int("EXCELBASE_ASSISTANT_MAX_OUTPUT_TOKENS", 1_200, 64, 8_192),
+        max_request_bytes=_bounded_env_int(
+            "EXCELBASE_ASSISTANT_MAX_REQUEST_BYTES",
+            64 * 1024,
+            8 * 1024,
+            256 * 1024,
+        ),
         timeout_seconds=_bounded_env_int("EXCELBASE_ASSISTANT_TIMEOUT_SECONDS", 35, 5, 120),
         requests_per_minute=_bounded_env_int("EXCELBASE_ASSISTANT_REQUESTS_PER_MINUTE", 6, 1, 120),
         requests_per_day=_bounded_env_int("EXCELBASE_ASSISTANT_REQUESTS_PER_DAY", 100, 1, 10_000),
+        global_requests_per_day=_bounded_env_int(
+            "EXCELBASE_ASSISTANT_GLOBAL_REQUESTS_PER_DAY",
+            200,
+            1,
+            100_000,
+        ),
         max_concurrency=_bounded_env_int("EXCELBASE_ASSISTANT_MAX_CONCURRENCY", 2, 1, 20),
     )
 

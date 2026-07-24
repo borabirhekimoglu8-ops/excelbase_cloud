@@ -184,10 +184,10 @@ export function HomeTab({ onNavigate, onOpenWorkFile, onAssistant }: HomeTabProp
       </section>
 
       <button className="ops-assistant-card" type="button" onClick={onAssistant}>
-        <span className="ops-assistant-mark" aria-hidden="true">AI</span>
+        <span className="ops-assistant-mark" aria-hidden="true">S</span>
         <span>
-          <strong>Excelbase Asistanı</strong>
-          <small>Operasyon özetini inceleyin; kişisel veri göndermeden güvenli hazırlık görünümünü açın.</small>
+          <strong>Claude Sonnet Asistan</strong>
+          <small>Operasyon özetini gerçek Sonnet ile değerlendirin; bağımsız çalışma alanını açın.</small>
         </span>
         <b aria-hidden="true">›</b>
       </button>

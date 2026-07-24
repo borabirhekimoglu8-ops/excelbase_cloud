@@ -25,10 +25,28 @@ class ProviderResult:
     text: str
     input_tokens: int = 0
     output_tokens: int = 0
+    stop_reason: str = ""
+    request_id: str = ""
 
 
 class AssistantUnavailableError(RuntimeError):
     """Raised when no billable assistant provider is active."""
+
+
+class AssistantRateLimitError(RuntimeError):
+    """Raised when the upstream provider asks the caller to slow down."""
+
+    def __init__(self, retry_after: int = 30) -> None:
+        super().__init__("Assistant provider rate limit reached.")
+        self.retry_after = max(1, min(300, int(retry_after)))
+
+
+class AssistantTimeoutError(RuntimeError):
+    """Raised when the provider does not answer within the configured timeout."""
+
+
+class AssistantProviderError(RuntimeError):
+    """Raised for a sanitized provider or response failure."""
 
 
 @runtime_checkable

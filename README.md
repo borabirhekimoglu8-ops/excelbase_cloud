@@ -9,7 +9,7 @@ Excelbase Operations; iş dosyalarını, C kodlarını, görevleri, notları, ev
 - C kodlarını açıklama, geçerlilik tarihi ve etiketlerle aranabilir bir arşivde tutar.
 - Yolcu evraklarıyla genel PDF, Word, Excel, görsel ve yazışmaları birleşik Evrak Merkezi'nde gösterir.
 - ANA, İŞLER, YOLCULAR, EVRAKLAR ve RAPORLAR için tek bir mobil çalışma alanı sunar.
-- Asistan için yalnız toplu sayıları hazırlayan, kişisel veriyi dışarı taşımayan ve varsayılan olarak kapalı güvenli bir entegrasyon temeli içerir.
+- Uygulama içindeki bağımsız Claude Sonnet çalışma alanında gerçek sohbet sunar; otomatik bağlam yalnız toplu operasyon sayılarını içerir.
 - Gate Visa modülünde:
   - XLSX, XLS, XLSM, ODS ve CSV yolcu listelerini; ayrıca bu dosyaları içeren ZIP arşivlerini işler.
   - Dosya adedi sınırı koymaz; dosyaları sırayla işleyerek mobil cihaz belleğini korur.
@@ -32,6 +32,8 @@ Excelbase Operations; iş dosyalarını, C kodlarını, görevleri, notları, ev
 ## Veri güvenliği ve yedek
 
 - Kasa kodu sunucuya gönderilmez ve kurtarılamaz.
+- Sonnet için açılan çevrimiçi oturum cihaz kasasından ayrıdır; kasa PIN'i arka planda sunucuya gönderilmez.
+- Anthropic API anahtarı yalnız FastAPI/Render ortamında tutulur; PWA paketine, IndexedDB'ye veya API yanıtına girmez.
 - Şifreleme anahtarı yalnızca kasa açıkken bellekte tutulur.
 - IndexedDB'deki yolcu, iş dosyası, C kodu, görev, not ve evrak kayıtları şifreli içerik taşır.
 - Kasa kodunu unutmak cihazdaki veriyi erişilemez yapar.
@@ -41,7 +43,7 @@ Excelbase Operations; iş dosyalarını, C kodlarını, görevleri, notları, ev
 
 - `frontend/` — statik Next.js PWA, IndexedDB veri katmanı, Web Crypto kasası, dosya ayrıştırıcıları ve yerel çıktı üreticileri.
 - `frontend/public/sw.js` — uygulama kabuğunu sürümleyip çevrimdışı açılışı sağlayan service worker.
-- `backend/` — statik üretim çıktısını ve sağlık kontrolünü sunan mevcut FastAPI katmanı. Ana PWA çalışma verisi için bu API'ye bağlı değildir.
+- `backend/` — statik üretim çıktısını, sağlık kontrolünü ve kimliği doğrulanmış Sonnet proxy'sini sunan FastAPI katmanı. Ana PWA çalışma verisi için bu API'ye bağlı değildir.
 - `v8/` — ayrı tutulan eski/deneysel ilişkisel servis; ana PWA arayüzünde V8 sayfası bulunmaz.
 
 ## Yerel geliştirme
@@ -72,6 +74,34 @@ GATEVISA_ALLOW_DEV_NO_AUTH=1 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
 PWA özellikleri `localhost` veya HTTPS üzerinde kullanılabilir.
+
+## Claude Sonnet yapılandırması
+
+Sonnet çağrıları doğrudan tarayıcıdan yapılmaz. Üretimde Render servisinin gizli
+değişkenlerine `ANTHROPIC_API_KEY` ve ilk yönetici oluşturulmadan önce güçlü,
+rastgele bir `GATEVISA_BOOTSTRAP_TOKEN` eklenir. Kurulum ekranındaki “İlk
+kurulum anahtarı” alanına bu ikinci değer girilir; ilk hesap açıldıktan sonra
+Render'daki değer kaldırılabilir veya döndürülebilir. Gizli değerler repoya ya
+da istemci paketine yazılmaz.
+
+`render.yaml` şu güvenli varsayılanları tanımlar:
+
+- sağlayıcı: `anthropic`
+- model: `claude-sonnet-5`
+- en fazla 1.200 çıktı tokenı
+- kullanıcı başına dakikada 6/günde 100 ve kurulum genelinde günde 200 istek
+- 35 saniye zaman aşımı ve aynı anda en fazla 2 çağrı
+- PostgreSQL üzerinde kalıcı kota ve `X-Request-ID` yinelenen istek koruması
+- yalnız otomatik bağlam toplu ve PII içermeyen verilerle sınırlı; yazılan
+  mesaj ve konuşma geçmişi Anthropic'e gider, ham evrak aktarımı kapalı
+- bugün etkin veri yeteneği yalnız ekrandaki toplu operasyon özetidir; dosya,
+  evrak ve yolcu arama araçları ayrıca uygulanıp incelenmeden ilan edilmez
+
+İlk kullanımda asistan ekranı ayrı bir çevrimiçi erişim kodu ister ve HttpOnly
+oturum çerezi oluşturur. Bu kod cihaz kasasının PIN'i olmak zorunda değildir.
+Üretim anahtarı açılmadan önce Anthropic Console'da Excelbase için ayrı bir
+Workspace ve düşük harcama limiti ayarlanmalıdır; uygulamadaki istek kotaları
+bu sağlayıcı tarafı bütçe sınırının yerini almaz.
 
 ## Yayın
 

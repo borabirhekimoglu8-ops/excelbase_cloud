@@ -6,7 +6,11 @@ import { StoreProvider, useStore } from "@/lib/store";
 import { AppHeaderHome, AppHeaderScreen } from "@/components/ido/AppHeader";
 import { BottomNav, NavKey, PrimaryNavKey } from "@/components/ido/BottomNav";
 import { QuickCreateSheet } from "@/components/QuickCreateSheet";
-import { AssistantPanel } from "@/components/AssistantPanel";
+import { AssistantWorkspace } from "@/components/assistant/AssistantWorkspace";
+import {
+  AssistantConversationState,
+  emptyAssistantConversation,
+} from "@/lib/assistant/conversation";
 import { HomeTab } from "@/components/tabs/HomeTab";
 import { WorkFilesTab } from "@/components/tabs/WorkFilesTab";
 import { DocumentsTab } from "@/components/tabs/DocumentsTab";
@@ -39,6 +43,7 @@ type Screen =
   | { kind: "new-passenger" }
   | { kind: "import" }
   | { kind: "records" }
+  | { kind: "assistant" }
   | { kind: "settings" }
   | { kind: "settings-sub"; sub: SettingsSub };
 
@@ -62,10 +67,18 @@ function Shell() {
   const { user } = useAuth();
   const [screen, setScreen] = useState<Screen>({ kind: "root", tab: "home" });
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
-  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantReturnScreen, setAssistantReturnScreen] = useState<Screen>({ kind: "root", tab: "home" });
+  const [assistantConversation, setAssistantConversation] = useState<AssistantConversationState>(
+    () => emptyAssistantConversation(),
+  );
 
   function goRoot(tab: PrimaryNavKey, extras: Partial<RootScreen> = {}) {
     setScreen({ kind: "root", tab, ...extras });
+  }
+
+  function openAssistant() {
+    if (screen.kind !== "assistant") setAssistantReturnScreen(screen);
+    setScreen({ kind: "assistant" });
   }
 
   function navigate(target: string) {
@@ -125,10 +138,10 @@ function Shell() {
 
   return (
     <div className="ido-app">
-      <div className="ido-frame">
+      <div className={`ido-frame${screen.kind === "assistant" ? " assistant-mode" : ""}`}>
         {screen.kind === "root" && screen.tab === "home" && (
           <AppHeaderHome
-            onAssistant={() => setAssistantOpen(true)}
+            onAssistant={openAssistant}
             onSettings={() => setScreen({ kind: "settings" })}
           />
         )}
@@ -136,7 +149,7 @@ function Shell() {
           <AppHeaderScreen
             title={ROOT_TITLES[screen.tab]}
             brand={screen.tab === "passengers" ? "ido" : "operations"}
-            onAssistant={() => setAssistantOpen(true)}
+            onAssistant={openAssistant}
             onSettings={() => setScreen({ kind: "settings" })}
           />
         )}
@@ -174,6 +187,17 @@ function Shell() {
         {screen.kind === "import" && (
           <AppHeaderScreen title="Toplu Yolcu Yükleme" brand="ido" onBack={() => goRoot("passengers")} />
         )}
+        {screen.kind === "assistant" && (
+          <AppHeaderScreen
+            title="Claude Sonnet"
+            brand="operations"
+            onBack={() => setScreen(
+              assistantReturnScreen.kind === "assistant"
+                ? { kind: "root", tab: "home" }
+                : assistantReturnScreen,
+            )}
+          />
+        )}
         {screen.kind === "settings" && (
           <AppHeaderScreen title="Ayarlar" brand="operations" onBack={() => goRoot("home")} />
         )}
@@ -185,7 +209,9 @@ function Shell() {
           />
         )}
 
-        <div className={`ido-content${stickyContent ? " has-sticky" : ""}`}>
+        <div
+          className={`ido-content${stickyContent ? " has-sticky" : ""}${screen.kind === "assistant" ? " assistant-content" : ""}`}
+        >
           {showDateScope && (
             <div style={{ marginBottom: -2 }}>
               <DateScopeBar fixedField={screen.kind === "records" ? "created" : undefined} />
@@ -196,7 +222,7 @@ function Shell() {
             <HomeTab
               onNavigate={navigate}
               onOpenWorkFile={(id) => setScreen({ kind: "work-file", id })}
-              onAssistant={() => setAssistantOpen(true)}
+              onAssistant={openAssistant}
             />
           )}
           {screen.kind === "root" && screen.tab === "work-files" && (
@@ -232,6 +258,12 @@ function Shell() {
             />
           )}
           {screen.kind === "import" && <ImportTab onNavigate={navigate} />}
+          {screen.kind === "assistant" && (
+            <AssistantWorkspace
+              conversation={assistantConversation}
+              setConversation={setAssistantConversation}
+            />
+          )}
           {screen.kind === "settings" && (
             <SettingsTab onOpen={(sub) => setScreen({ kind: "settings-sub", sub })} />
           )}
@@ -258,7 +290,6 @@ function Shell() {
           onUploadDocument={() => goRoot("documents", { openDocumentUpload: true })}
           onBulkImport={() => setScreen({ kind: "import" })}
         />
-        <AssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} />
 
         <div className="toast-stack" aria-live="polite">
           {toasts.map((toast) => (

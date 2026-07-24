@@ -26,18 +26,40 @@ services:
           property: connectionString
       - key: GATEVISA_DATA_SECRET
         generateValue: true
-      # Excelbase Assistant is fail-closed until a reviewed provider adapter
-      # and a server-side user identity flow are enabled.
+      # Required only for the first production administrator setup. Keep this
+      # out-of-band value secret and remove/rotate it after bootstrap.
+      - key: GATEVISA_BOOTSTRAP_TOKEN
+        sync: false
+      # Claude Sonnet runs only through the authenticated backend proxy.
+      # ANTHROPIC_API_KEY must be added as a secret in the Render dashboard.
       - key: EXCELBASE_ASSISTANT_ENABLED
-        value: "0"
+        value: "1"
       - key: EXCELBASE_ASSISTANT_PROVIDER
-        value: disabled
+        value: anthropic
       - key: EXCELBASE_ASSISTANT_PII_MODE
         value: strict
       - key: EXCELBASE_ASSISTANT_ALLOW_RAW_DOCUMENTS
         value: "0"
       - key: EXCELBASE_ASSISTANT_MODEL
-        sync: false
+        value: claude-sonnet-5
+      - key: EXCELBASE_ASSISTANT_MAX_INPUT_CHARS
+        value: "12000"
+      - key: EXCELBASE_ASSISTANT_MAX_HISTORY_TURNS
+        value: "8"
+      - key: EXCELBASE_ASSISTANT_MAX_OUTPUT_TOKENS
+        value: "1200"
+      - key: EXCELBASE_ASSISTANT_MAX_REQUEST_BYTES
+        value: "65536"
+      - key: EXCELBASE_ASSISTANT_TIMEOUT_SECONDS
+        value: "35"
+      - key: EXCELBASE_ASSISTANT_REQUESTS_PER_MINUTE
+        value: "6"
+      - key: EXCELBASE_ASSISTANT_REQUESTS_PER_DAY
+        value: "100"
+      - key: EXCELBASE_ASSISTANT_GLOBAL_REQUESTS_PER_DAY
+        value: "200"
+      - key: EXCELBASE_ASSISTANT_MAX_CONCURRENCY
+        value: "2"
       - key: ANTHROPIC_API_KEY
         sync: false
   # V8 — ilişkisel çekirdek API'si. Gizli anahtarlar Render tarafından
