@@ -50,15 +50,21 @@ class AssistantSettings:
 
 
 def assistant_settings() -> AssistantSettings:
-    """Read assistant configuration without caching or logging secrets."""
-    provider = os.environ.get("EXCELBASE_ASSISTANT_PROVIDER", "disabled").strip().lower()
+    """Read assistant configuration without caching or logging secrets.
+
+    Safe operational defaults make a correctly scoped ANTHROPIC_API_KEY the
+    only required Sonnet variable. Every override remains fail-closed: an
+    explicit disable, an unsupported provider/model, or unsafe privacy setting
+    still prevents provider initialization.
+    """
+    provider = os.environ.get("EXCELBASE_ASSISTANT_PROVIDER", "anthropic").strip().lower()
     if provider not in {"disabled", "anthropic"}:
         provider = "disabled"
     pii_mode = os.environ.get("EXCELBASE_ASSISTANT_PII_MODE", "strict").strip().lower()
     if pii_mode != "strict":
         pii_mode = "strict"
     return AssistantSettings(
-        enabled=_env_bool("EXCELBASE_ASSISTANT_ENABLED"),
+        enabled=_env_bool("EXCELBASE_ASSISTANT_ENABLED", default=True),
         provider=provider,
         model=os.environ.get("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5").strip()[:200],
         api_key=os.environ.get("ANTHROPIC_API_KEY", "").strip(),
