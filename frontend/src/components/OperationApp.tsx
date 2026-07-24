@@ -110,7 +110,13 @@ function Shell() {
     setScreen({ kind: "settings-sub", sub: destination });
   }
 
-  const rootTab = screen.kind === "root" ? screen.tab : null;
+  const bottomNavActive: PrimaryNavKey | null = screen.kind === "root"
+    ? screen.tab
+    : screen.kind === "import"
+      ? "passengers"
+      : screen.kind === "records"
+        ? "reports"
+        : null;
   const showDateScope = (
     (screen.kind === "root" && (screen.tab === "passengers" || screen.tab === "reports"))
     || screen.kind === "records"
@@ -236,11 +242,11 @@ function Shell() {
           {screen.kind === "settings-sub" && screen.sub === "management" && <ManagementTab />}
         </div>
 
-        {screen.kind === "root" && (
+        {bottomNavActive && (
           <BottomNav
-            active={rootTab ?? "home"}
+            active={bottomNavActive}
             onSelect={onNavSelect}
-            onQuickCreate={user.role !== "viewer" ? () => setQuickCreateOpen(true) : undefined}
+            onQuickCreate={screen.kind === "root" && user.role !== "viewer" ? () => setQuickCreateOpen(true) : undefined}
           />
         )}
 
