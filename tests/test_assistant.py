@@ -866,3 +866,36 @@ def test_misnamed_key_diagnostics_name_the_variable_without_its_value(monkeypatc
     assert "ANTROPIC_API_KEY" in body["detail"]
     assert "ANTHROPIC_API_KEY" in body["detail"]
     assert "sk-ant-typo-name" not in response.text
+
+
+def test_wrong_access_code_is_rejected_with_a_reason_the_form_can_show(monkeypatch):
+    """The pairing form renders the server detail verbatim, so it must be exact."""
+    from backend import auth
+
+    monkeypatch.setattr(
+        auth,
+        "_auth_state",
+        lambda: SimpleNamespace(auth={"session_secret": "s", "users": []}, database_backed=False),
+    )
+
+    with pytest.raises(HTTPException) as rejected:
+        auth.authenticate("123456", client_key="wrong-code-test")
+
+    assert rejected.value.status_code == 401
+    assert rejected.value.detail == "Erişim kodu hatalı."
+
+
+def test_short_access_code_is_rejected_before_any_hashing(monkeypatch):
+    from backend import auth
+
+    monkeypatch.setattr(
+        auth,
+        "_auth_state",
+        lambda: (_ for _ in ()).throw(AssertionError("auth state must not be loaded")),
+    )
+
+    with pytest.raises(HTTPException) as rejected:
+        auth.authenticate("123", client_key="short-code-test")
+
+    assert rejected.value.status_code == 422
+    assert rejected.value.detail == "Erişim kodu en az 6 karakter olmalıdır."

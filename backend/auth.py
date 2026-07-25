@@ -84,7 +84,7 @@ def _validate_pin(pin: str) -> str:
     if len(normalized) < 6:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Erisim kodu en az 6 karakter olmalidir.",
+            detail="Erişim kodu en az 6 karakter olmalıdır.",
         )
     return normalized
 
@@ -222,7 +222,7 @@ def authenticate(pin: str, client_key: str = "unknown") -> Actor:
         if len(attempts) >= _LOGIN_MAX_FAILURES:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Cok fazla hatali deneme. Lutfen daha sonra tekrar deneyin.",
+                detail="Çok fazla hatalı deneme. Lütfen daha sonra tekrar deneyin.",
             )
     if not _LOGIN_SCRYPT_GATE.acquire(timeout=1.0):
         raise HTTPException(
@@ -246,7 +246,7 @@ def authenticate(pin: str, client_key: str = "unknown") -> Actor:
         _LOGIN_SCRYPT_GATE.release()
     with _LOGIN_LOCK:
         _LOGIN_FAILURES.setdefault(client_key, []).append(now)
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Erisim kodu hatali.")
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Erişim kodu hatalı.")
 
 
 def _issue_session(actor: Actor, *, audience: str, ttl_seconds: int) -> str:

@@ -95,13 +95,29 @@ function newMessage(
   };
 }
 
-function friendlyError(error: unknown): string {
+/**
+ * While signing in, 401 and 429 describe the submitted credentials, not an
+ * established session: the server already says "access code is wrong" or "too
+ * many attempts". Overriding those with session-lifecycle wording tells the
+ * operator to reconnect at the exact moment they are trying to connect, and
+ * hides the only sentence that explains the rejection.
+ */
+type AssistantErrorContext = "session" | "login";
+
+function friendlyError(error: unknown, context: AssistantErrorContext = "session"): string {
   if (error instanceof DOMException && error.name === "AbortError") {
     return "Yanıt durduruldu.";
   }
   if (error instanceof AssistantClientError) {
-    if (error.status === 401) return "Çevrimiçi asistan oturumu sona erdi. Yeniden bağlanın.";
+    if (error.status === 401) {
+      return context === "login"
+        ? error.message || "Erişim kodu hatalı."
+        : "Çevrimiçi asistan oturumu sona erdi. Yeniden bağlanın.";
+    }
     if (error.status === 429) {
+      if (context === "login") {
+        return error.message || "Çok fazla hatalı deneme. Kısa süre sonra tekrar deneyin.";
+      }
       return error.retryAfter > 0
         ? `Kullanım sınırına ulaşıldı. Yaklaşık ${error.retryAfter} saniye sonra tekrar deneyin.`
         : "Kullanım sınırına ulaşıldı. Kısa süre sonra tekrar deneyin.";
@@ -242,7 +258,7 @@ export function AssistantWorkspace({
       ));
       formElement.reset();
     } catch (error) {
-      setPairingError(friendlyError(error));
+      setPairingError(friendlyError(error, "login"));
     } finally {
       setPairingBusy(false);
     }
