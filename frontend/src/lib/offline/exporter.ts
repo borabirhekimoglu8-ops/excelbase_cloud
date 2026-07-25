@@ -7,6 +7,13 @@ import {
 } from "@zip.js/zip.js";
 
 import type { ParsedPassengerRow } from "./parser";
+import {
+  COMPLETE_DOCUMENT_CATEGORY,
+  DOCUMENT_CATEGORIES,
+  REQUIRED_DOCUMENT_CATEGORIES,
+  hasRequiredDocumentCoverage,
+  type DocumentCategory,
+} from "@/lib/documentCategories";
 
 export const PASSENGER_EXPORT_COLUMNS = [
   "No",
@@ -42,14 +49,7 @@ export type ExportPhoto = {
   passportNo?: string;
 };
 
-export type ExportDocumentCategory =
-  | "passport"
-  | "application_form"
-  | "hotel"
-  | "ferry"
-  | "insurance"
-  | "bank"
-  | "other";
+export type ExportDocumentCategory = DocumentCategory;
 
 export type ExportDocument = ExportPhoto & {
   passengerId: number;
@@ -88,17 +88,9 @@ type ExportRecord = Record<(typeof PASSENGER_EXPORT_COLUMNS)[number], string>;
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const ZIP_MIME = "application/zip";
-const REQUIRED_DOCUMENT_CATEGORIES: readonly ExportDocumentCategory[] = ["passport", "application_form"];
-const DOCUMENT_CATEGORY_ORDER: readonly ExportDocumentCategory[] = [
-  "passport",
-  "application_form",
-  "hotel",
-  "ferry",
-  "insurance",
-  "bank",
-  "other",
-];
+const DOCUMENT_CATEGORY_ORDER: readonly ExportDocumentCategory[] = DOCUMENT_CATEGORIES;
 const DOCUMENT_CATEGORY_FILENAMES: Record<Exclude<ExportDocumentCategory, "other">, string> = {
+  complete_bundle: "Toplu_Evrak_Dosyasi.pdf",
   passport: "Pasaport.pdf",
   application_form: "Vize_Basvuru_Formu.pdf",
   hotel: "Otel_Rezervasyonu.pdf",
@@ -107,6 +99,7 @@ const DOCUMENT_CATEGORY_FILENAMES: Record<Exclude<ExportDocumentCategory, "other
   bank: "Banka_Belgesi.pdf",
 };
 const DOCUMENT_CATEGORY_MISSING_LABELS: Record<ExportDocumentCategory, string> = {
+  complete_bundle: "Tek birleşik evrak PDF'i",
   passport: "Pasaport PDF",
   application_form: "Başvuru formu PDF",
   hotel: "Otel rezervasyonu PDF",
@@ -300,13 +293,12 @@ function passengerDisplayName(row: ExportPassengerRow): string {
 }
 
 function passengerListStatus(row: ExportPassengerRow): "HAZIR" | "KONTROL" {
-  const categories = new Set((row.documents ?? []).map((document) => document.category ?? "other"));
   return passengerDisplayName(row)
     && text(row.passport_no)
     && text(row.voucher)
     && (text(row.adult_fee) || text(row.child_fee))
     && text(row.photo)
-    && REQUIRED_DOCUMENT_CATEGORIES.every((category) => categories.has(category))
+    && hasRequiredDocumentCoverage(row.documents ?? [])
     ? "HAZIR"
     : "KONTROL";
 }
@@ -480,10 +472,11 @@ export function createMissingDocumentsXlsxBlob(
     .map((row, index) => {
       const fields = missingPassengerFields(row);
       const availableCategories = new Set(rowDocuments(row, documents).map(documentCategory));
+      const completeBundleAvailable = availableCategories.has(COMPLETE_DOCUMENT_CATEGORY);
       const missingDocuments = [
         ...(rowPhotos(row, photos).length ? [] : ["Biyometrik fotoğraf"]),
         ...REQUIRED_DOCUMENT_CATEGORIES
-          .filter((category) => !availableCategories.has(category))
+          .filter((category) => !completeBundleAvailable && !availableCategories.has(category))
           .map((category) => DOCUMENT_CATEGORY_MISSING_LABELS[category]),
       ];
       if (!fields.length && !missingDocuments.length) return null;

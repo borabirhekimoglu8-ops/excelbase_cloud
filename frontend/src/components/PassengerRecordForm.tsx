@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
+  COMPLETE_DOCUMENT_CATEGORY,
   DOCUMENT_CATEGORIES,
   DOCUMENT_CATEGORY_LABELS,
   DocumentCategory,
@@ -9,6 +10,7 @@ import {
   addPassengerDocuments,
   createPassengerRecord,
   fetchPassengers,
+  hasRequiredDocumentCoverage,
   setPassengerPhoto,
   updatePassenger,
 } from "@/lib/api";
@@ -23,8 +25,13 @@ type StagedDocument = {
   category: DocumentCategory;
 };
 
+type DocumentMode = "bundle" | "separate";
+
 const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+const SEPARATE_DOCUMENT_CATEGORIES = DOCUMENT_CATEGORIES.filter(
+  (category) => category !== COMPLETE_DOCUMENT_CATEGORY,
+);
 
 function localDate(date = new Date()): string {
   return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
@@ -68,8 +75,9 @@ function completeRecordError(
   if (form.arrival_date < form.departure_date) return "Varış tarihi gidiş tarihinden önce olamaz.";
   if (!form.adult_fee.trim() && !form.child_fee.trim()) return "Yetişkin veya çocuk ücretini girin.";
   if (!photo) return "JPG biyometrik fotoğrafı ekleyin.";
-  if (!documents.some((item) => item.category === "passport")) return "Pasaport PDF evrakını ekleyin.";
-  if (!documents.some((item) => item.category === "application_form")) return "Başvuru formu PDF evrakını ekleyin.";
+  if (!hasRequiredDocumentCoverage(documents)) {
+    return "Tek birleşik evrak PDF'ini veya ayrı pasaport ve başvuru formu PDF'lerini ekleyin.";
+  }
   return "";
 }
 
@@ -86,6 +94,7 @@ export function PassengerRecordForm({
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState("");
   const [documents, setDocuments] = useState<StagedDocument[]>([]);
+  const [documentMode, setDocumentMode] = useState<DocumentMode>("bundle");
   const [saving, setSaving] = useState<"draft" | "complete" | "">("");
   const [formError, setFormError] = useState("");
 
@@ -131,24 +140,53 @@ export function PassengerRecordForm({
     setFormError("");
   }
 
-  function handleDocuments(event: ChangeEvent<HTMLInputElement>) {
-    const input = event.currentTarget;
-    const files = Array.from(input.files ?? []);
-    input.value = "";
-    if (!files.length) return;
+  function validPdfFiles(files: File[]): boolean {
     const invalid = files.find((file) => (
       !/\.pdf$/i.test(file.name)
       || Boolean(file.type && file.type !== "application/pdf" && file.type !== "application/octet-stream")
       || file.size > MAX_DOCUMENT_BYTES
     ));
-    if (invalid) {
-      setFormError(`${invalid.name}: yalnızca 25 MB altındaki PDF evraklar kabul edilir.`);
-      return;
-    }
+    if (!invalid) return true;
+    setFormError(`${invalid.name}: yalnızca 25 MB altındaki PDF evraklar kabul edilir.`);
+    return false;
+  }
+
+  function handleBundleDocument(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const files = Array.from(input.files ?? []);
+    input.value = "";
+    if (!files.length) return;
+    if (!validPdfFiles(files)) return;
+    const file = files[0];
+    setDocuments([{
+      id: documentId(file, 0),
+      file,
+      category: COMPLETE_DOCUMENT_CATEGORY,
+    }]);
+    setFormError("");
+  }
+
+  function handleSeparateDocuments(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const files = Array.from(input.files ?? []);
+    input.value = "";
+    if (!files.length) return;
+    if (!validPdfFiles(files)) return;
     setDocuments((current) => [
       ...current,
       ...files.map((file, index) => ({ id: documentId(file, index), file, category: "other" as const })),
     ]);
+    setFormError("");
+  }
+
+  function changeDocumentMode(nextMode: DocumentMode) {
+    if (nextMode === documentMode) return;
+    if (
+      documents.length > 0
+      && !window.confirm("PDF yükleme yöntemi değiştirildiğinde seçili evraklar temizlenecek. Devam edilsin mi?")
+    ) return;
+    setDocuments([]);
+    setDocumentMode(nextMode);
     setFormError("");
   }
 
@@ -302,18 +340,61 @@ export function PassengerRecordForm({
         </div>
       </section>
 
-      <section className="ic-form-section">
+      <section className="ic-form-section ic-form-documents">
         <div className="ic-form-section-head">
           <span>05</span>
-          <div><h3>PDF evraklar</h3><p>Çoklu seçim yapın ve her evraka doğru belge türünü atayın.</p></div>
+          <div><h3>PDF evrak paketi</h3><p>Tek birleşik dosya veya kategorili ayrı evraklar yükleyin.</p></div>
           <span className="ic-record-count">{documents.length}</span>
         </div>
 
-        <label className="ic-record-pdf-drop">
-          <span className="ic-filetype pdf">PDF</span>
-          <span><strong>PDF evrak seç</strong><small>Bir veya birden fazla dosya seçebilirsiniz</small></span>
-          <input type="file" accept=".pdf,application/pdf" multiple onChange={handleDocuments} />
-        </label>
+        <div className="ic-record-document-mode" role="group" aria-label="PDF yükleme yöntemi">
+          <button
+            type="button"
+            className={documentMode === "bundle" ? "active" : ""}
+            aria-pressed={documentMode === "bundle"}
+            onClick={() => changeDocumentMode("bundle")}
+          >
+            <strong>TEK TOPLU PDF</strong>
+            <small>Pasaport ve başvuru evraklarının birleşik dosyası</small>
+          </button>
+          <button
+            type="button"
+            className={documentMode === "separate" ? "active" : ""}
+            aria-pressed={documentMode === "separate"}
+            onClick={() => changeDocumentMode("separate")}
+          >
+            <strong>AYRI EVRAKLAR</strong>
+            <small>Birden fazla PDF&apos;ye belge türü atayın</small>
+          </button>
+        </div>
+
+        {documentMode === "bundle" ? (
+          <label className="ic-record-pdf-drop">
+            <span className="ic-filetype pdf">PDF</span>
+            <span>
+              <strong>{documents.length ? "Toplu PDF'yi değiştir" : "Tek birleşik evrak PDF'i seç"}</strong>
+              <small>Tek dosya · en fazla 25 MB · kayıtta 1 PDF olarak saklanır</small>
+            </span>
+            <input
+              type="file"
+              accept=".pdf,application/pdf"
+              aria-label="Tek birleşik evrak PDF'i seç"
+              onChange={handleBundleDocument}
+            />
+          </label>
+        ) : (
+          <label className="ic-record-pdf-drop">
+            <span className="ic-filetype pdf">PDF</span>
+            <span><strong>Ayrı PDF evrakları seç</strong><small>Bir veya birden fazla dosya seçebilirsiniz</small></span>
+            <input
+              type="file"
+              accept=".pdf,application/pdf"
+              aria-label="Ayrı PDF evrakları seç"
+              multiple
+              onChange={handleSeparateDocuments}
+            />
+          </label>
+        )}
 
         {documents.length > 0 && (
           <div className="ic-record-document-list">
@@ -323,12 +404,19 @@ export function PassengerRecordForm({
                   <strong title={item.file.name}>{item.file.name}</strong>
                   <small>{formatSize(item.file.size)}</small>
                 </div>
-                <label>
-                  <span>Evrak türü</span>
-                  <select value={item.category} onChange={(event) => setDocumentCategory(item.id, event.target.value as DocumentCategory)}>
-                    {DOCUMENT_CATEGORIES.map((category) => <option value={category} key={category}>{DOCUMENT_CATEGORY_LABELS[category]}</option>)}
-                  </select>
-                </label>
+                {documentMode === "bundle" ? (
+                  <div className="ic-record-document-type">
+                    <span>Evrak türü</span>
+                    <strong>{DOCUMENT_CATEGORY_LABELS[COMPLETE_DOCUMENT_CATEGORY]}</strong>
+                  </div>
+                ) : (
+                  <label>
+                    <span>Evrak türü</span>
+                    <select value={item.category} onChange={(event) => setDocumentCategory(item.id, event.target.value as DocumentCategory)}>
+                      {SEPARATE_DOCUMENT_CATEGORIES.map((category) => <option value={category} key={category}>{DOCUMENT_CATEGORY_LABELS[category]}</option>)}
+                    </select>
+                  </label>
+                )}
                 <button type="button" aria-label={`${item.file.name} evrakını kaldır`} onClick={() => setDocuments((current) => current.filter((document) => document.id !== item.id))}>KALDIR</button>
               </article>
             ))}

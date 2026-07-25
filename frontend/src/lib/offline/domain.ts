@@ -1,4 +1,7 @@
-import { REQUIRED_DOCUMENT_CATEGORIES } from "@/lib/api";
+import {
+  REQUIRED_DOCUMENT_CATEGORIES,
+  hasRequiredDocumentCoverage,
+} from "@/lib/documentCategories";
 import type {
   ArchiveGroup,
   DateScope,
@@ -125,8 +128,10 @@ export function rowIssues(row: StoredPassenger, duplicates: Set<string>): string
   if (passport && passport.length < 6) issues.push("Pasaport formatı");
   const categories = new Set((row.documents ?? []).map((document) => document.category ?? "other"));
   const labels: Record<string, string> = { passport: "Pasaport PDF yok", application_form: "Başvuru formu PDF yok" };
-  for (const category of REQUIRED_DOCUMENT_CATEGORIES) {
-    if (!categories.has(category)) issues.push(labels[category] ?? `${category} PDF yok`);
+  if (!hasRequiredDocumentCoverage(row.documents ?? [])) {
+    for (const category of REQUIRED_DOCUMENT_CATEGORIES) {
+      if (!categories.has(category)) issues.push(labels[category] ?? `${category} PDF yok`);
+    }
   }
   return issues;
 }

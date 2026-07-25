@@ -1031,6 +1031,37 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ic-record-pdf-drop > span:nth-child(2) { min-width: 0; display: grid; gap: 2px; }
 .ic-record-pdf-drop strong { color: var(--ido-primary-deep); font-size: 11px; }
 .ic-record-pdf-drop small { color: var(--ido-muted); font-size: 9px; }
+.ic-record-document-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--ido-border);
+  border-radius: 4px;
+  background: #edf3f5;
+}
+.ic-record-document-mode button {
+  min-width: 0;
+  min-height: 62px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ido-muted);
+  text-align: left;
+  cursor: pointer;
+}
+.ic-record-document-mode button.active {
+  border-color: #9bc7d4;
+  background: #fff;
+  color: var(--ido-primary-deep);
+  box-shadow: 0 4px 12px rgba(5,59,82,.07);
+}
+.ic-record-document-mode strong { font-size: 9px; letter-spacing: .035em; }
+.ic-record-document-mode small { color: inherit; font-size: 8px; line-height: 1.35; opacity: .82; }
 .ic-record-document-list { display: grid; gap: 7px; }
 .ic-record-document { display: grid; grid-template-columns: minmax(0,1fr) 145px auto; align-items: end; gap: 8px; padding: 10px; border: 1px solid var(--ido-border); background: #fff; }
 .ic-record-document-copy { min-width: 0; display: grid; gap: 2px; }
@@ -1039,6 +1070,9 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ic-record-document > label { min-width: 0; display: grid; gap: 3px; }
 .ic-record-document > label span { color: var(--ido-muted); font-size: 8px; font-weight: 650; }
 .ic-record-document select { width: 100%; min-width: 0; min-height: 40px; padding: 5px 7px; border: 1px solid var(--ido-border); background: #fbfcfd; color: var(--ido-ink); }
+.ic-record-document-type { min-width: 0; min-height: 40px; display: grid; align-content: center; gap: 2px; padding: 5px 8px; border: 1px solid #a7ced9; background: var(--ido-blue-tint); }
+.ic-record-document-type span { color: var(--ido-muted); font-size: 8px; font-weight: 650; }
+.ic-record-document-type strong { color: var(--ido-primary-deep); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ic-record-document > button { min-height: 40px; padding: 0 8px; border: 0; background: var(--ido-red-tint); color: var(--ido-red); font-size: 8px; font-weight: 750; cursor: pointer; }
 .ic-record-savebar { position: sticky; bottom: 0; z-index: 35; display: grid; grid-template-columns: 1fr 1.45fr; gap: 7px; margin: 4px -16px -16px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--ido-border); background: rgba(255,255,255,.97); box-shadow: 0 -10px 24px rgba(5,59,82,.08); backdrop-filter: blur(10px); }
 .ic-record-savebar button { min-height: 50px; border-radius: 3px; font-size: 9px; font-weight: 800; letter-spacing: .02em; cursor: pointer; }
@@ -1597,6 +1631,37 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 }
 .operations-quick-create:focus-visible { outline: 3px solid #82d3e6; outline-offset: 2px; }
 
+.ops-layout-picker {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--ido-border);
+  border-left: 3px solid var(--ido-primary);
+  border-radius: 4px;
+  background: #fff;
+}
+.ops-layout-picker-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.ops-layout-picker-head h2 { margin: 0; color: var(--ido-primary-deep); font-size: 14px; }
+.ops-layout-picker-head p { margin: 3px 0 0; color: var(--ido-muted); font-size: 9px; line-height: 1.4; }
+.ops-layout-options { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
+.ops-layout-options button {
+  min-width: 0;
+  min-height: 66px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid var(--ido-border);
+  border-radius: 3px;
+  background: #f7fafb;
+  color: var(--ido-muted);
+  text-align: left;
+  cursor: pointer;
+}
+.ops-layout-options button.active { border-color: var(--ido-primary); background: var(--ido-blue-tint); color: var(--ido-primary-deep); box-shadow: inset 0 0 0 1px rgba(0,126,167,.08); }
+.ops-layout-options strong { font-size: 10px; }
+.ops-layout-options small { color: inherit; font-size: 8px; line-height: 1.35; opacity: .82; }
+
 .operations-sheet-overlay {
   position: fixed;
   inset: 0;
@@ -2012,6 +2077,151 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   .assistant-context-strip { grid-template-columns: 1fr 1fr; }
   .assistant-context-strip > div:nth-child(2) { border-right: 0; }
   .assistant-context-strip > div:nth-child(-n+2) { border-bottom: 1px solid var(--ido-border); }
+}
+
+/* Geniş web çalışma alanı. "Telefon" tercihi 430 px mobil kabuğu aynen korur. */
+@media (min-width: 761px) {
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) {
+    padding: 0 22px;
+    background: #e7edf1;
+  }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-frame {
+    width: min(100%, 1440px);
+    max-width: 1440px;
+    min-height: 100dvh;
+    display: grid;
+    grid-template-columns: 216px minmax(0,1fr);
+    grid-template-rows: auto minmax(calc(100dvh - var(--ido-header-h)), auto);
+    align-items: stretch;
+    background: var(--ido-bg);
+    box-shadow: 0 0 0 1px var(--ido-border), 0 22px 70px rgba(5,59,82,.10);
+  }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-frame > .ido-header {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    width: 100%;
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-frame > .ido-content {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: min(100%, 1180px);
+    min-height: 0;
+    justify-self: center;
+    padding: 24px 28px 36px;
+  }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-frame.has-primary-nav > .ido-content {
+    grid-column: 2;
+    width: 100%;
+    max-width: 1180px;
+  }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-content.has-sticky {
+    padding-bottom: 36px;
+  }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-bottom-nav {
+    position: sticky;
+    top: var(--ido-header-h);
+    bottom: auto;
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+    width: 100%;
+    height: calc(100dvh - var(--ido-header-h));
+    min-height: 520px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 20px 12px;
+    border-top: 0;
+    border-right: 1px solid var(--ido-border);
+    background: #fff;
+  }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-nav-item {
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: 54px;
+    grid-template-columns: 3px 26px minmax(0,1fr);
+    align-items: center;
+    justify-items: start;
+    gap: 11px;
+    padding: 0 12px;
+    border-radius: 4px;
+  }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-nav-item:hover { background: #f2f7f9; }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-nav-item.active { background: var(--ido-blue-tint); }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-nav-marker { width: 3px; max-width: none; height: 28px; }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-nav-label { font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .operations-quick-create {
+    position: static;
+    width: 100%;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: auto;
+    border: 0;
+    border-radius: 4px;
+    font-size: 20px;
+  }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .operations-quick-create::after {
+    content: "YENİ KAYIT";
+    font-size: 9px;
+    font-weight: 850;
+    letter-spacing: .07em;
+  }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ops-metric-grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ops-page-heading p:not(.ops-eyebrow),
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ops-section-heading p:not(.ops-eyebrow) { max-width: 620px; }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ic-record-form {
+    width: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ic-record-intro,
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ic-record-error,
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ic-form-documents,
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ic-record-savebar { grid-column: 1 / -1; }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ic-form-grid { grid-template-columns: 1fr 1fr; }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ic-record-savebar {
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 14px;
+    padding-right: 14px;
+    border: 1px solid var(--ido-border);
+    border-bottom: 0;
+  }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-sheet {
+    width: min(100%, 1040px);
+    max-width: 1040px;
+  }
+
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .operations-sheet-overlay {
+    align-items: center;
+  }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .operations-quick-sheet {
+    width: min(100%, 720px);
+    border-radius: 8px;
+    padding: 22px;
+  }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .operations-quick-grid {
+    grid-template-columns: repeat(4,minmax(0,1fr));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

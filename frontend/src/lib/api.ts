@@ -70,36 +70,23 @@ import {
   localUploadPassengerDocuments,
   localUsers,
 } from "@/lib/offline/localApi";
+import type { DocumentCategory } from "@/lib/documentCategories";
 
 export * from "@/lib/workspace";
+export {
+  COMPLETE_DOCUMENT_CATEGORY,
+  DOCUMENT_CATEGORIES,
+  DOCUMENT_CATEGORY_LABELS,
+  REQUIRED_DOCUMENT_CATEGORIES,
+  hasRequiredDocumentCoverage,
+} from "@/lib/documentCategories";
+export type { DocumentCategory } from "@/lib/documentCategories";
 
 export type DateField = "departure" | "created";
 export type DateScope = { range: string; start: string; end: string; field?: DateField };
 
-export const DOCUMENT_CATEGORIES = [
-  "passport",
-  "application_form",
-  "hotel",
-  "ferry",
-  "insurance",
-  "bank",
-  "other",
-] as const;
-
-export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number];
-export const REQUIRED_DOCUMENT_CATEGORIES: readonly DocumentCategory[] = ["passport", "application_form"];
 export type RecordStatus = "draft" | "review" | "ready";
 export type RecordSource = "manual" | "import";
-
-export const DOCUMENT_CATEGORY_LABELS: Record<DocumentCategory, string> = {
-  passport: "Pasaport",
-  application_form: "Başvuru formu",
-  hotel: "Otel rezervasyonu",
-  ferry: "Feribot bileti",
-  insurance: "Seyahat sigortası",
-  bank: "Banka / finansal evrak",
-  other: "Diğer evrak",
-};
 
 export type PassengerDocument = {
   id: string;

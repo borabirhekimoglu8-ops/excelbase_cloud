@@ -3,6 +3,7 @@
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
 import { UI_VERSION } from "@/lib/version";
+import type { LayoutPreference } from "@/lib/layoutPreference";
 
 export type SettingsSub = "issues" | "gallery" | "archive" | "package" | "management";
 
@@ -12,7 +13,25 @@ const ROLE_LABELS: Record<string, string> = {
   viewer: "Görüntüleme",
 };
 
-export function SettingsTab({ onOpen }: { onOpen: (sub: SettingsSub) => void }) {
+const LAYOUT_OPTIONS: Array<{
+  value: LayoutPreference;
+  label: string;
+  detail: string;
+}> = [
+  { value: "auto", label: "Otomatik", detail: "Ekrana göre telefon veya web düzeni" },
+  { value: "mobile", label: "Telefon", detail: "Dar ve ortalanmış mobil uygulama" },
+  { value: "desktop", label: "Web", detail: "Bilgisayarda geniş çalışma alanı" },
+];
+
+export function SettingsTab({
+  layoutPreference,
+  onLayoutPreferenceChange,
+  onOpen,
+}: {
+  layoutPreference: LayoutPreference;
+  onLayoutPreferenceChange: (preference: LayoutPreference) => void;
+  onOpen: (sub: SettingsSub) => void;
+}) {
   const { user, signOut } = useAuth();
   const { summary, connected } = useStore();
   const issueTotal = Object.values(summary.issue_counts).reduce((a, b) => a + b, 0);
@@ -41,6 +60,37 @@ export function SettingsTab({ onOpen }: { onOpen: (sub: SettingsSub) => void }) 
           ÇIKIŞ
         </button>
       </div>
+
+      <div className="ic-section-head">
+        <p className="ic-section-title">Ekran Görünümü</p>
+      </div>
+
+      <section className="ops-layout-picker" aria-labelledby="layout-picker-title">
+        <div className="ops-layout-picker-head">
+          <div>
+            <h2 id="layout-picker-title">Çalışma alanı</h2>
+            <p>Bilgisayarda geniş web ekranını, telefonda mobil düzeni kullanın.</p>
+          </div>
+          <span className="ic-pill ic-pill-ok">
+            {LAYOUT_OPTIONS.find((option) => option.value === layoutPreference)?.label.toLocaleUpperCase("tr-TR")}
+          </span>
+        </div>
+        <div className="ops-layout-options" role="radiogroup" aria-label="Ekran görünümü">
+          {LAYOUT_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={layoutPreference === option.value}
+              className={layoutPreference === option.value ? "active" : ""}
+              onClick={() => onLayoutPreferenceChange(option.value)}
+            >
+              <strong>{option.label}</strong>
+              <small>{option.detail}</small>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <div className="ic-section-head">
         <p className="ic-section-title">Veri Araçları</p>
