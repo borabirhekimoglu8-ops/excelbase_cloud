@@ -9,3 +9,6 @@ frontend/out/
 frontend/tsconfig.tsbuildinfo
 frontend/playwright-report/
 frontend/test-results/
+
+# Yerel dagitim sirlari
+.env

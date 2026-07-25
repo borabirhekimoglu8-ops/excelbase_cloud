@@ -96,9 +96,12 @@ def get_engine() -> "Engine | None":
             # derleme gerektirmez). Kullanıcı sürücü belirtmişse (örn. +psycopg2) dokunma.
             if url.startswith("postgresql://"):
                 url = url.replace("postgresql://", "postgresql+pg8000://", 1)
-            if "+pg8000" in url:
+            if "+pg8000" in url and os.environ.get("DATABASE_SSL", "").strip().lower() != "disable":
                 # Supabase vb. barındırılan DB'ler için TLS gerekir. Varsayılan güvenli
                 # doğrulamadır; sadece eski/özel ortamlarda açıkça gevşetilebilir.
+                # Kendi ağında TLS'siz çalışan bir Postgres (docker compose, LAN)
+                # için DATABASE_SSL=disable ile başarısız bir el sıkışma denemesi
+                # ve onun ürettiği hata kaydı tamamen atlanır.
                 try:
                     import ssl
 

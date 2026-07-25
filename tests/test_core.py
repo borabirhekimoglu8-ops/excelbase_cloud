@@ -171,3 +171,38 @@ def _run_all():
 
 if __name__ == "__main__":
     _run_all()
+
+
+def test_local_postgres_connects_without_a_failed_tls_handshake(monkeypatch):
+    """Self-hosted Postgres runs on a private network without TLS.
+
+    Without an explicit opt-out the driver attempts TLS, fails, logs an
+    exception and only then retries in the clear -- noisy on every cold start.
+    DATABASE_SSL=disable skips straight to the plain connection.
+    """
+    import db
+
+    captured: list[dict] = []
+
+    def fake_create_engine(url, **kwargs):
+        captured.append({"url": url, **kwargs})
+        return object()
+
+    monkeypatch.setattr(db, "create_engine", fake_create_engine)
+    monkeypatch.setattr(db, "_create_tables", lambda engine: None)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://excelbase:pw@db:5432/excelbase")
+
+    monkeypatch.setenv("DATABASE_SSL", "disable")
+    db._engine, db._init_done, db._init_failed, db._retry_at = None, False, False, 0.0
+    db.get_engine()
+    assert captured[-1]["connect_args"] == {}
+    # The URL is still routed through the pure-Python driver.
+    assert "+pg8000" in captured[-1]["url"]
+
+    # A hosted database keeps verifying TLS by default.
+    monkeypatch.delenv("DATABASE_SSL", raising=False)
+    db._engine, db._init_done, db._init_failed, db._retry_at = None, False, False, 0.0
+    db.get_engine()
+    assert "ssl_context" in captured[-1]["connect_args"]
+
+    db._engine, db._init_done, db._init_failed, db._retry_at = None, False, False, 0.0

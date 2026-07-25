@@ -1,0 +1,76 @@
+# Excelbase Operations — provider-neutral deployment.
+#
+# Runs the same image everywhere: an office machine on the LAN, a VPS, or any
+# host that can run containers. Nothing here is specific to a PaaS.
+#
+#   cp .env.example .env    # fill in the secrets
+#   docker compose up -d --build
+#
+# The app serves the PWA and the Anthropic proxy on one port; Postgres holds
+# the access accounts and the assistant's spending counters. Passenger data is
+# NOT here — it lives in each browser's encrypted vault.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-excelbase}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env dosyasinda tanimlanmali}
+      POSTGRES_DB: ${POSTGRES_DB:-excelbase}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      # The app fails closed when the database is unreachable, so it must not
+      # start until Postgres is actually accepting connections.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-excelbase} -d ${POSTGRES_DB:-excelbase}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Not published on the host: only the app container needs to reach it.
+    expose:
+      - "5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      PORT: "8000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-excelbase}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-excelbase}
+      # Postgres runs on the compose network without TLS; saying so avoids a
+      # failed handshake attempt on every cold start.
+      DATABASE_SSL: disable
+
+      GATEVISA_REQUIRE_AUTH: ${GATEVISA_REQUIRE_AUTH:-1}
+      GATEVISA_DATA_SECRET: ${GATEVISA_DATA_SECRET:?GATEVISA_DATA_SECRET .env dosyasinda tanimlanmali}
+      GATEVISA_BOOTSTRAP_TOKEN: ${GATEVISA_BOOTSTRAP_TOKEN:-}
+
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EXCELBASE_ASSISTANT_ENABLED: ${EXCELBASE_ASSISTANT_ENABLED:-1}
+      EXCELBASE_ASSISTANT_PROVIDER: ${EXCELBASE_ASSISTANT_PROVIDER:-anthropic}
+      EXCELBASE_ASSISTANT_MODEL: ${EXCELBASE_ASSISTANT_MODEL:-claude-sonnet-5}
+      EXCELBASE_ASSISTANT_OPEN_ACCESS: ${EXCELBASE_ASSISTANT_OPEN_ACCESS:-0}
+      EXCELBASE_ASSISTANT_ALLOW_WRITES: ${EXCELBASE_ASSISTANT_ALLOW_WRITES:-0}
+      EXCELBASE_ASSISTANT_ALLOWED_IPS: ${EXCELBASE_ASSISTANT_ALLOWED_IPS:-}
+      # Behind a reverse proxy this must match how many proxies append to
+      # X-Forwarded-For, or the IP allowlist reads the wrong address.
+      EXCELBASE_ASSISTANT_TRUSTED_PROXY_HOPS: ${EXCELBASE_ASSISTANT_TRUSTED_PROXY_HOPS:-0}
+    ports:
+      # Bind to the LAN interface only by default: the closed deployment is the
+      # safe default, and exposing it publicly should be a deliberate edit.
+      - "${BIND_ADDRESS:-127.0.0.1}:${HOST_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).status==200 else 1)\""]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  db-data:
