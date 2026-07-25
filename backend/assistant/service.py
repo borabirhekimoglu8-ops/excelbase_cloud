@@ -13,7 +13,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import db
-from backend.config import AssistantSettings, assistant_settings
+from backend.config import (
+    ANTHROPIC_API_KEY_VARIABLE,
+    AssistantSettings,
+    assistant_settings,
+    misnamed_anthropic_key_variables,
+)
 
 from .anthropic_provider import AnthropicProvider
 from .provider import (
@@ -341,6 +346,10 @@ def assistant_configuration_state(settings: AssistantSettings) -> str:
     if settings.model not in SUPPORTED_SONNET_MODELS:
         return "model_mismatch"
     if not settings.api_key:
+        # Distinguish "no key anywhere" from "key present under another name":
+        # both look identical in the dashboard, but only one is a rename.
+        if misnamed_anthropic_key_variables():
+            return "api_key_misnamed"
         return "api_key_missing"
     if settings.pii_mode != "strict" or settings.allow_raw_documents:
         return "privacy_mismatch"
@@ -360,6 +369,7 @@ def get_assistant_provider(
         "provider_mismatch": "Desteklenen asistan sağlayıcısı yapılandırılmadı.",
         "model_mismatch": "Desteklenen Claude Sonnet modeli yapılandırılmadı.",
         "api_key_missing": "Anthropic API anahtarı yapılandırılmadı.",
+        "api_key_misnamed": "Anthropic API anahtarı beklenen değişken adında değil.",
         "privacy_mismatch": "Asistan gizlilik ayarları güvenli değil.",
     }
     return DisabledProvider(messages[configuration_state])
@@ -391,6 +401,14 @@ _CONFIGURATION_STATE_DETAILS: dict[str, str] = {
 }
 
 
+def _api_key_misnamed_detail() -> str:
+    found = ", ".join(misnamed_anthropic_key_variables())
+    return (
+        f"Anahtar {found} değişkeninde tanımlı; bu servis yalnızca "
+        f"{ANTHROPIC_API_KEY_VARIABLE} adını okur. Değişkeni yeniden adlandırın."
+    )
+
+
 async def assistant_diagnostics(actor_id: str) -> AssistantDiagnosticsResponse:
     """Verify the deployment end to end without spending the daily budget.
 
@@ -402,11 +420,16 @@ async def assistant_diagnostics(actor_id: str) -> AssistantDiagnosticsResponse:
     settings = assistant_settings()
     configuration_state = assistant_configuration_state(settings)
     if configuration_state != "ready":
+        detail = (
+            _api_key_misnamed_detail()
+            if configuration_state == "api_key_misnamed"
+            else _CONFIGURATION_STATE_DETAILS[configuration_state]
+        )
         return AssistantDiagnosticsResponse(
             configuration_state=configuration_state,
             reachable=False,
             reason="not_configured",
-            detail=_CONFIGURATION_STATE_DETAILS[configuration_state],
+            detail=detail,
         )
 
     # A probe is free upstream but still opens a socket, so it stays behind the

@@ -47,7 +47,11 @@ from backend.auth import (
     require_assistant_session,
     require_bootstrap_token,
 )
-from backend.config import AssistantSettings, assistant_settings
+from backend.config import (
+    ANTHROPIC_API_KEY_ALIASES,
+    AssistantSettings,
+    assistant_settings,
+)
 from backend.main import app
 
 
@@ -795,3 +799,70 @@ def test_supported_sonnet_models_cover_the_served_family_and_exclude_other_tiers
         model.startswith(("claude-opus", "claude-haiku"))
         for model in SUPPORTED_SONNET_MODELS
     )
+
+
+def test_quoted_api_key_paste_is_repaired_instead_of_failing_upstream(monkeypatch):
+    """Render keeps surrounding quotes verbatim, which upstream rejects as 401."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", '"sk-ant-quoted-value"')
+    assert assistant_settings().api_key == "sk-ant-quoted-value"
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "  sk-ant-padded-value\n")
+    assert assistant_settings().api_key == "sk-ant-padded-value"
+
+
+def test_key_under_a_wrong_variable_name_is_reported_as_a_rename(monkeypatch):
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("CLAUDE_API_KEY", "sk-ant-misplaced")
+
+    with TestClient(app) as client:
+        response = client.get("/api/assistant/v1/status")
+
+    assert response.status_code == 200
+    assert response.json()["available"] is False
+    assert response.json()["configuration_state"] == "api_key_misnamed"
+    # The public endpoint states the misconfiguration, never the secret.
+    assert "sk-ant-misplaced" not in response.text
+
+
+def test_no_key_anywhere_still_reports_the_plain_missing_state(monkeypatch):
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    for alias in ANTHROPIC_API_KEY_ALIASES:
+        monkeypatch.delenv(alias, raising=False)
+
+    with TestClient(app) as client:
+        response = client.get("/api/assistant/v1/status")
+
+    assert response.json()["configuration_state"] == "api_key_missing"
+
+
+def test_misnamed_key_diagnostics_name_the_variable_without_its_value(monkeypatch):
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTROPIC_API_KEY", "sk-ant-typo-name")
+    reset_assistant_runtime()
+
+    app.dependency_overrides[require_assistant_session] = lambda: Actor(
+        id="actor-1",
+        name="Operasyon",
+        role="admin",
+    )
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/assistant/v1/diagnostics")
+    finally:
+        app.dependency_overrides.pop(require_assistant_session, None)
+
+    body = response.json()
+    assert body["configuration_state"] == "api_key_misnamed"
+    assert body["reason"] == "not_configured"
+    assert "ANTROPIC_API_KEY" in body["detail"]
+    assert "ANTHROPIC_API_KEY" in body["detail"]
+    assert "sk-ant-typo-name" not in response.text

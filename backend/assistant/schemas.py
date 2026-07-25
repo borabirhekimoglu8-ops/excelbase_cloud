@@ -61,6 +61,7 @@ class AssistantStatusResponse(BaseModel):
         "provider_mismatch",
         "model_mismatch",
         "api_key_missing",
+        "api_key_misnamed",
         "privacy_mismatch",
     ]
     online_required: bool = True
@@ -86,6 +87,7 @@ class AssistantDiagnosticsResponse(BaseModel):
         "provider_mismatch",
         "model_mismatch",
         "api_key_missing",
+        "api_key_misnamed",
         "privacy_mismatch",
     ]
     reachable: bool

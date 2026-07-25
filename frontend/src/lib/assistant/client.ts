@@ -23,6 +23,7 @@ export type AssistantConfigurationState =
   | "provider_mismatch"
   | "model_mismatch"
   | "api_key_missing"
+  | "api_key_misnamed"
   | "privacy_mismatch";
 
 export type AssistantStatus = {
@@ -111,6 +112,7 @@ const CONFIGURATION_STATE_SET = new Set<string>([
   "provider_mismatch",
   "model_mismatch",
   "api_key_missing",
+  "api_key_misnamed",
   "privacy_mismatch",
 ]);
 

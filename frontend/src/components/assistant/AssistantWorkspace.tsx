@@ -70,7 +70,11 @@ const CONFIGURATION_MESSAGES: Record<
   },
   api_key_missing: {
     title: "Anthropic anahtarı bu serviste görünmüyor",
-    body: "ANTHROPIC_API_KEY değişkenini excelbase Web Service ortamına ekleyip yeniden deploy edin; excelbase-v8 ayrı servistir.",
+    body: "Render → excelbase (Web Service) → Environment ekranında ANTHROPIC_API_KEY ekleyin ve Manual Deploy ile yeniden başlatın. Anahtarı excelbase-v8 servisine veya bir Secret File'a eklemek işe yaramaz; değişken adı birebir ANTHROPIC_API_KEY olmalıdır.",
+  },
+  api_key_misnamed: {
+    title: "Anthropic anahtarı farklı bir değişken adında",
+    body: "Bu serviste anahtar benzeri bir değişken var ama adı ANTHROPIC_API_KEY değil. Render → excelbase → Environment ekranında değişkeni tam olarak ANTHROPIC_API_KEY adıyla tanımlayıp yeniden deploy edin.",
   },
   privacy_mismatch: {
     title: "Gizlilik koruması doğrulanamadı",
