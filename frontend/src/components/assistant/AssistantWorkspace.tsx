@@ -22,7 +22,12 @@ import {
   sendAssistantMessage,
   unlockAssistantSession,
 } from "@/lib/assistant/client";
-import type { AssistantDiagnostics } from "@/lib/assistant/client";
+import type {
+  AssistantDiagnostics,
+  AssistantStep,
+  AssistantToolResultPayload,
+} from "@/lib/assistant/client";
+import { describeToolCall, executeAssistantTool } from "@/lib/assistant/toolExecutor";
 import { buildAssistantContext } from "@/lib/assistant/context";
 import {
   ASSISTANT_MESSAGE_MAX_CHARS,
@@ -151,6 +156,7 @@ export function AssistantWorkspace({
   const [diagnostics, setDiagnostics] = useState<AssistantDiagnostics | null>(null);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [diagnosticsError, setDiagnosticsError] = useState("");
+  const [toolActivity, setToolActivity] = useState<string[]>([]);
   const requestRef = useRef<AbortController | null>(null);
   const connectionRef = useRef<AbortController | null>(null);
   const connectionSequenceRef = useRef(0);
@@ -290,12 +296,61 @@ export function AssistantWorkspace({
     setSendError("");
 
     try {
-      const response = await sendAssistantMessage({
+      // Agentic loop: the server answers with tool calls, the browser runs them
+      // against the local vault, and the results go back until Claude is done.
+      // The whole loop settles as one billable turn, so the request id is kept.
+      const requestId = globalThis.crypto?.randomUUID?.() ?? `assistant-${Date.now()}`;
+      const steps: AssistantStep[] = [];
+      let response = await sendAssistantMessage({
         message: text,
         history,
         context: safeContext,
         csrfToken: session.csrf_token,
+        requestId,
       }, controller.signal);
+
+      while (response.tool_calls.length > 0) {
+        if (generation !== conversationGenerationRef.current) return;
+        setToolActivity(response.tool_calls.map((call) => call.name));
+
+        // Carry the assistant's calls forward before running them: the server
+        // validates every result against a call this conversation actually made.
+        steps.push({
+          role: "assistant",
+          content: response.message,
+          tool_calls: response.tool_calls,
+        });
+
+        const results: AssistantToolResultPayload[] = [];
+        for (const call of response.tool_calls) {
+          if (call.confirm && !window.confirm(`${describeToolCall(call)}\n\nOnaylıyor musunuz?`)) {
+            // A refusal is an answer, not a failure: Claude is told and can
+            // choose another approach instead of retrying blindly.
+            results.push({
+              tool_use_id: call.id,
+              content: "Operatör bu işlemi onaylamadı.",
+              is_error: true,
+            });
+            continue;
+          }
+          results.push(await executeAssistantTool(call, dateScope));
+        }
+        if (generation !== conversationGenerationRef.current) return;
+
+        // `steps` holds the rounds already closed; this round's results are
+        // sent separately so the server can place them right after their call.
+        response = await sendAssistantMessage({
+          message: text,
+          history,
+          context: safeContext,
+          csrfToken: session.csrf_token,
+          requestId,
+          steps,
+          toolResults: results,
+        }, controller.signal);
+        steps.push({ role: "user", content: "", tool_results: results });
+      }
+      setToolActivity([]);
       if (generation !== conversationGenerationRef.current) return;
       setConversation((current) => ({
         ...current,
@@ -326,6 +381,7 @@ export function AssistantWorkspace({
       if (requestRef.current === controller) {
         requestRef.current = null;
         setSending(false);
+        setToolActivity([]);
       }
     }
   }
@@ -626,6 +682,9 @@ export function AssistantWorkspace({
 
             {sending && (
               <article className="assistant-message assistant pending" role="status">
+              {toolActivity.length > 0 && (
+                <span className="assistant-tool-activity">{toolActivity.join(" · ")}</span>
+              )}
                 <span>SONNET</span>
                 <p><i aria-hidden="true" /> <i aria-hidden="true" /> <i aria-hidden="true" /> Yanıt hazırlanıyor</p>
               </article>

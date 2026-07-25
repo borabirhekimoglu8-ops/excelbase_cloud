@@ -90,6 +90,29 @@ export type AssistantDiagnostics = {
   duration_ms: number;
 };
 
+export type AssistantToolCallPayload = {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  /** Server-set from the catalogue; a response cannot mark a write as a read. */
+  writes: boolean;
+  confirm: boolean;
+};
+
+export type AssistantToolResultPayload = {
+  tool_use_id: string;
+  content: string;
+  is_error: boolean;
+};
+
+/** One in-flight agentic turn: either the calls, or the results. */
+export type AssistantStep = {
+  role: "user" | "assistant";
+  content: string;
+  tool_calls?: AssistantToolCallPayload[];
+  tool_results?: AssistantToolResultPayload[];
+};
+
 export type AssistantChatResponse = {
   message: string;
   usage: {
@@ -97,6 +120,9 @@ export type AssistantChatResponse = {
     output_tokens: number;
   };
   request_id: string;
+  /** Non-empty means the turn is unfinished: run these and send the results. */
+  tool_calls: AssistantToolCallPayload[];
+  stop_reason: string;
 };
 
 export class AssistantClientError extends Error {
@@ -178,13 +204,32 @@ function isSessionStatus(value: unknown): value is AssistantSessionStatus {
   );
 }
 
+function isToolCall(value: unknown): value is AssistantToolCallPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const call = value as Record<string, unknown>;
+  return (
+    typeof call.id === "string" && call.id.length > 0
+    && typeof call.name === "string" && call.name.length > 0
+    && typeof call.writes === "boolean"
+    && typeof call.confirm === "boolean"
+    && Boolean(call.input) && typeof call.input === "object" && !Array.isArray(call.input)
+  );
+}
+
 function isChatResponse(value: unknown): value is AssistantChatResponse {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const response = value as Record<string, unknown>;
   const usage = response.usage;
+  // An absent tool_calls means "no tools were requested", not a malformed
+  // response; when present its contents are checked strictly.
+  const toolCalls = response.tool_calls ?? [];
+  // A tool turn carries no prose, so message may be empty when calls are present.
+  const hasWork = Array.isArray(toolCalls) && toolCalls.length > 0;
   return (
     typeof response.message === "string"
-    && response.message.trim().length > 0
+    && (hasWork || response.message.trim().length > 0)
+    && Array.isArray(toolCalls)
+    && toolCalls.every(isToolCall)
     && typeof response.request_id === "string"
     && Boolean(usage)
     && typeof usage === "object"
@@ -350,10 +395,16 @@ export async function sendAssistantMessage(
     history: AssistantChatTurn[];
     context: SafeAssistantContext;
     csrfToken: string;
+    steps?: AssistantStep[];
+    toolResults?: AssistantToolResultPayload[];
+    requestId?: string;
   },
   signal?: AbortSignal,
 ): Promise<AssistantChatResponse> {
-  const requestId = globalThis.crypto?.randomUUID?.() ?? `assistant-${Date.now()}`;
+  // Continuations reuse the opening id so the whole loop settles as one turn.
+  const requestId = options.requestId
+    ?? globalThis.crypto?.randomUUID?.()
+    ?? `assistant-${Date.now()}`;
   const response = await fetch("/api/assistant/v1/chat", {
     method: "POST",
     credentials: "same-origin",
@@ -369,6 +420,8 @@ export async function sendAssistantMessage(
       history: options.history,
       context: options.context,
       privacy_acknowledged: true,
+      steps: options.steps ?? [],
+      tool_results: options.toolResults ?? [],
     }),
     signal,
   });
@@ -379,5 +432,6 @@ export async function sendAssistantMessage(
   if (!isChatResponse(payload)) {
     throw new AssistantClientError("Claude Sonnet yanıtı geçersiz.", 502);
   }
-  return payload;
+  // Normalize so callers can always iterate the loop without a guard.
+  return { ...payload, tool_calls: payload.tool_calls ?? [], stop_reason: payload.stop_reason ?? "" };
 }

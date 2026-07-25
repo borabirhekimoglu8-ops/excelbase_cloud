@@ -243,8 +243,11 @@ class AssistantChatRequest(BaseModel):
     history: list[AssistantChatTurn] = Field(default_factory=list, max_length=60)
     context: AssistantSafeContext = Field(default_factory=AssistantSafeContext)
     privacy_acknowledged: Literal[True]
-    # Present when the client is continuing a turn it was asked to act on.
-    # ``message`` is then the original question, replayed unchanged.
+    # The in-flight agentic turns for *this* question, in order. They belong
+    # after ``message`` rather than in ``history``, because a tool_result block
+    # must immediately follow the assistant turn that requested it.
+    steps: list[AssistantChatTurn] = Field(default_factory=list, max_length=32)
+    # Results for the round the client just executed; appended last.
     tool_results: list[AssistantToolResult] = Field(default_factory=list, max_length=16)
 
 

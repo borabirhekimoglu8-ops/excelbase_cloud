@@ -606,22 +606,23 @@ def _provider_request(payload: AssistantChatRequest, settings: AssistantSettings
         raise AssistantInputError("Mesaj boş olamaz.")
     # A turn may legitimately be empty prose when it carries only tool calls or
     # only tool results, but it must carry *something*.
-    for item in history:
+    for item in list(history) + list(payload.steps):
         if not item.content.strip() and not item.tool_calls and not item.tool_results:
             raise AssistantInputError("Konuşma geçmişinde boş mesaj bulunamaz.")
 
-    steps = sum(1 for item in history if item.tool_calls)
+    turns = history + list(payload.steps)
+    steps = sum(1 for item in turns if item.tool_calls)
     if steps >= MAX_TOOL_STEPS:
         raise AssistantInputError(
             f"Tek soruda en fazla {MAX_TOOL_STEPS} araç adımı çalıştırılabilir."
         )
-    _validate_tool_results(payload, history)
+    _validate_tool_results(payload, turns)
 
     total_chars = len(context_json) + len(cleaned_message)
-    total_chars += sum(len(item.content) for item in history)
+    total_chars += sum(len(item.content) for item in turns)
     total_chars += sum(
         len(result.content)
-        for item in history
+        for item in turns
         for result in item.tool_results
     )
     total_chars += sum(len(result.content) for result in payload.tool_results)
@@ -659,6 +660,26 @@ def _provider_request(payload: AssistantChatRequest, settings: AssistantSettings
         for item in history
     )
     messages.append(ProviderMessage(role="user", content=cleaned_message))
+    # The loop so far: alternating assistant(tool_use) / user(tool_result).
+    messages.extend(
+        ProviderMessage(
+            role=step.role,
+            content=step.content.strip(),
+            tool_calls=tuple(
+                ProviderToolCall(id=call.id, name=call.name, input=call.input)
+                for call in step.tool_calls
+            ),
+            tool_results=tuple(
+                ProviderToolResult(
+                    tool_use_id=result.tool_use_id,
+                    content=result.content,
+                    is_error=result.is_error,
+                )
+                for result in step.tool_results
+            ),
+        )
+        for step in payload.steps
+    )
     if payload.tool_results:
         # Continuation: the browser ran what the previous turn asked for.
         messages.append(

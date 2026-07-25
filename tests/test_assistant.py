@@ -1404,3 +1404,49 @@ def test_a_malformed_allowlist_entry_does_not_widen_access(monkeypatch):
     networks = assistant_allowed_networks()
     assert len(networks) == 1
     assert str(networks[0]) == "203.0.113.5/32"
+
+
+def test_continuation_orders_tool_results_directly_after_their_tool_use():
+    """Anthropic rejects a tool_result that does not follow its tool_use.
+
+    The question is replayed on every round, so the in-flight turns must land
+    after it -- putting them in `history` would interleave the question between
+    the call and its result.
+    """
+    from backend.assistant.service import _provider_request
+
+    payload = AssistantChatRequest.model_validate({
+        **_chat_payload("Fotoğrafı eksik olanlara görev aç"),
+        "steps": [
+            {"role": "assistant", "content": "Bakıyorum.", "tool_calls": [
+                {"id": "toolu_1", "name": "search_passengers", "input": {"issue": "missing_photo"}},
+            ]},
+            {"role": "user", "content": "", "tool_results": [
+                {"tool_use_id": "toolu_1", "content": "[{\"ref\":\"p_42\"}]"},
+            ]},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "toolu_2", "name": "create_task", "input": {"title": "p_42 fotoğrafı"}},
+            ]},
+        ],
+        "tool_results": [{"tool_use_id": "toolu_2", "content": "{\"ok\":true}"}],
+    })
+    request = _provider_request(payload, _tool_settings())
+    turns = [m for m in request.messages if m.role != "system"]
+
+    shape = [
+        (
+            turn.role,
+            "call" if turn.tool_calls else "result" if turn.tool_results else "text",
+        )
+        for turn in turns
+    ]
+    assert shape == [
+        ("user", "text"),      # the question comes first
+        ("assistant", "call"),
+        ("user", "result"),
+        ("assistant", "call"),
+        ("user", "result"),
+    ]
+    # Each result immediately follows the call it answers.
+    assert turns[2].tool_results[0].tool_use_id == turns[1].tool_calls[0].id
+    assert turns[4].tool_results[0].tool_use_id == turns[3].tool_calls[0].id
