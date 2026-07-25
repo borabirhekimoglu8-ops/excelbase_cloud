@@ -1,8 +1,8 @@
 # Excelbase Operations — Render dışında çalıştırma
 
-Uygulama tek bir Docker imajı. Render'a bağlı hiçbir şey yok: `render.yaml`
-yalnızca Render için bir tarif, `docker-compose.yml` ise aynı imajı kendi
-makinenizde, ofis sunucunuzda veya herhangi bir VPS'te çalıştırır.
+Render'a bağlı hiçbir şey yok. `render.yaml` yalnızca Render için bir tarif;
+uygulama kendi makinenizde, ofis sunucunuzda veya herhangi bir VPS'te
+çalışır — **Docker olmadan da**.
 
 ## Sunucunun ne yaptığı (ve yapmadığı)
 
@@ -12,14 +12,55 @@ Bunu bilmek taşıma kararını kolaylaştırıyor:
 |---|---|
 | PWA'nın statik dosyaları | Yolcu kayıtları |
 | Anthropic proxy'si (API anahtarı burada durur) | Pasaport, fotoğraf, evrak |
-| Erişim hesapları ve asistan kotaları (Postgres) | Notlar, görevler, iş dosyaları |
+| Erişim hesapları ve asistan kotaları | Notlar, görevler, iş dosyaları |
 
 **Yolcu verisi hiçbir zaman sunucuya gitmez** — her tarayıcının kendi şifreli
 kasasında durur. Bu yüzden sunucu taşımak veriyi taşımaz; kullanıcıların
-verisi tarayıcılarında kaldığı yerde kalır. Taşınacak tek kalıcı şey Postgres
-içindeki erişim hesapları.
+verisi tarayıcılarında kaldığı yerde kalır. Taşınacak tek kalıcı şey
+veritabanındaki erişim hesapları — onlar da isteğe bağlı.
 
-## 1. Kurulum
+## 1. Kurulum — Docker'sız (önerilen)
+
+Docker gerekmez, Postgres de gerekmez. Veritabanı tek bir SQLite dosyasıdır:
+`.data/excelbase.db`. Yedeklemek onu kopyalamaktır.
+
+Gerekenler: **Python 3.11+** ve **Node.js 20+** (Node yalnızca ilk derleme için).
+
+**Windows (PowerShell):**
+```powershell
+git clone https://github.com/borabirhekimoglu8-ops/excelbase_cloud
+cd excelbase_cloud
+.\run.ps1
+```
+
+**macOS / Linux:**
+```sh
+git clone https://github.com/borabirhekimoglu8-ops/excelbase_cloud
+cd excelbase_cloud
+./run.sh
+```
+
+İlk çalıştırma `.env` dosyasını oluşturup durur. Açın, iki değeri doldurun ve
+tekrar çalıştırın:
+
+| Değer | Nasıl |
+|---|---|
+| `GATEVISA_DATA_SECRET` | Rastgele uzun bir metin (`openssl rand -base64 48`) |
+| `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys. Boş bırakılırsa asistan kapalı, gerisi çalışır |
+
+Sonraki çalıştırmalar hazır ortamı kullanır; arayüzü yeniden derlememek için
+`.\run.ps1 -SkipBuild` (veya `SKIP_BUILD=1 ./run.sh`).
+
+Durdurmak: **Ctrl+C**. Güncellemek: `git pull` ve tekrar çalıştırın.
+
+> Sunucu kendini yeniden başlatmaz. Makine açıldığında otomatik çalışsın
+> isterseniz Windows'ta Görev Zamanlayıcı'ya (Task Scheduler) "oturum
+> açıldığında `run.ps1`" görevi ekleyin.
+
+## 1b. Kurulum — Docker ile
+
+Birden çok makineye tekrarlanabilir kurulum yapacaksanız veya Postgres
+istiyorsanız:
 
 ```sh
 git clone <repo> && cd excelbase_cloud
@@ -45,7 +86,8 @@ curl http://127.0.0.1:8000/health
 
 ## 2. Nereden erişilebilir olacağı
 
-`.env` içindeki `BIND_ADDRESS` bunu belirler ve **varsayılan kapalıdır**:
+`.env` içindeki `BIND_ADDRESS` bunu belirler ve **varsayılan kapalıdır**
+(her iki kurulum yolunda da):
 
 | Değer | Kim erişir |
 |---|---|
@@ -101,6 +143,15 @@ docker compose exec db pg_restore -U excelbase -d excelbase --clean --if-exists 
 
 ## 5. Güncelleme, yedek, geri alma
 
+**Docker'sız kurulumda:**
+
+```sh
+git pull                                  # güncelle, sonra run betiğini çalıştır
+cp .data/excelbase.db yedek-$(date +%F).db   # yedek: dosyayı kopyalamak yeterli
+```
+
+**Docker'lı kurulumda:**
+
 ```sh
 git pull && docker compose up -d --build          # güncelle
 docker compose exec db pg_dump -U excelbase excelbase | gzip > yedek-$(date +%F).sql.gz
@@ -118,12 +169,20 @@ sağlayın:
 
 | Nereye | Not |
 |---|---|
-| Kendi makineniz / ofis sunucusu | `docker compose up -d` — yukarıdaki akış |
+| Kendi makineniz / ofis sunucusu | `run.ps1` / `run.sh` — Docker gerekmez, SQLite yeter |
 | Herhangi bir VPS (Hetzner, DigitalOcean…) | Aynı compose dosyası, `BIND_ADDRESS=0.0.0.0` + ters vekil |
 | Fly.io / Railway | `Dockerfile`'ı kullanır; Postgres'i eklentiden alın, `DATABASE_SSL` ayarını **silin** (TLS gerekir) |
 
 `DATABASE_SSL=disable` yalnızca aynı özel ağdaki TLS'siz Postgres içindir;
 yönetilen bir veritabanına bağlanırken bu satırı kaldırın.
+
+### SQLite mi Postgres mi?
+
+`run.ps1` / `run.sh` SQLite kullanır ve tek makinede çalışan bir kurulum için
+bu yeterlidir: erişim hesapları ve asistan kotaları aynı şekilde kalıcıdır.
+Postgres'e yalnızca aynı veritabanını **birden çok uygulama süreci**
+paylaşacaksa geçin — `DATABASE_URL` değerini `.env` içinde tanımlarsanız
+betikler SQLite varsayılanını kullanmaz.
 
 ## Render'ı kapatmadan önce
 
