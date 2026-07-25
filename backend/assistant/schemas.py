@@ -69,6 +69,10 @@ class AssistantStatusResponse(BaseModel):
     model_family: Literal["sonnet"] = "sonnet"
     model_label: Literal["Claude Sonnet"] = "Claude Sonnet"
     capabilities: list[AssistantCapability]
+    # True when this deployment answers without an access code. Not a secret:
+    # any visitor discovers it by loading the page, and the owner needs to see
+    # that their Anthropic budget is publicly reachable.
+    open_access: bool = False
 
 
 class AssistantDiagnosticsResponse(BaseModel):

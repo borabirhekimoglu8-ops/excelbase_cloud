@@ -387,6 +387,7 @@ def assistant_status() -> AssistantStatusResponse:
         model_family="sonnet",
         model_label="Claude Sonnet",
         capabilities=list(ACTIVE_CAPABILITIES),
+        open_access=settings.open_access,
     )
 
 

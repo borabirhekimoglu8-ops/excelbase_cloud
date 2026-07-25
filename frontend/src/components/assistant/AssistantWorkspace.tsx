@@ -423,7 +423,9 @@ export function AssistantWorkspace({
           </strong>
           <small>
             {ready && online
-              ? "Uygulama içinden güvenli, salt okunur sohbet"
+              ? status?.open_access
+                ? "Erişim kodu istenmiyor · bu adrese ulaşan herkes kullanabilir"
+                : "Uygulama içinden güvenli, salt okunur sohbet"
               : "Yerel kasa ve çevrimdışı mod çalışmaya devam eder"}
           </small>
         </div>

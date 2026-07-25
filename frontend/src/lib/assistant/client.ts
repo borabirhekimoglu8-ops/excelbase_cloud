@@ -36,6 +36,8 @@ export type AssistantStatus = {
   model_family: "sonnet";
   /** Safe display label only; provider model IDs and secrets remain server-side. */
   model_label: string;
+  /** True when the server connects Sonnet without asking for an access code. */
+  open_access?: boolean;
 };
 
 export type AssistantSessionStatus = {
@@ -134,6 +136,7 @@ function isAssistantStatus(value: unknown): value is AssistantStatus {
   );
   return (
     typeof status.available === "boolean"
+    && (status.open_access === undefined || typeof status.open_access === "boolean")
     && validConfigurationState
     && status.online_required === true
     && status.privacy_mode === "aggregate_context_only"

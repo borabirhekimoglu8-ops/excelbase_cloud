@@ -15,7 +15,14 @@ from urllib.parse import urlsplit
 
 from fastapi import Header, HTTPException, Query, Request, status
 
-from .config import SESSION_COOKIE, SESSION_DAYS, allowed_origins, api_key, require_auth
+from .config import (
+    SESSION_COOKIE,
+    SESSION_DAYS,
+    allowed_origins,
+    api_key,
+    assistant_settings,
+    require_auth,
+)
 from .state import load_state, save_state
 import db
 
@@ -51,6 +58,13 @@ ASSISTANT_SESSION_COOKIE = (
 )
 ASSISTANT_SESSION_PATH = "/api/assistant/"
 ASSISTANT_SESSION_SECONDS = 12 * 60 * 60
+
+# Identity used when EXCELBASE_ASSISTANT_OPEN_ACCESS lets visitors reach Sonnet
+# without an access code.  It is deliberately a single shared id: the per-actor
+# daily quota then caps the whole deployment instead of resetting per visitor,
+# and it can never match a real user row, so an open token stops validating the
+# moment open access is switched back off.
+OPEN_ACCESS_ACTOR = Actor(id="assistant-open", name="Çevrimiçi Asistan", role="viewer")
 _LOGIN_WINDOW_SECONDS = 15 * 60
 _LOGIN_MAX_FAILURES = 6
 _LOGIN_FAILURES: dict[str, list[float]] = {}
@@ -273,6 +287,33 @@ def issue_session(actor: Actor) -> str:
     )
 
 
+def ensure_session_secret() -> None:
+    """Materialize the signing secret without creating a user.
+
+    A passwordless session still has to be signed, and on a deployment whose
+    first administrator was never created there is no secret yet.  ``users``
+    stays empty so setup is still reported as required.
+    """
+    with _AUTH_STATE_LOCK:
+        snapshot = _auth_state()
+        if str(snapshot.auth.get("session_secret", "")):
+            return
+        auth = copy.deepcopy(snapshot.auth)
+        auth["session_secret"] = secrets.token_urlsafe(48)
+        auth.setdefault("users", [])
+        _save_auth_state(snapshot, auth)
+
+
+def issue_open_assistant_session() -> tuple[Actor, str]:
+    """Mint a Sonnet session for a visitor, with no access code.
+
+    Only reachable when the deployment explicitly opted in; the caller is
+    responsible for checking ``assistant_settings().open_access``.
+    """
+    ensure_session_secret()
+    return OPEN_ACCESS_ACTOR, issue_assistant_session(OPEN_ACCESS_ACTOR)
+
+
 def issue_assistant_session(actor: Actor) -> str:
     return _issue_session(
         actor,
@@ -300,6 +341,12 @@ def _actor_from_token(token: str | None, *, audience: str = "app") -> Actor | No
             return None
         user_id = str(payload.get("sub", ""))
     except Exception:
+        return None
+    if user_id == OPEN_ACCESS_ACTOR.id:
+        # Re-check the setting on every request rather than trusting the token:
+        # turning open access off must revoke sessions already handed out.
+        if audience == "assistant" and assistant_settings().open_access:
+            return OPEN_ACCESS_ACTOR
         return None
     for user in auth.get("users", []):
         if str(user.get("id")) == user_id and user.get("active", True):

@@ -42,6 +42,12 @@ services:
         value: "0"
       - key: EXCELBASE_ASSISTANT_MODEL
         value: claude-sonnet-5
+      # Sonnet connects without an access code. This makes the assistant — and
+      # therefore the Anthropic budget below — usable by anyone who reaches the
+      # site, bounded only by the daily request caps. Set to "0" to require the
+      # access code again.
+      - key: EXCELBASE_ASSISTANT_OPEN_ACCESS
+        value: "1"
       - key: EXCELBASE_ASSISTANT_MAX_INPUT_CHARS
         value: "12000"
       - key: EXCELBASE_ASSISTANT_MAX_HISTORY_TURNS

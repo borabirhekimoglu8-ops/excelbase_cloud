@@ -84,6 +84,7 @@ from .auth import (
     create_user,
     deactivate_user,
     issue_assistant_session,
+    issue_open_assistant_session,
     issue_session,
     list_users,
     optional_actor,
@@ -239,10 +240,27 @@ def assistant_public_status() -> AssistantStatusResponse:
 
 
 @app.get("/api/assistant/v1/session", response_model=AssistantSessionResponse)
-def assistant_session(request: Request) -> AssistantSessionResponse:
-    """Return only the online Sonnet session state and its derived CSRF token."""
-    needs_setup = setup_required()
+def assistant_session(request: Request, response: Response) -> AssistantSessionResponse:
+    """Return only the online Sonnet session state and its derived CSRF token.
+
+    With open access enabled the session is issued here on first contact, so
+    the workspace connects without prompting for an access code. Origin and
+    CSRF checks, the per-actor burst limit and the daily spending quotas all
+    still apply to every turn.
+    """
     actor = optional_assistant_actor(request)
+    if actor is None and assistant_settings().open_access:
+        actor, token = issue_open_assistant_session()
+        _set_assistant_session_cookie(response, token)
+        request.state.actor = actor
+        return AssistantSessionResponse(
+            setup_required=False,
+            bootstrap_required=False,
+            authenticated=True,
+            user={"id": actor.id, "name": actor.name, "role": actor.role},
+            csrf_token=assistant_csrf_token_for_session(token),
+        )
+    needs_setup = setup_required()
     return AssistantSessionResponse(
         setup_required=needs_setup,
         bootstrap_required=needs_setup and bootstrap_token_required(),

@@ -89,6 +89,7 @@ def test_public_status_reports_readiness_and_never_leaks_provider_configuration(
         "model_family": "sonnet",
         "model_label": "Claude Sonnet",
         "capabilities": list(ACTIVE_CAPABILITIES),
+        "open_access": False,
     }
     serialized = response.text.lower()
     assert secret not in serialized
@@ -899,3 +900,162 @@ def test_short_access_code_is_rejected_before_any_hashing(monkeypatch):
 
     assert rejected.value.status_code == 422
     assert rejected.value.detail == "Erişim kodu en az 6 karakter olmalıdır."
+
+
+def _open_access_env(monkeypatch) -> None:
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "server-secret")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_OPEN_ACCESS", "1")
+
+
+def test_open_access_connects_sonnet_without_an_access_code(monkeypatch):
+    _open_access_env(monkeypatch)
+    reset_assistant_runtime()
+
+    with TestClient(app) as client:
+        session = client.get("/api/assistant/v1/session")
+
+    assert session.status_code == 200
+    body = session.json()
+    # The workspace renders the pairing form only while this is false.
+    assert body["authenticated"] is True
+    assert body["setup_required"] is False
+    assert body["csrf_token"]
+    assert ASSISTANT_SESSION_COOKIE in session.cookies
+
+    with TestClient(app) as client:
+        status_body = client.get("/api/assistant/v1/status").json()
+    assert status_body["open_access"] is True
+
+
+def test_open_access_session_still_proves_csrf_and_origin(monkeypatch):
+    """Dropping the access code must not drop the remaining request checks."""
+    _open_access_env(monkeypatch)
+    reset_assistant_runtime()
+
+    with TestClient(app, base_url="https://excelbase.test") as client:
+        session = client.get("/api/assistant/v1/session").json()
+
+        without_csrf = client.post(
+            "/api/assistant/v1/chat",
+            json=_chat_payload(),
+            headers={"Origin": "https://excelbase.test"},
+        )
+        foreign_origin = client.post(
+            "/api/assistant/v1/chat",
+            json=_chat_payload(),
+            headers={
+                "Origin": "https://attacker.example",
+                "X-CSRF-Token": session["csrf_token"],
+            },
+        )
+
+    assert without_csrf.status_code == 403
+    assert foreign_origin.status_code == 403
+
+
+def test_turning_open_access_off_revokes_tokens_already_issued(monkeypatch):
+    _open_access_env(monkeypatch)
+    reset_assistant_runtime()
+
+    with TestClient(app) as client:
+        opened = client.get("/api/assistant/v1/session")
+        assert opened.json()["authenticated"] is True
+        token = opened.cookies[ASSISTANT_SESSION_COOKIE]
+
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_OPEN_ACCESS", "0")
+
+    with TestClient(app) as client:
+        client.cookies.set(ASSISTANT_SESSION_COOKIE, token, path=ASSISTANT_SESSION_PATH)
+        closed = client.get("/api/assistant/v1/session")
+
+    assert closed.json()["authenticated"] is False
+
+
+def test_open_access_actor_cannot_authorize_the_legacy_application_api(monkeypatch):
+    """The shared identity is Sonnet-only; it must not unlock passenger data."""
+    _open_access_env(monkeypatch)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "1")
+
+    from backend import auth
+
+    with TestClient(app) as client:
+        session = client.get("/api/assistant/v1/session")
+        token = session.cookies[ASSISTANT_SESSION_COOKIE]
+
+    # The same token under the application audience resolves to nobody.
+    assert auth._actor_from_token(token, audience="app") is None
+    assert auth._actor_from_token(token, audience="assistant") == auth.OPEN_ACCESS_ACTOR
+
+
+def test_open_access_shares_one_quota_bucket_across_visitors(monkeypatch):
+    """A shared identity caps total spend instead of resetting per visitor."""
+    _open_access_env(monkeypatch)
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_REQUESTS_PER_MINUTE", "1")
+    reset_assistant_runtime()
+
+    class FakeProvider:
+        name = "fake"
+        available = True
+        calls = 0
+
+        async def generate(self, request):
+            type(self).calls += 1
+            return ProviderResult(text="Tamam", input_tokens=1, output_tokens=1)
+
+    monkeypatch.setattr(
+        "backend.assistant.service.get_assistant_provider",
+        lambda settings=None: FakeProvider(),
+    )
+    payload = AssistantChatRequest.model_validate(_chat_payload())
+    from backend.auth import OPEN_ACCESS_ACTOR
+
+    async def exercise():
+        await generate_assistant_reply(
+            payload, actor_id=OPEN_ACCESS_ACTOR.id, request_id="open-one"
+        )
+        # A second browser presents the same actor id, so the burst limit holds.
+        with pytest.raises(AssistantQuotaError):
+            await generate_assistant_reply(
+                payload, actor_id=OPEN_ACCESS_ACTOR.id, request_id="open-two"
+            )
+
+    asyncio.run(exercise())
+    assert FakeProvider.calls == 1
+
+
+def test_open_access_browser_flow_reaches_sonnet_with_no_login_step(monkeypatch):
+    """The whole sequence a freshly loaded workspace performs, end to end."""
+    _open_access_env(monkeypatch)
+    reset_assistant_runtime()
+
+    class FakeProvider:
+        name = "fake"
+        available = True
+
+        async def generate(self, request):
+            return ProviderResult(text="12 yolcunun %75'i hazır.", input_tokens=80, output_tokens=14)
+
+    monkeypatch.setattr(
+        "backend.assistant.service.get_assistant_provider",
+        lambda settings=None: FakeProvider(),
+    )
+
+    with TestClient(app, base_url="https://excelbase.test") as client:
+        status_body = client.get("/api/assistant/v1/status").json()
+        session = client.get("/api/assistant/v1/session").json()
+        reply = client.post(
+            "/api/assistant/v1/chat",
+            json=_chat_payload(),
+            headers={
+                "Origin": "https://excelbase.test",
+                "X-CSRF-Token": session["csrf_token"],
+            },
+        )
+
+    assert status_body["available"] is True
+    assert session["authenticated"] is True
+    assert reply.status_code == 200
+    assert reply.json()["message"] == "12 yolcunun %75'i hazır."
