@@ -44,13 +44,13 @@ function reportDate(rows: ReadonlyArray<{ departure_date?: string }>): string {
 
 function reportLabel(rows: ReadonlyArray<{ departure_date?: string }>): string {
   const dates = reportDates(rows);
-  if (!dates.length) return "Tarihsiz";
+  if (!dates.length) return "Undated";
   return dates.length === 1 ? dates[0] : `${dates[0]} – ${dates.at(-1)}`;
 }
 
 function selectedRecordDate(rows: ReadonlyArray<{ record_date?: string }>, preferred = ""): string {
   const explicit = preferred.trim();
-  if (explicit === "Tarihsiz") return "Tarihsiz";
+  if (explicit === "Undated" || explicit === "Tarihsiz") return "Undated";
   if (/^\d{4}-\d{2}-\d{2}$/.test(explicit)) return explicit;
   const dates = ([...new Set(rows.map((row) => row.record_date?.trim()).filter(Boolean))] as string[]).sort();
   return dates.length === 1 && /^\d{4}-\d{2}-\d{2}$/.test(dates[0]) ? dates[0] : stamp();
@@ -75,27 +75,27 @@ async function loadIdoLogoDataUrl(): Promise<string> {
 
 export async function downloadLocal(kind: LocalDownloadKind, options: LocalDownloadOptions = {}): Promise<void> {
   if (kind === "template") {
-    await saveBlob(createGateVisaTemplateXlsxBlob(), "gate-visa-checklist-standart-sablon.xlsx");
+    await saveBlob(createGateVisaTemplateXlsxBlob(), "gate-visa-checklist-standard-template.xlsx");
     return;
   }
   if (kind === "backup") {
-    await saveBlob(await localExportEncryptedBackup(), `gate-visa-checklist-sifreli-yedek-${stamp()}.excelbase-backup`);
+    await saveBlob(await localExportEncryptedBackup(), `gate-visa-checklist-encrypted-backup-${stamp()}.excelbase-backup`);
     return;
   }
 
   const rows = await localExportRows(options.scope, options.ids);
   if (!rows.length) throw new Error("Seçili tarih aralığında dışa aktarılacak yolcu yok.");
   if (kind === "excel") {
-    await saveBlob(createPassengerXlsxBlob(rows), `gate-visa-checklist-yolcular-${stamp()}.xlsx`);
+    await saveBlob(createPassengerXlsxBlob(rows), `gate-visa-checklist-passengers-${stamp()}.xlsx`);
     return;
   }
   if (kind === "csv") {
-    await saveBlob(createPassengerCsvBlob(rows), `gate-visa-checklist-yolcular-${stamp()}.csv`);
+    await saveBlob(createPassengerCsvBlob(rows), `gate-visa-checklist-passengers-${stamp()}.csv`);
     return;
   }
   if (kind === "manifest") {
     await saveBlob(
-      createManifestHtmlBlob(rows, { title: options.title ?? "Gate Visa Checklist Teslim Manifestosu" }),
+      createManifestHtmlBlob(rows, { title: options.title ?? "Gate Visa Checklist Delivery Manifest" }),
       `gate-visa-checklist-manifest-${stamp()}.html`,
     );
     return;
@@ -104,11 +104,11 @@ export async function downloadLocal(kind: LocalDownloadKind, options: LocalDownl
     const date = reportDate(rows);
     await saveBlob(
       createIdoDailyPassengerListHtmlBlob(rows, {
-        title: options.title ?? "İDO Günlük Yolcu Listesi",
+        title: options.title ?? "İDO Daily Passenger List",
         operationLabel: reportLabel(rows),
         logoDataUrl: await loadIdoLogoDataUrl(),
       }),
-      `ido-gunluk-yolcu-listesi-${date}.html`,
+      `ido-daily-passenger-list-${date}.html`,
     );
     return;
   }
@@ -116,13 +116,13 @@ export async function downloadLocal(kind: LocalDownloadKind, options: LocalDownl
   const photos = await localExportPhotos(rows);
   if (kind === "photos") {
     if (!photos.length) throw new Error("Seçili yolculara eşleşmiş fotoğraf bulunmuyor.");
-    await saveBlob(await createPhotosZipBlob(photos), `gate-visa-checklist-fotograflar-${stamp()}.zip`);
+    await saveBlob(await createPhotosZipBlob(photos), `gate-visa-checklist-photos-${stamp()}.zip`);
     return;
   }
   const documents = await localExportDocuments(rows);
   if (kind === "documents") {
     if (!documents.length) throw new Error("Seçili yolculara eklenmiş PDF evrak bulunmuyor.");
-    await saveBlob(await createDocumentsZipBlob(documents), `gate-visa-checklist-evraklar-${stamp()}.zip`);
+    await saveBlob(await createDocumentsZipBlob(documents), `gate-visa-checklist-documents-${stamp()}.zip`);
     return;
   }
   if (kind === "record-package") {
@@ -131,7 +131,7 @@ export async function downloadLocal(kind: LocalDownloadKind, options: LocalDownl
       await createRecordFolderZipBlob(rows, photos, {
         recordDate,
         documents,
-        title: options.title ?? "İDO Kontrol Listesi",
+        title: options.title ?? "İDO Checklist",
         operationLabel: recordDate,
         logoDataUrl: await loadIdoLogoDataUrl(),
       }),
@@ -141,10 +141,10 @@ export async function downloadLocal(kind: LocalDownloadKind, options: LocalDownl
   }
   await saveBlob(
     await createDeliveryZipBlob(rows, photos, {
-      title: options.title ?? "Gate Visa Checklist Teslim Paketi",
+      title: options.title ?? "Gate Visa Checklist Delivery Package",
       documents,
     }),
-    `gate-visa-checklist-teslim-paketi-${stamp()}.zip`,
+    `gate-visa-checklist-delivery-package-${stamp()}.zip`,
   );
 }
 

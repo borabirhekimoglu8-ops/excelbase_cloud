@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import * as XLSX from "@e965/xlsx";
+import { BlobReader, ZipReader } from "@zip.js/zip.js";
 import { readFile } from "node:fs/promises";
 
 function passengerWorkbook(name: string, passport: string, index = 1): Buffer {
@@ -24,6 +25,16 @@ async function openRecordFolders(page: Page): Promise<void> {
     .getByRole("button", { name: "RAPORLAR", exact: true })
     .click();
   await page.getByRole("button", { name: /Günlük Kayıt Klasörleri/ }).click();
+}
+
+async function zipFilenames(path: string): Promise<string[]> {
+  const bytes = await readFile(path);
+  const reader = new ZipReader(new BlobReader(new Blob([bytes])), { useWebWorkers: false });
+  try {
+    return (await reader.getEntries()).map((entry) => entry.filename);
+  } finally {
+    await reader.close();
+  }
 }
 
 test("PWA manifesti ve çevrimdışı uygulama kabuğu hazır", async ({ context, page, request }) => {
@@ -140,8 +151,8 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
     mimeType: "application/pdf",
     buffer: Buffer.from("%PDF-1.7\nGate Visa Checklist test vize formu\n%%EOF"),
   });
-  await expect(page.getByText("TR123456-pasaport.pdf", { exact: true })).toBeVisible();
-  await expect(page.getByText("TR123456-vize-formu.pdf", { exact: true })).toBeVisible();
+  await expect(page.getByText("2026-07-16_AYSE_YOLCU_TR123456_OTHER_DOCUMENT.pdf", { exact: true })).toBeVisible();
+  await expect(page.getByText("2026-07-16_AYSE_YOLCU_TR123456_APPLICATION_FORM.pdf", { exact: true })).toBeVisible();
   await expect(page.getByText("2 EVRAK", { exact: true })).toBeVisible();
 
   await page.evaluate(async () => navigator.serviceWorker.ready);
@@ -153,8 +164,8 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
   await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
   await page.getByText("AYŞE YOLCU", { exact: true }).click();
   await expect(page.locator('.ido-sheet img[alt="AYŞE YOLCU"]')).toHaveAttribute("src", /^blob:/);
-  await expect(page.getByText("TR123456-pasaport.pdf", { exact: true })).toBeVisible();
-  await expect(page.getByText("TR123456-vize-formu.pdf", { exact: true })).toBeVisible();
+  await expect(page.getByText("2026-07-16_AYSE_YOLCU_TR123456_OTHER_DOCUMENT.pdf", { exact: true })).toBeVisible();
+  await expect(page.getByText("2026-07-16_AYSE_YOLCU_TR123456_APPLICATION_FORM.pdf", { exact: true })).toBeVisible();
   await context.setOffline(false);
 });
 
@@ -270,6 +281,18 @@ test("manuel yolcu kaydı tek birleşik PDF ile hazır olur", async ({ page }) =
   await expect(folder).toContainText("1 yolcu · 1 PDF · 1 JPG");
   await folder.getByRole("button", { expanded: false }).click();
   await expect(folder).toContainText("1 HAZIR");
+  const zipDownloadPromise = page.waitForEvent("download");
+  await folder.getByRole("button", { name: "TARİH KLASÖRÜNÜ ZIP İNDİR" }).click();
+  const zipDownload = await zipDownloadPromise;
+  const zipPath = await zipDownload.path();
+  expect(zipPath).not.toBeNull();
+  const names = await zipFilenames(zipPath!);
+  const passengerRoot = "2026-07-25_IDO_GATE_VISA/001_2026-07-26_ECE_DENIZ_TR7654322/";
+  expect(names).toEqual(expect.arrayContaining([
+    `${passengerRoot}2026-07-26_ECE_DENIZ_TR7654322.jpg`,
+    `${passengerRoot}2026-07-26_ECE_DENIZ_TR7654322.pdf`,
+    "2026-07-25_IDO_GATE_VISA/IDO_Daily_Passenger_List.xlsx",
+  ]));
 });
 
 test("otomatik web görünümü bilgisayarda genişler ve telefon tercihi kalıcıdır", async ({ page }) => {
@@ -319,12 +342,12 @@ test("49 Excel dosyası sırayla işlenir ve çevrimdışı soğuk açılışta 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "İDO LİSTESİ", exact: true }).click();
   const dailyListDownload = await downloadPromise;
-  expect(dailyListDownload.suggestedFilename()).toMatch(/^ido-gunluk-yolcu-listesi-.*\.html$/);
+  expect(dailyListDownload.suggestedFilename()).toMatch(/^ido-daily-passenger-list-.*\.html$/);
   const downloadPath = await dailyListDownload.path();
   expect(downloadPath).not.toBeNull();
   const dailyList = await readFile(downloadPath!, "utf8");
-  expect(dailyList).toContain("İDO Günlük Yolcu Listesi");
-  expect(dailyList).toContain("<b>49</b><span>Toplam yolcu</span>");
+  expect(dailyList).toContain("İDO Daily Passenger List");
+  expect(dailyList).toContain("<b>49</b><span>Total passengers</span>");
   expect(dailyList).toContain("YOLCU1 YOLCU");
   expect(dailyList).toContain("YOLCU49 YOLCU");
   expect(dailyList).toContain("data:image/jpeg;base64,");

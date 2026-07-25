@@ -33,6 +33,10 @@ import type {
 } from "@/lib/api";
 import { newId } from "@/lib/id";
 import {
+  autoNamedPassengerDocuments,
+  passengerPhotoFilename,
+} from "@/lib/passengerFileNaming";
+import {
   codeRecordSearchText,
   normalizeWorkspaceCode,
   normalizeWorkspaceSearch,
@@ -114,7 +118,7 @@ const META_OPERATION = "operation-meta";
 const META_UNMATCHED = "unmatched-photos";
 const META_LAST_UNDO = "last-undo";
 const META_BATCH_PREFIX = "import-batch:";
-const APP_VERSION = "7.6.1-offline";
+const APP_VERSION = "7.6.3-offline";
 const SOURCE_PREFIX = "source:";
 const PHOTO_PREFIX = "photo:";
 const DOCUMENT_PREFIX = "document:";
@@ -1476,7 +1480,7 @@ async function assertPdfFile(file: File): Promise<void> {
 export async function localPassengerDocuments(passengerId: number): Promise<PassengerDocument[]> {
   const row = await getPassenger<StoredPassenger>(passengerId);
   if (!row) throw new Error("Yolcu bulunamadı.");
-  return (row.documents ?? []).map((document) => ({ ...document, category: document.category ?? "other" }));
+  return autoNamedPassengerDocuments(row, row.documents ?? []);
 }
 
 export async function localUploadPassengerDocuments(
@@ -1487,7 +1491,7 @@ export async function localUploadPassengerDocuments(
   const row = await getPassenger<StoredPassenger>(passengerId);
   if (!row) throw new Error("Yolcu bulunamadı.");
   if (!files.length) {
-    return (row.documents ?? []).map((document) => ({ ...document, category: document.category ?? "other" }));
+    return autoNamedPassengerDocuments(row, row.documents ?? []);
   }
 
   let totalBytes = 0;
@@ -1511,6 +1515,7 @@ export async function localUploadPassengerDocuments(
       const document: PassengerDocument = {
         id,
         filename,
+        source_filename: filename,
         mime: "application/pdf",
         size: normalized.size,
         created_at: new Date().toISOString(),
@@ -1531,7 +1536,7 @@ export async function localUploadPassengerDocuments(
     for (const document of created) await deleteBinary(documentBinaryId(document.id));
     throw error;
   }
-  return row.documents.map((document) => ({ ...document, category: document.category ?? "other" }));
+  return autoNamedPassengerDocuments(row, row.documents);
 }
 
 export async function localPassengerDocumentFile(
@@ -1544,8 +1549,11 @@ export async function localPassengerDocumentFile(
   if (!document) throw new Error("PDF evrak bulunamadı.");
   const binary = await getBinary(documentBinaryId(document.id));
   if (!binary) throw new Error("PDF evrakın şifreli dosyası bulunamadı.");
+  const namedDocument = autoNamedPassengerDocuments(row, row.documents ?? [])
+    .find((item) => item.id === documentId);
+  if (!namedDocument) throw new Error("PDF evrak adı oluşturulamadı.");
   return {
-    metadata: { ...document, category: document.category ?? "other" },
+    metadata: namedDocument,
     blob: binary.data.type === "application/pdf"
       ? binary.data
       : new Blob([binary.data], { type: "application/pdf" }),
@@ -1868,13 +1876,15 @@ export async function localExportPhotos(rows: StoredPassenger[]): Promise<Export
     if (!row.photo) continue;
     const binary = await getBinary(row.photo);
     if (!binary) continue;
-    const extension = binary.name.includes(".") ? `.${binary.name.split(".").pop()}` : ".jpg";
     output.push({
-      filename: `${row.passport_no || row.full_name || row.id}${extension}`,
+      filename: passengerPhotoFilename(row),
       blob: binary.data,
       passengerId: row.id,
       passengerName: row.full_name,
       passportNo: row.passport_no,
+      departureDate: row.departure_date,
+      firstName: row.first_name,
+      lastName: row.last_name,
     });
   }
   return output;
@@ -1883,13 +1893,16 @@ export async function localExportPhotos(rows: StoredPassenger[]): Promise<Export
 export async function localExportDocuments(rows: StoredPassenger[]): Promise<ExportDocument[]> {
   const output: ExportDocument[] = [];
   for (const row of rows) {
-    for (const document of row.documents ?? []) {
+    for (const document of autoNamedPassengerDocuments(row, row.documents ?? [])) {
       const binary = await getBinary(documentBinaryId(document.id));
       if (!binary) continue;
       output.push({
         passengerId: row.id,
         passengerName: row.full_name,
         passportNo: row.passport_no,
+        departureDate: row.departure_date,
+        firstName: row.first_name,
+        lastName: row.last_name,
         filename: document.filename,
         category: document.category ?? "other",
         blob: binary.data.type === "application/pdf"

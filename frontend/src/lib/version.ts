@@ -1,2 +1,2 @@
 // Arayüz paketinin derlendiği sürüm. PWA güncelleme ve destek ekranlarında gösterilir.
-export const UI_VERSION = "7.6.2";
+export const UI_VERSION = "7.6.3";
