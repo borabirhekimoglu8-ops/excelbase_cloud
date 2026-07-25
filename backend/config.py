@@ -13,6 +13,47 @@ def api_key() -> str:
     return os.environ.get("GATEVISA_API_KEY", "").strip()
 
 
+ANTHROPIC_API_KEY_VARIABLE = "ANTHROPIC_API_KEY"
+
+# Names operators reach for when the key does not take effect.  These are only
+# ever inspected for presence, never read as a credential: accepting a key under
+# an unexpected name would make the deployment contract ambiguous, but staying
+# silent about it is what turns a one-line dashboard fix into a long hunt.
+ANTHROPIC_API_KEY_ALIASES: tuple[str, ...] = (
+    "CLAUDE_API_KEY",
+    "ANTHROPIC_KEY",
+    "ANTHROPIC_API_TOKEN",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTROPIC_API_KEY",
+    "EXCELBASE_ANTHROPIC_API_KEY",
+)
+
+
+def _read_api_key(name: str) -> str:
+    """Read one credential variable, tolerating how dashboards paste values.
+
+    Render (and most .env editors) keep surrounding quotes verbatim, so a value
+    pasted as "sk-ant-..." reaches the process with the quotes attached and is
+    rejected upstream with a 401 that looks like a bad key.  Trimming them here
+    fixes the paste rather than reporting it.
+    """
+    raw = os.environ.get(name, "").strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {'"', "'"}:
+        raw = raw[1:-1].strip()
+    return raw
+
+
+def misnamed_anthropic_key_variables() -> tuple[str, ...]:
+    """Return alias variable names that carry a value, for diagnostics only.
+
+    Values are never read or returned; only the operator's own variable names
+    leave this function.
+    """
+    return tuple(
+        name for name in ANTHROPIC_API_KEY_ALIASES if _read_api_key(name)
+    )
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name)
     if raw is None:
@@ -35,6 +76,10 @@ class AssistantSettings:
     provider: str
     model: str
     api_key: str = field(repr=False)
+    # When true the deployment issues Sonnet sessions without an access code.
+    # Anyone who can reach the site can then spend the configured Anthropic
+    # budget, so this stays opt-in and defaults to false.
+    open_access: bool = False
     pii_mode: str = "strict"
     allow_raw_documents: bool = False
     max_context_records: int = 25
@@ -67,7 +112,8 @@ def assistant_settings() -> AssistantSettings:
         enabled=_env_bool("EXCELBASE_ASSISTANT_ENABLED", default=True),
         provider=provider,
         model=os.environ.get("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5").strip()[:200],
-        api_key=os.environ.get("ANTHROPIC_API_KEY", "").strip(),
+        api_key=_read_api_key(ANTHROPIC_API_KEY_VARIABLE),
+        open_access=_env_bool("EXCELBASE_ASSISTANT_OPEN_ACCESS", default=False),
         pii_mode=pii_mode,
         allow_raw_documents=_env_bool("EXCELBASE_ASSISTANT_ALLOW_RAW_DOCUMENTS"),
         max_context_records=_bounded_env_int("EXCELBASE_ASSISTANT_MAX_CONTEXT_RECORDS", 25, 1, 100),

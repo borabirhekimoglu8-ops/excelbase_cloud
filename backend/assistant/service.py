@@ -13,7 +13,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import db
-from backend.config import AssistantSettings, assistant_settings
+from backend.config import (
+    ANTHROPIC_API_KEY_VARIABLE,
+    AssistantSettings,
+    assistant_settings,
+    misnamed_anthropic_key_variables,
+)
 
 from .anthropic_provider import AnthropicProvider
 from .provider import (
@@ -28,6 +33,7 @@ from .schemas import (
     READ_ONLY_CAPABILITIES,
     AssistantChatRequest,
     AssistantChatResponse,
+    AssistantDiagnosticsResponse,
     AssistantStatusResponse,
     AssistantUsage,
 )
@@ -55,7 +61,17 @@ _COUNT_FIELDS = frozenset(
 _PERCENT_FIELDS = frozenset({"readiness_percent"})
 _AMOUNT_FIELDS = frozenset({"adult_total", "child_total", "total_fee"})
 _DATE_FIELDS = frozenset({"start", "end"})
-SUPPORTED_SONNET_MODELS = frozenset({"claude-sonnet-5"})
+# Only the Sonnet family may be configured, because the public status endpoint
+# attests "Claude Sonnet" to the UI.  Listing the currently served Sonnet ids —
+# not just the newest one — keeps a deployment that pins a still-supported
+# version from silently falling back to a disabled assistant.
+SUPPORTED_SONNET_MODELS = frozenset(
+    {
+        "claude-sonnet-5",
+        "claude-sonnet-4-6",
+        "claude-sonnet-4-5",
+    }
+)
 
 _SYSTEM_PROMPT = """\
 Sen Excelbase Operations içinde çalışan Claude Sonnet operasyon asistanısın.
@@ -330,6 +346,10 @@ def assistant_configuration_state(settings: AssistantSettings) -> str:
     if settings.model not in SUPPORTED_SONNET_MODELS:
         return "model_mismatch"
     if not settings.api_key:
+        # Distinguish "no key anywhere" from "key present under another name":
+        # both look identical in the dashboard, but only one is a rename.
+        if misnamed_anthropic_key_variables():
+            return "api_key_misnamed"
         return "api_key_missing"
     if settings.pii_mode != "strict" or settings.allow_raw_documents:
         return "privacy_mismatch"
@@ -349,6 +369,7 @@ def get_assistant_provider(
         "provider_mismatch": "Desteklenen asistan sağlayıcısı yapılandırılmadı.",
         "model_mismatch": "Desteklenen Claude Sonnet modeli yapılandırılmadı.",
         "api_key_missing": "Anthropic API anahtarı yapılandırılmadı.",
+        "api_key_misnamed": "Anthropic API anahtarı beklenen değişken adında değil.",
         "privacy_mismatch": "Asistan gizlilik ayarları güvenli değil.",
     }
     return DisabledProvider(messages[configuration_state])
@@ -366,6 +387,82 @@ def assistant_status() -> AssistantStatusResponse:
         model_family="sonnet",
         model_label="Claude Sonnet",
         capabilities=list(ACTIVE_CAPABILITIES),
+        open_access=settings.open_access,
+    )
+
+
+_CONFIGURATION_STATE_DETAILS: dict[str, str] = {
+    "disabled": "Asistan sunucu tarafından devre dışı bırakıldı.",
+    "provider_mismatch": "EXCELBASE_ASSISTANT_PROVIDER değeri 'anthropic' olmalı.",
+    "model_mismatch": (
+        "EXCELBASE_ASSISTANT_MODEL desteklenen bir Claude Sonnet modeli olmalı."
+    ),
+    "api_key_missing": "ANTHROPIC_API_KEY ortam değişkeni tanımlı değil.",
+    "privacy_mismatch": "Asistan gizlilik ayarları güvenli değil.",
+}
+
+
+def _api_key_misnamed_detail() -> str:
+    found = ", ".join(misnamed_anthropic_key_variables())
+    return (
+        f"Anahtar {found} değişkeninde tanımlı; bu servis yalnızca "
+        f"{ANTHROPIC_API_KEY_VARIABLE} adını okur. Değişkeni yeniden adlandırın."
+    )
+
+
+async def assistant_diagnostics(actor_id: str) -> AssistantDiagnosticsResponse:
+    """Verify the deployment end to end without spending the daily budget.
+
+    Configuration is checked locally first; only a fully configured deployment
+    reaches Anthropic, and it does so through the free token-counting endpoint.
+    The response carries a fixed reason vocabulary plus opaque upstream
+    identifiers -- never the API key, the model id or any prompt content.
+    """
+    settings = assistant_settings()
+    configuration_state = assistant_configuration_state(settings)
+    if configuration_state != "ready":
+        detail = (
+            _api_key_misnamed_detail()
+            if configuration_state == "api_key_misnamed"
+            else _CONFIGURATION_STATE_DETAILS[configuration_state]
+        )
+        return AssistantDiagnosticsResponse(
+            configuration_state=configuration_state,
+            reachable=False,
+            reason="not_configured",
+            detail=detail,
+        )
+
+    # A probe is free upstream but still opens a socket, so it stays behind the
+    # same per-actor burst limit as a billable turn.
+    guard = _assistant_guard(settings)
+    guard.reserve_minute(actor_id)
+
+    provider = get_assistant_provider(settings)
+    started = time.monotonic()
+    probe = await provider.probe()
+    duration_ms = round((time.monotonic() - started) * 1000)
+
+    logger.info(
+        "assistant diagnostics actor_id=%s reachable=%s reason=%s upstream_status=%s "
+        "upstream_error_type=%s upstream_request_id=%s duration_ms=%d",
+        actor_id,
+        probe.ok,
+        probe.kind,
+        probe.status_code or "-",
+        probe.error_type or "-",
+        probe.upstream_request_id or "-",
+        duration_ms,
+    )
+    return AssistantDiagnosticsResponse(
+        configuration_state=configuration_state,
+        reachable=probe.ok,
+        reason=probe.kind,
+        detail=probe.detail,
+        upstream_status=probe.status_code,
+        upstream_error_type=probe.error_type,
+        upstream_request_id=probe.upstream_request_id,
+        duration_ms=duration_ms,
     )
 
 

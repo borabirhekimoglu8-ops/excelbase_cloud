@@ -5,6 +5,7 @@ import {
   fetchAssistantStatus,
   fetchAssistantSession,
   logoutAssistantSession,
+  runAssistantDiagnostics,
   sendAssistantMessage,
   unlockAssistantSession,
 } from "./client";
@@ -215,6 +216,56 @@ describe("fetchAssistantStatus", () => {
     expect(body.context.metrics.passenger_count).toBe(10);
     expect(JSON.stringify(body)).not.toMatch(
       /api.?key|model|photo_url|passport_(?:number|no)|document_(?:number|url)/i,
+    );
+  });
+});
+
+describe("runAssistantDiagnostics", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const rejectedKey = {
+    configuration_state: "ready",
+    reachable: false,
+    reason: "auth",
+    detail: "Anthropic API anahtarı reddedildi.",
+    upstream_status: 401,
+    upstream_error_type: "authentication_error",
+    upstream_request_id: "req_upstream_123",
+    duration_ms: 180,
+  };
+
+  it("proves the CSRF token and reports why the upstream refused", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => rejectedKey });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const report = await runAssistantDiagnostics("csrf-token");
+
+    expect(report.reachable).toBe(false);
+    expect(report.reason).toBe("auth");
+    expect(report.upstream_status).toBe(401);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/assistant/v1/diagnostics",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { Accept: "application/json", "X-CSRF-Token": "csrf-token" },
+      }),
+    );
+    // A diagnostics call must never carry the conversation or the vault.
+    expect((fetchMock.mock.calls[0][1] as RequestInit).body).toBeUndefined();
+  });
+
+  it("rejects a report whose reason is outside the server contract", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ...rejectedKey, reason: "leaked_api_key" }),
+    }));
+
+    await expect(runAssistantDiagnostics("csrf-token")).rejects.toThrow(
+      "Asistan denetim yanıtı geçersiz.",
     );
   });
 });

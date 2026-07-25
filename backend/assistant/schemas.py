@@ -61,6 +61,7 @@ class AssistantStatusResponse(BaseModel):
         "provider_mismatch",
         "model_mismatch",
         "api_key_missing",
+        "api_key_misnamed",
         "privacy_mismatch",
     ]
     online_required: bool = True
@@ -68,6 +69,51 @@ class AssistantStatusResponse(BaseModel):
     model_family: Literal["sonnet"] = "sonnet"
     model_label: Literal["Claude Sonnet"] = "Claude Sonnet"
     capabilities: list[AssistantCapability]
+    # True when this deployment answers without an access code. Not a secret:
+    # any visitor discovers it by loading the page, and the owner needs to see
+    # that their Anthropic budget is publicly reachable.
+    open_access: bool = False
+
+
+class AssistantDiagnosticsResponse(BaseModel):
+    """Operator readiness check for an authenticated Sonnet session.
+
+    Every field is either a fixed enum value or an opaque upstream identifier.
+    The API key, the provider model id and all prompt content are deliberately
+    absent, so this response is safe to show in the workspace UI.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    configuration_state: Literal[
+        "ready",
+        "disabled",
+        "provider_mismatch",
+        "model_mismatch",
+        "api_key_missing",
+        "api_key_misnamed",
+        "privacy_mismatch",
+    ]
+    reachable: bool
+    reason: Literal[
+        "ok",
+        "not_configured",
+        "auth",
+        "permission",
+        "model",
+        "request",
+        "rate_limit",
+        "timeout",
+        "network",
+        "upstream",
+        "response",
+        "unknown",
+    ]
+    detail: str = Field(default="", max_length=400)
+    upstream_status: int = Field(default=0, ge=0, le=599)
+    upstream_error_type: str = Field(default="", max_length=64)
+    upstream_request_id: str = Field(default="", max_length=200)
+    duration_ms: int = Field(default=0, ge=0, le=600_000)
 
 
 class AssistantSessionResponse(BaseModel):

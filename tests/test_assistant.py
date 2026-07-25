@@ -12,6 +12,8 @@ from starlette.requests import Request
 
 from backend.assistant.anthropic_provider import AnthropicProvider
 from backend.assistant.provider import (
+    AssistantConfigurationError,
+    AssistantProviderError,
     AssistantUnavailableError,
     DisabledProvider,
     ProviderMessage,
@@ -26,6 +28,7 @@ from backend.assistant.schemas import (
     AssistantUsage,
 )
 from backend.assistant.service import (
+    SUPPORTED_SONNET_MODELS,
     AssistantQuotaError,
     bounded_amount,
     bounded_int,
@@ -44,7 +47,11 @@ from backend.auth import (
     require_assistant_session,
     require_bootstrap_token,
 )
-from backend.config import AssistantSettings, assistant_settings
+from backend.config import (
+    ANTHROPIC_API_KEY_ALIASES,
+    AssistantSettings,
+    assistant_settings,
+)
 from backend.main import app
 
 
@@ -82,6 +89,7 @@ def test_public_status_reports_readiness_and_never_leaks_provider_configuration(
         "model_family": "sonnet",
         "model_label": "Claude Sonnet",
         "capabilities": list(ACTIVE_CAPABILITIES),
+        "open_access": False,
     }
     serialized = response.text.lower()
     assert secret not in serialized
@@ -563,3 +571,491 @@ def test_scrypt_login_guard_rejects_excess_concurrency_before_auth_state(monkeyp
     with pytest.raises(HTTPException) as saturated:
         auth.authenticate("123456", client_key="saturated-test-client")
     assert saturated.value.status_code == 429
+
+
+class _UpstreamStatusError(Exception):
+    """Minimal stand-in for anthropic.APIStatusError.
+
+    Carries the same public surface the adapter is allowed to read: a status
+    code, the provider's error-type slug, an opaque request id and a message
+    that must never reach the client or the logs.
+    """
+
+    def __init__(self, status_code: int, error_type: str) -> None:
+        super().__init__("upstream detail with prompt echo: Durumu özetle")
+        self.status_code = status_code
+        self.type = error_type
+        self.request_id = "req_upstream_123"
+
+
+def _failing_provider(exc: Exception, *, model: str = "claude-sonnet-5") -> AnthropicProvider:
+    class FakeMessages:
+        async def create(self, **kwargs):
+            raise exc
+
+        async def count_tokens(self, **kwargs):
+            raise exc
+
+    class FakeClient:
+        messages = FakeMessages()
+
+        async def close(self):
+            return None
+
+    settings = AssistantSettings(
+        enabled=True,
+        provider="anthropic",
+        model=model,
+        api_key="server-secret",
+    )
+    return AnthropicProvider(settings, client_factory=lambda **kwargs: FakeClient())
+
+
+def _generate(provider: AnthropicProvider):
+    return provider.generate(ProviderRequest(
+        messages=(
+            ProviderMessage(role="system", content="Kurumsal yanıt ver."),
+            ProviderMessage(role="user", content="Durumu özetle"),
+        ),
+        max_output_tokens=500,
+    ))
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_type", "expected_kind"),
+    [
+        (401, "authentication_error", "auth"),
+        (403, "permission_error", "permission"),
+        (404, "not_found_error", "model"),
+    ],
+)
+def test_rejected_credentials_raise_an_actionable_configuration_error(
+    status_code,
+    error_type,
+    expected_kind,
+):
+    provider = _failing_provider(_UpstreamStatusError(status_code, error_type))
+
+    with pytest.raises(AssistantConfigurationError) as failure:
+        asyncio.run(_generate(provider))
+
+    diagnostic = failure.value.diagnostic
+    assert diagnostic.kind == expected_kind
+    assert diagnostic.status_code == status_code
+    assert diagnostic.error_type == error_type
+    assert diagnostic.upstream_request_id == "req_upstream_123"
+    # The operator gets a fix, not a retry prompt, and never the upstream body.
+    assert "Durumu özetle" not in str(failure.value)
+    assert "prompt echo" not in diagnostic.as_log_fields()
+
+
+def test_upstream_outage_stays_generic_but_still_carries_a_diagnostic():
+    provider = _failing_provider(_UpstreamStatusError(500, "api_error"))
+
+    with pytest.raises(AssistantProviderError) as failure:
+        asyncio.run(_generate(provider))
+
+    assert not isinstance(failure.value, AssistantConfigurationError)
+    assert str(failure.value) == "Claude Sonnet request failed."
+    assert failure.value.diagnostic.kind == "upstream"
+    assert failure.value.diagnostic.status_code == 500
+
+
+def test_unreachable_provider_is_classified_as_a_network_failure():
+    provider = _failing_provider(OSError("dns lookup failed"))
+
+    with pytest.raises(AssistantProviderError) as failure:
+        asyncio.run(_generate(provider))
+
+    assert failure.value.diagnostic.kind == "network"
+    assert failure.value.diagnostic.status_code == 0
+    assert "dns lookup failed" not in str(failure.value)
+
+
+def test_hostile_upstream_error_fields_are_rejected_before_logging():
+    hostile = _UpstreamStatusError(500, "api_error\ninjected log line")
+    hostile.request_id = "x" * 400
+    provider = _failing_provider(hostile)
+
+    with pytest.raises(AssistantProviderError) as failure:
+        asyncio.run(_generate(provider))
+
+    assert failure.value.diagnostic.error_type == ""
+    assert failure.value.diagnostic.upstream_request_id == ""
+
+
+def test_probe_verifies_credentials_without_spending_output_tokens():
+    counted: list[dict] = []
+
+    class FakeMessages:
+        async def create(self, **kwargs):
+            raise AssertionError("a probe must never bill a completion")
+
+        async def count_tokens(self, **kwargs):
+            counted.append(kwargs)
+            return SimpleNamespace(input_tokens=7)
+
+    class FakeClient:
+        messages = FakeMessages()
+
+        async def close(self):
+            return None
+
+    settings = AssistantSettings(
+        enabled=True,
+        provider="anthropic",
+        model="claude-sonnet-5",
+        api_key="server-secret",
+    )
+    provider = AnthropicProvider(settings, client_factory=lambda **kwargs: FakeClient())
+
+    probe = asyncio.run(provider.probe())
+
+    assert probe.ok is True
+    assert probe.kind == "ok"
+    assert counted == [{
+        "model": "claude-sonnet-5",
+        "messages": [{"role": "user", "content": "ping"}],
+    }]
+
+
+def test_probe_reports_a_rejected_key_instead_of_an_outage():
+    provider = _failing_provider(_UpstreamStatusError(401, "authentication_error"))
+
+    probe = asyncio.run(provider.probe())
+
+    assert probe.ok is False
+    assert probe.kind == "auth"
+    assert probe.status_code == 401
+    assert probe.error_type == "authentication_error"
+    assert "ANTHROPIC_API_KEY" in probe.detail
+
+
+def test_diagnostics_endpoint_reports_configuration_gaps_without_calling_out(monkeypatch):
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    reset_assistant_runtime()
+
+    app.dependency_overrides[require_assistant_session] = lambda: Actor(
+        id="actor-1",
+        name="Operasyon",
+        role="admin",
+    )
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/assistant/v1/diagnostics")
+    finally:
+        app.dependency_overrides.pop(require_assistant_session, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configuration_state"] == "api_key_missing"
+    assert body["reachable"] is False
+    assert body["reason"] == "not_configured"
+    assert "ANTHROPIC_API_KEY" in body["detail"]
+
+
+def test_diagnostics_endpoint_surfaces_a_rejected_key_and_hides_the_secret(monkeypatch):
+    secret = "anthropic-secret-must-never-leak"
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
+    reset_assistant_runtime()
+
+    provider = _failing_provider(_UpstreamStatusError(401, "authentication_error"))
+    monkeypatch.setattr(
+        "backend.assistant.service.get_assistant_provider",
+        lambda settings=None: provider,
+    )
+
+    app.dependency_overrides[require_assistant_session] = lambda: Actor(
+        id="actor-1",
+        name="Operasyon",
+        role="admin",
+    )
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/assistant/v1/diagnostics")
+    finally:
+        app.dependency_overrides.pop(require_assistant_session, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configuration_state"] == "ready"
+    assert body["reachable"] is False
+    assert body["reason"] == "auth"
+    assert body["upstream_status"] == 401
+    assert body["upstream_error_type"] == "authentication_error"
+    assert secret not in response.text
+    assert "claude-sonnet-5" not in response.text
+
+
+def test_supported_sonnet_models_cover_the_served_family_and_exclude_other_tiers():
+    assert "claude-sonnet-5" in SUPPORTED_SONNET_MODELS
+    assert "claude-sonnet-4-6" in SUPPORTED_SONNET_MODELS
+    assert not any(
+        model.startswith(("claude-opus", "claude-haiku"))
+        for model in SUPPORTED_SONNET_MODELS
+    )
+
+
+def test_quoted_api_key_paste_is_repaired_instead_of_failing_upstream(monkeypatch):
+    """Render keeps surrounding quotes verbatim, which upstream rejects as 401."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", '"sk-ant-quoted-value"')
+    assert assistant_settings().api_key == "sk-ant-quoted-value"
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "  sk-ant-padded-value\n")
+    assert assistant_settings().api_key == "sk-ant-padded-value"
+
+
+def test_key_under_a_wrong_variable_name_is_reported_as_a_rename(monkeypatch):
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("CLAUDE_API_KEY", "sk-ant-misplaced")
+
+    with TestClient(app) as client:
+        response = client.get("/api/assistant/v1/status")
+
+    assert response.status_code == 200
+    assert response.json()["available"] is False
+    assert response.json()["configuration_state"] == "api_key_misnamed"
+    # The public endpoint states the misconfiguration, never the secret.
+    assert "sk-ant-misplaced" not in response.text
+
+
+def test_no_key_anywhere_still_reports_the_plain_missing_state(monkeypatch):
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    for alias in ANTHROPIC_API_KEY_ALIASES:
+        monkeypatch.delenv(alias, raising=False)
+
+    with TestClient(app) as client:
+        response = client.get("/api/assistant/v1/status")
+
+    assert response.json()["configuration_state"] == "api_key_missing"
+
+
+def test_misnamed_key_diagnostics_name_the_variable_without_its_value(monkeypatch):
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTROPIC_API_KEY", "sk-ant-typo-name")
+    reset_assistant_runtime()
+
+    app.dependency_overrides[require_assistant_session] = lambda: Actor(
+        id="actor-1",
+        name="Operasyon",
+        role="admin",
+    )
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/assistant/v1/diagnostics")
+    finally:
+        app.dependency_overrides.pop(require_assistant_session, None)
+
+    body = response.json()
+    assert body["configuration_state"] == "api_key_misnamed"
+    assert body["reason"] == "not_configured"
+    assert "ANTROPIC_API_KEY" in body["detail"]
+    assert "ANTHROPIC_API_KEY" in body["detail"]
+    assert "sk-ant-typo-name" not in response.text
+
+
+def test_wrong_access_code_is_rejected_with_a_reason_the_form_can_show(monkeypatch):
+    """The pairing form renders the server detail verbatim, so it must be exact."""
+    from backend import auth
+
+    monkeypatch.setattr(
+        auth,
+        "_auth_state",
+        lambda: SimpleNamespace(auth={"session_secret": "s", "users": []}, database_backed=False),
+    )
+
+    with pytest.raises(HTTPException) as rejected:
+        auth.authenticate("123456", client_key="wrong-code-test")
+
+    assert rejected.value.status_code == 401
+    assert rejected.value.detail == "Erişim kodu hatalı."
+
+
+def test_short_access_code_is_rejected_before_any_hashing(monkeypatch):
+    from backend import auth
+
+    monkeypatch.setattr(
+        auth,
+        "_auth_state",
+        lambda: (_ for _ in ()).throw(AssertionError("auth state must not be loaded")),
+    )
+
+    with pytest.raises(HTTPException) as rejected:
+        auth.authenticate("123", client_key="short-code-test")
+
+    assert rejected.value.status_code == 422
+    assert rejected.value.detail == "Erişim kodu en az 6 karakter olmalıdır."
+
+
+def _open_access_env(monkeypatch) -> None:
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "server-secret")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_OPEN_ACCESS", "1")
+
+
+def test_open_access_connects_sonnet_without_an_access_code(monkeypatch):
+    _open_access_env(monkeypatch)
+    reset_assistant_runtime()
+
+    with TestClient(app) as client:
+        session = client.get("/api/assistant/v1/session")
+
+    assert session.status_code == 200
+    body = session.json()
+    # The workspace renders the pairing form only while this is false.
+    assert body["authenticated"] is True
+    assert body["setup_required"] is False
+    assert body["csrf_token"]
+    assert ASSISTANT_SESSION_COOKIE in session.cookies
+
+    with TestClient(app) as client:
+        status_body = client.get("/api/assistant/v1/status").json()
+    assert status_body["open_access"] is True
+
+
+def test_open_access_session_still_proves_csrf_and_origin(monkeypatch):
+    """Dropping the access code must not drop the remaining request checks."""
+    _open_access_env(monkeypatch)
+    reset_assistant_runtime()
+
+    with TestClient(app, base_url="https://excelbase.test") as client:
+        session = client.get("/api/assistant/v1/session").json()
+
+        without_csrf = client.post(
+            "/api/assistant/v1/chat",
+            json=_chat_payload(),
+            headers={"Origin": "https://excelbase.test"},
+        )
+        foreign_origin = client.post(
+            "/api/assistant/v1/chat",
+            json=_chat_payload(),
+            headers={
+                "Origin": "https://attacker.example",
+                "X-CSRF-Token": session["csrf_token"],
+            },
+        )
+
+    assert without_csrf.status_code == 403
+    assert foreign_origin.status_code == 403
+
+
+def test_turning_open_access_off_revokes_tokens_already_issued(monkeypatch):
+    _open_access_env(monkeypatch)
+    reset_assistant_runtime()
+
+    with TestClient(app) as client:
+        opened = client.get("/api/assistant/v1/session")
+        assert opened.json()["authenticated"] is True
+        token = opened.cookies[ASSISTANT_SESSION_COOKIE]
+
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_OPEN_ACCESS", "0")
+
+    with TestClient(app) as client:
+        client.cookies.set(ASSISTANT_SESSION_COOKIE, token, path=ASSISTANT_SESSION_PATH)
+        closed = client.get("/api/assistant/v1/session")
+
+    assert closed.json()["authenticated"] is False
+
+
+def test_open_access_actor_cannot_authorize_the_legacy_application_api(monkeypatch):
+    """The shared identity is Sonnet-only; it must not unlock passenger data."""
+    _open_access_env(monkeypatch)
+    monkeypatch.setenv("GATEVISA_REQUIRE_AUTH", "1")
+
+    from backend import auth
+
+    with TestClient(app) as client:
+        session = client.get("/api/assistant/v1/session")
+        token = session.cookies[ASSISTANT_SESSION_COOKIE]
+
+    # The same token under the application audience resolves to nobody.
+    assert auth._actor_from_token(token, audience="app") is None
+    assert auth._actor_from_token(token, audience="assistant") == auth.OPEN_ACCESS_ACTOR
+
+
+def test_open_access_shares_one_quota_bucket_across_visitors(monkeypatch):
+    """A shared identity caps total spend instead of resetting per visitor."""
+    _open_access_env(monkeypatch)
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_REQUESTS_PER_MINUTE", "1")
+    reset_assistant_runtime()
+
+    class FakeProvider:
+        name = "fake"
+        available = True
+        calls = 0
+
+        async def generate(self, request):
+            type(self).calls += 1
+            return ProviderResult(text="Tamam", input_tokens=1, output_tokens=1)
+
+    monkeypatch.setattr(
+        "backend.assistant.service.get_assistant_provider",
+        lambda settings=None: FakeProvider(),
+    )
+    payload = AssistantChatRequest.model_validate(_chat_payload())
+    from backend.auth import OPEN_ACCESS_ACTOR
+
+    async def exercise():
+        await generate_assistant_reply(
+            payload, actor_id=OPEN_ACCESS_ACTOR.id, request_id="open-one"
+        )
+        # A second browser presents the same actor id, so the burst limit holds.
+        with pytest.raises(AssistantQuotaError):
+            await generate_assistant_reply(
+                payload, actor_id=OPEN_ACCESS_ACTOR.id, request_id="open-two"
+            )
+
+    asyncio.run(exercise())
+    assert FakeProvider.calls == 1
+
+
+def test_open_access_browser_flow_reaches_sonnet_with_no_login_step(monkeypatch):
+    """The whole sequence a freshly loaded workspace performs, end to end."""
+    _open_access_env(monkeypatch)
+    reset_assistant_runtime()
+
+    class FakeProvider:
+        name = "fake"
+        available = True
+
+        async def generate(self, request):
+            return ProviderResult(text="12 yolcunun %75'i hazır.", input_tokens=80, output_tokens=14)
+
+    monkeypatch.setattr(
+        "backend.assistant.service.get_assistant_provider",
+        lambda settings=None: FakeProvider(),
+    )
+
+    with TestClient(app, base_url="https://excelbase.test") as client:
+        status_body = client.get("/api/assistant/v1/status").json()
+        session = client.get("/api/assistant/v1/session").json()
+        reply = client.post(
+            "/api/assistant/v1/chat",
+            json=_chat_payload(),
+            headers={
+                "Origin": "https://excelbase.test",
+                "X-CSRF-Token": session["csrf_token"],
+            },
+        )
+
+    assert status_body["available"] is True
+    assert session["authenticated"] is True
+    assert reply.status_code == 200
+    assert reply.json()["message"] == "12 yolcunun %75'i hazır."

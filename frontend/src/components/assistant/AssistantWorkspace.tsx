@@ -18,9 +18,11 @@ import {
   fetchAssistantSession,
   fetchAssistantStatus,
   logoutAssistantSession,
+  runAssistantDiagnostics,
   sendAssistantMessage,
   unlockAssistantSession,
 } from "@/lib/assistant/client";
+import type { AssistantDiagnostics } from "@/lib/assistant/client";
 import { buildAssistantContext } from "@/lib/assistant/context";
 import {
   ASSISTANT_MESSAGE_MAX_CHARS,
@@ -68,7 +70,11 @@ const CONFIGURATION_MESSAGES: Record<
   },
   api_key_missing: {
     title: "Anthropic anahtarı bu serviste görünmüyor",
-    body: "ANTHROPIC_API_KEY değişkenini excelbase Web Service ortamına ekleyip yeniden deploy edin; excelbase-v8 ayrı servistir.",
+    body: "Render → excelbase (Web Service) → Environment ekranında ANTHROPIC_API_KEY ekleyin ve Manual Deploy ile yeniden başlatın. Anahtarı excelbase-v8 servisine veya bir Secret File'a eklemek işe yaramaz; değişken adı birebir ANTHROPIC_API_KEY olmalıdır.",
+  },
+  api_key_misnamed: {
+    title: "Anthropic anahtarı farklı bir değişken adında",
+    body: "Bu serviste anahtar benzeri bir değişken var ama adı ANTHROPIC_API_KEY değil. Render → excelbase → Environment ekranında değişkeni tam olarak ANTHROPIC_API_KEY adıyla tanımlayıp yeniden deploy edin.",
   },
   privacy_mismatch: {
     title: "Gizlilik koruması doğrulanamadı",
@@ -89,13 +95,29 @@ function newMessage(
   };
 }
 
-function friendlyError(error: unknown): string {
+/**
+ * While signing in, 401 and 429 describe the submitted credentials, not an
+ * established session: the server already says "access code is wrong" or "too
+ * many attempts". Overriding those with session-lifecycle wording tells the
+ * operator to reconnect at the exact moment they are trying to connect, and
+ * hides the only sentence that explains the rejection.
+ */
+type AssistantErrorContext = "session" | "login";
+
+function friendlyError(error: unknown, context: AssistantErrorContext = "session"): string {
   if (error instanceof DOMException && error.name === "AbortError") {
     return "Yanıt durduruldu.";
   }
   if (error instanceof AssistantClientError) {
-    if (error.status === 401) return "Çevrimiçi asistan oturumu sona erdi. Yeniden bağlanın.";
+    if (error.status === 401) {
+      return context === "login"
+        ? error.message || "Erişim kodu hatalı."
+        : "Çevrimiçi asistan oturumu sona erdi. Yeniden bağlanın.";
+    }
     if (error.status === 429) {
+      if (context === "login") {
+        return error.message || "Çok fazla hatalı deneme. Kısa süre sonra tekrar deneyin.";
+      }
       return error.retryAfter > 0
         ? `Kullanım sınırına ulaşıldı. Yaklaşık ${error.retryAfter} saniye sonra tekrar deneyin.`
         : "Kullanım sınırına ulaşıldı. Kısa süre sonra tekrar deneyin.";
@@ -126,6 +148,9 @@ export function AssistantWorkspace({
   const [disconnecting, setDisconnecting] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [diagnostics, setDiagnostics] = useState<AssistantDiagnostics | null>(null);
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState("");
   const requestRef = useRef<AbortController | null>(null);
   const connectionRef = useRef<AbortController | null>(null);
   const connectionSequenceRef = useRef(0);
@@ -233,7 +258,7 @@ export function AssistantWorkspace({
       ));
       formElement.reset();
     } catch (error) {
-      setPairingError(friendlyError(error));
+      setPairingError(friendlyError(error, "login"));
     } finally {
       setPairingBusy(false);
     }
@@ -321,6 +346,20 @@ export function AssistantWorkspace({
     setConversation(emptyAssistantConversation(privacyAcknowledged));
   }
 
+  async function checkDiagnostics() {
+    if (!session?.csrf_token || diagnosticsBusy) return;
+    setDiagnosticsBusy(true);
+    setDiagnosticsError("");
+    try {
+      setDiagnostics(await runAssistantDiagnostics(session.csrf_token));
+    } catch (error) {
+      setDiagnostics(null);
+      setDiagnosticsError(friendlyError(error));
+    } finally {
+      setDiagnosticsBusy(false);
+    }
+  }
+
   async function disconnectSession() {
     if (!session?.csrf_token || disconnecting) return;
     setDisconnecting(true);
@@ -384,7 +423,9 @@ export function AssistantWorkspace({
           </strong>
           <small>
             {ready && online
-              ? "Uygulama içinden güvenli, salt okunur sohbet"
+              ? status?.open_access
+                ? "Erişim kodu istenmiyor · bu adrese ulaşan herkes kullanabilir"
+                : "Uygulama içinden güvenli, salt okunur sohbet"
               : "Yerel kasa ve çevrimdışı mod çalışmaya devam eder"}
           </small>
         </div>
@@ -494,6 +535,42 @@ export function AssistantWorkspace({
           <h2>Bağlantı kurulamadı</h2>
           <p>{connectionError}</p>
           <button type="button" onClick={() => void refreshConnection()}>TEKRAR DENE</button>
+        </section>
+      )}
+
+      {/* Yapılandırma "hazır" göründüğü hâlde yanıt alınamadığında, sorunun
+          anahtar mı, model mi, ağ mı olduğunu ücretsiz bir denetimle gösterir. */}
+      {ready && (sendError || diagnostics || diagnosticsError) && (
+        <section
+          className={`assistant-state-card${diagnostics && !diagnostics.reachable ? " warning" : ""}`}
+        >
+          <p>SUNUCU DENETİMİ</p>
+          <h2>
+            {diagnostics
+              ? diagnostics.reachable
+                ? "Anthropic bağlantısı doğrulandı"
+                : "Anthropic bağlantısı doğrulanamadı"
+              : "Sonnet yanıt vermiyor mu?"}
+          </h2>
+          <p>
+            {diagnosticsError
+              || diagnostics?.detail
+              || "Anthropic anahtarını ve modelini token harcamadan sınayın."}
+          </p>
+          {diagnostics && !diagnostics.reachable && diagnostics.upstream_status > 0 && (
+            <p className="assistant-diagnostics-meta">
+              {`HTTP ${diagnostics.upstream_status}`}
+              {diagnostics.upstream_error_type ? ` · ${diagnostics.upstream_error_type}` : ""}
+              {diagnostics.upstream_request_id ? ` · ${diagnostics.upstream_request_id}` : ""}
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={diagnosticsBusy || sending}
+            onClick={() => void checkDiagnostics()}
+          >
+            {diagnosticsBusy ? "DENETLENİYOR…" : "BAĞLANTIYI DENETLE"}
+          </button>
         </section>
       )}
 
