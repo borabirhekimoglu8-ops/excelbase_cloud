@@ -5,6 +5,8 @@ import {
   canonicalDate,
   filterPassengers,
   passengerIdentity,
+  resolvedRecordStatus,
+  rowIssues,
   type StoredPassenger,
 } from "./domain";
 
@@ -113,6 +115,27 @@ describe("offline passenger domain", () => {
       passenger_ids: [1, 2],
     });
     expect(result.groups[1]).toMatchObject({ draft_count: 1, passenger_ids: [3] });
+  });
+
+  it("tek birleşik PDF ile zorunlu evrak kapsamını tamamlar", () => {
+    const row = passenger({
+      record_status: "ready",
+      photo: "photo:1",
+      documents: [{
+        id: "complete-bundle",
+        filename: "toplu-evrak.pdf",
+        mime: "application/pdf",
+        size: 1200,
+        created_at: "2026-07-17T08:00:00.000Z",
+        category: "complete_bundle",
+      }],
+    });
+
+    const issues = rowIssues(row, new Set());
+
+    expect(issues).not.toContain("Pasaport PDF yok");
+    expect(issues).not.toContain("Başvuru formu PDF yok");
+    expect(resolvedRecordStatus(row, issues)).toBe("ready");
   });
 
   it("kayıt tarihi bilinmeyen eski yolcuyu Tarihsiz klasöründe korur", () => {

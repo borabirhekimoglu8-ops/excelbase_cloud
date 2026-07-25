@@ -229,6 +229,24 @@ describe("local offline API", () => {
       .toBe("application_form");
   });
 
+  it("tek birleşik PDF kategorisini şifreli kasada dosyasıyla birlikte korur", async () => {
+    await localQueueImportFile(workbookFile("toplu.xlsx", "Toplu Evrak", "PKG12345"), false, "skip", "pkg", "pkg-job");
+    const passengerId = (await localPassengers())[0].id;
+
+    const documents = await localUploadPassengerDocuments(
+      passengerId,
+      [pdfFile("tum-evraklar.pdf", "pasaport ve başvuru formu")],
+      "complete_bundle",
+    );
+    const bundle = documents.find((document) => document.category === "complete_bundle");
+
+    expect(bundle).toMatchObject({ filename: "tum-evraklar.pdf", category: "complete_bundle" });
+    expect((await localPassengerDocumentFile(passengerId, bundle!.id)).metadata.category)
+      .toBe("complete_bundle");
+    expect(await (await localPassengerDocumentFile(passengerId, bundle!.id)).blob.text())
+      .toContain("pasaport ve başvuru formu");
+  });
+
   it("overwrite aktarımı mevcut kayıt tarihi ve oluşturan bilgisini korur", async () => {
     await localQueueImportFile(
       workbookFile("ilk.xlsx", "İlk Yolcu", "KEEP1234"),

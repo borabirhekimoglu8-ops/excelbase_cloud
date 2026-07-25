@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AuthGate, useAuth } from "@/lib/auth";
 import { StoreProvider, useStore } from "@/lib/store";
 import { AppHeaderHome, AppHeaderScreen } from "@/components/ido/AppHeader";
@@ -28,6 +28,11 @@ import { PassengerRecordForm } from "@/components/PassengerRecordForm";
 import { RecordsTab } from "@/components/tabs/RecordsTab";
 import { WorkFileForm } from "@/components/WorkFileForm";
 import { WorkFileDetail } from "@/components/WorkFileDetail";
+import {
+  LAYOUT_PREFERENCE_KEY,
+  LayoutPreference,
+  parseLayoutPreference,
+} from "@/lib/layoutPreference";
 
 type RootScreen = {
   kind: "root";
@@ -71,6 +76,24 @@ function Shell() {
   const [assistantConversation, setAssistantConversation] = useState<AssistantConversationState>(
     () => emptyAssistantConversation(),
   );
+  const [layoutPreference, setLayoutPreference] = useState<LayoutPreference>("auto");
+
+  useEffect(() => {
+    try {
+      setLayoutPreference(parseLayoutPreference(window.localStorage.getItem(LAYOUT_PREFERENCE_KEY)));
+    } catch {
+      setLayoutPreference("auto");
+    }
+  }, []);
+
+  function updateLayoutPreference(nextPreference: LayoutPreference) {
+    setLayoutPreference(nextPreference);
+    try {
+      window.localStorage.setItem(LAYOUT_PREFERENCE_KEY, nextPreference);
+    } catch {
+      // Özel tarama localStorage erişimini engellese de görünüm bu oturumda çalışır.
+    }
+  }
 
   function goRoot(tab: PrimaryNavKey, extras: Partial<RootScreen> = {}) {
     setScreen({ kind: "root", tab, ...extras });
@@ -137,8 +160,8 @@ function Shell() {
   const stickyContent = screen.kind === "import" || screen.kind === "new-passenger" || screen.kind === "new-work-file";
 
   return (
-    <div className="ido-app">
-      <div className={`ido-frame${screen.kind === "assistant" ? " assistant-mode" : ""}`}>
+    <div className={`ido-app layout-${layoutPreference}`}>
+      <div className={`ido-frame${screen.kind === "assistant" ? " assistant-mode" : ""}${bottomNavActive ? " has-primary-nav" : ""}`}>
         {screen.kind === "root" && screen.tab === "home" && (
           <AppHeaderHome
             onAssistant={openAssistant}
@@ -265,7 +288,11 @@ function Shell() {
             />
           )}
           {screen.kind === "settings" && (
-            <SettingsTab onOpen={(sub) => setScreen({ kind: "settings-sub", sub })} />
+            <SettingsTab
+              layoutPreference={layoutPreference}
+              onLayoutPreferenceChange={updateLayoutPreference}
+              onOpen={(sub) => setScreen({ kind: "settings-sub", sub })}
+            />
           )}
           {screen.kind === "settings-sub" && screen.sub === "issues" && <IssuesTab />}
           {screen.kind === "settings-sub" && screen.sub === "gallery" && <GalleryTab />}

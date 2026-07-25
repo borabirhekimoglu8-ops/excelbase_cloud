@@ -187,7 +187,8 @@ test("manuel yolcu kaydı günlük klasörde ve Yolcular ekranında kalıcıdır
   });
   await expect(page.getByAltText("Seçilen biyometrik fotoğraf")).toBeVisible();
 
-  await page.locator('input[type="file"][multiple][accept*=".pdf"]').setInputFiles([
+  await page.getByRole("button", { name: /AYRI EVRAKLAR/ }).click();
+  await page.getByLabel("Ayrı PDF evrakları seç").setInputFiles([
     {
       name: "TR7654321-pasaport.pdf",
       mimeType: "application/pdf",
@@ -229,6 +230,69 @@ test("manuel yolcu kaydı günlük klasörde ve Yolcular ekranında kalıcıdır
   await expect(page.getByText("ECE DENİZ", { exact: true })).toBeVisible();
   await expect(page.locator(".ic-row-meta").filter({ hasText: "2 PDF" })).toBeVisible();
   await context.setOffline(false);
+});
+
+test("manuel yolcu kaydı tek birleşik PDF ile hazır olur", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.locator('input[name="name"]').fill("Toplu Evrak Operatörü");
+  await page.locator('input[name="pin"]').fill("123456");
+  await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
+
+  await openRecordFolders(page);
+  await page.getByRole("button", { name: "+ YENİ YOLCU KAYDI", exact: true }).click();
+  await page.getByLabel("Kayıt tarihi", { exact: true }).fill("2026-07-25");
+  await page.getByLabel("Ad", { exact: true }).fill("ECE");
+  await page.getByLabel("Soyad", { exact: true }).fill("DENİZ");
+  await page.getByLabel("Pasaport No", { exact: true }).fill("TR7654322");
+  await page.getByLabel("Rezervasyon / Voucher", { exact: true }).fill("IDO-TOPLU-1");
+  await page.getByLabel("Gidiş tarihi", { exact: true }).fill("2026-07-26");
+  await page.getByLabel("Varış tarihi", { exact: true }).fill("2026-07-30");
+  await page.getByLabel("Vize ücreti · Yetişkin", { exact: true }).fill("60");
+  await page.locator('input[type="file"][accept*=".jpg"]').setInputFiles({
+    name: "TR7654322-biyometrik.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]),
+  });
+  await page.getByLabel("Tek birleşik evrak PDF'i seç").setInputFiles({
+    name: "TR7654322-toplu-evrak.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.7\nPasaport ve başvuru formu toplu evrakı\n%%EOF"),
+  });
+  await expect(page.getByText("Tek birleşik evrak PDF'i", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "TAMAMLA VE KAYDET", exact: true }).click();
+  await expect(page.getByText("ECE DENİZ", { exact: true })).toBeVisible();
+  await expect(page.locator(".ic-row-meta").filter({ hasText: "1 PDF" })).toBeVisible();
+
+  await openRecordFolders(page);
+  const folder = page.locator(".ic-folder-card").filter({ hasText: "25 Temmuz 2026" });
+  await expect(folder).toContainText("1 yolcu · 1 PDF · 1 JPG");
+  await folder.getByRole("button", { expanded: false }).click();
+  await expect(folder).toContainText("1 HAZIR");
+});
+
+test("otomatik web görünümü bilgisayarda genişler ve telefon tercihi kalıcıdır", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.locator('input[name="name"]').fill("Web Operatörü");
+  await page.locator('input[name="pin"]').fill("123456");
+  await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
+
+  await expect.poll(() => page.locator(".ido-frame").evaluate((element) => element.getBoundingClientRect().width))
+    .toBeGreaterThan(1100);
+  const autoOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(autoOverflow).toBeLessThanOrEqual(1);
+
+  await page.getByRole("button", { name: "Ayarları aç" }).click();
+  await page.getByRole("radio", { name: /Telefon/ }).click();
+  await expect.poll(() => page.locator(".ido-frame").evaluate((element) => element.getBoundingClientRect().width))
+    .toBeLessThanOrEqual(430);
+  await page.getByRole("radio", { name: /Web/ }).click();
+  await expect.poll(() => page.locator(".ido-frame").evaluate((element) => element.getBoundingClientRect().width))
+    .toBeGreaterThan(1100);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("excelbase:layout-preference")))
+    .toBe("desktop");
 });
 
 test("49 Excel dosyası sırayla işlenir ve çevrimdışı soğuk açılışta 49 yolcu kalır", async ({ context, page }) => {

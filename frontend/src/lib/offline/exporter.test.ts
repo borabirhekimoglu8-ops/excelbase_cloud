@@ -265,6 +265,60 @@ describe("ZIP exports", () => {
     expect(delivery.get("teslim-manifestosu.html")).toContain("<b>2</b><span>PDF evrak</span>");
   });
 
+  it("tek birleşik evrak PDF'ini hazır kayıt ve tek arşiv dosyası olarak işler", async () => {
+    const row: ExportPassengerRow = {
+      ...passenger,
+      id: 77,
+      record_date: "2026-07-25",
+      created_at: "2026-07-25T08:00:00.000Z",
+      documents: [{
+        id: "bundle-77",
+        filename: "ece-tum-evraklar.pdf",
+        category: "complete_bundle",
+      }],
+    };
+    const photos = [{
+      passengerId: 77,
+      passengerName: passenger.full_name,
+      passportNo: passenger.passport_no,
+      filename: "biyometrik.jpg",
+      blob: new Blob(["jpeg"], { type: "image/jpeg" }),
+    }];
+    const documents = [{
+      passengerId: 77,
+      passengerName: passenger.full_name,
+      passportNo: passenger.passport_no,
+      category: "complete_bundle" as const,
+      filename: "ece-tum-evraklar.pdf",
+      blob: new Blob(["%PDF-1.7 complete bundle"], { type: "application/pdf" }),
+    }];
+
+    const packageBlob = await createRecordFolderZipBlob([row], photos, {
+      recordDate: "2026-07-25",
+      documents,
+    });
+    const entries = await zipEntries(packageBlob);
+    const root = "2026-07-25_IDO_GATE_VISA/";
+    const passengerRoot = `${root}001_TR123456_AYSE_YILMAZ/`;
+    const bundlePath = `${passengerRoot}Toplu_Evrak_Dosyasi.pdf`;
+
+    expect(entries.map((entry) => entry.filename).filter((filename) => filename === bundlePath))
+      .toHaveLength(1);
+    const contents = await zipContents(packageBlob);
+    expect(contents.get(bundlePath)).toContain("complete bundle");
+    expect(contents.get(`${root}IDO_Kontrol_Listesi.html`)).toContain("HAZIR");
+
+    const missingWorkbook = XLSX.read(
+      await zipEntryBytes(packageBlob, `${root}Eksik_Evrak_Raporu.xlsx`),
+      { type: "array" },
+    );
+    const missingRows = XLSX.utils.sheet_to_json<unknown[]>(
+      missingWorkbook.Sheets["Eksik Evraklar"],
+      { header: 1, defval: "" },
+    );
+    expect(missingRows).toHaveLength(1);
+  });
+
   it("creates an exact no-cap record-date folder with safe passenger JPG and categorized PDFs", async () => {
     const rows: ExportPassengerRow[] = Array.from({ length: 101 }, (_, index) => ({
       ...passenger,
