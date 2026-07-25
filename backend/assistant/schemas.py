@@ -197,11 +197,38 @@ class AssistantSafeContext(BaseModel):
     issues: AssistantContextIssues = Field(default_factory=AssistantContextIssues)
 
 
+class AssistantToolCall(BaseModel):
+    """A capability the model asked the browser to run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=80)
+    input: dict = Field(default_factory=dict)
+    # Mirrors the catalogue so the client cannot be talked into skipping the
+    # approval step by a crafted response.
+    writes: bool = False
+    confirm: bool = False
+
+
+class AssistantToolResult(BaseModel):
+    """The browser's answer, replayed to the model on the next request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool_use_id: str = Field(min_length=1, max_length=200)
+    content: str = Field(default="", max_length=12_000)
+    is_error: bool = False
+
+
 class AssistantChatTurn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=12_000)
+    # Empty on a turn that carries only tool calls or only tool results.
+    content: str = Field(default="", max_length=12_000)
+    tool_calls: list[AssistantToolCall] = Field(default_factory=list, max_length=16)
+    tool_results: list[AssistantToolResult] = Field(default_factory=list, max_length=16)
 
 
 class AssistantChatRequest(BaseModel):
@@ -211,6 +238,9 @@ class AssistantChatRequest(BaseModel):
     history: list[AssistantChatTurn] = Field(default_factory=list, max_length=60)
     context: AssistantSafeContext = Field(default_factory=AssistantSafeContext)
     privacy_acknowledged: Literal[True]
+    # Present when the client is continuing a turn it was asked to act on.
+    # ``message`` is then the original question, replayed unchanged.
+    tool_results: list[AssistantToolResult] = Field(default_factory=list, max_length=16)
 
 
 class AssistantUsage(BaseModel):
@@ -226,3 +256,7 @@ class AssistantChatResponse(BaseModel):
     message: str
     usage: AssistantUsage
     request_id: str
+    # Non-empty means the turn is not finished: the browser must run these
+    # against the local vault and post the results back to continue.
+    tool_calls: list[AssistantToolCall] = Field(default_factory=list)
+    stop_reason: str = Field(default="", max_length=80)

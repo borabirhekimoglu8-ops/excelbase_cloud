@@ -17,6 +17,7 @@ from .provider import (
     ProviderProbe,
     ProviderRequest,
     ProviderResult,
+    ProviderToolCall,
 )
 
 # Anthropic returns a small, fixed vocabulary of error types
@@ -25,6 +26,10 @@ from .provider import (
 # or PII channel.
 _ERROR_TYPE_MAX_LENGTH = 64
 _REQUEST_ID_MAX_LENGTH = 200
+
+
+def usage_of(response: object) -> object:
+    return _attr(response, "usage", {}) or {}
 
 
 def _attr(value: object, name: str, default: object = None) -> object:
@@ -236,14 +241,42 @@ class AnthropicProvider:
         # diagnostic is what makes the failure debuggable.
         raise AssistantProviderError("Claude Sonnet request failed.", diagnostic) from None
 
+    @staticmethod
+    def _message_blocks(message: Any) -> list[dict] | str:
+        """Render one turn, expanding tool calls and results into blocks."""
+        blocks: list[dict] = []
+        for result in message.tool_results:
+            block: dict[str, Any] = {
+                "type": "tool_result",
+                "tool_use_id": result.tool_use_id,
+                "content": result.content,
+            }
+            if result.is_error:
+                block["is_error"] = True
+            blocks.append(block)
+        if message.content:
+            blocks.append({"type": "text", "text": message.content})
+        for call in message.tool_calls:
+            blocks.append(
+                {"type": "tool_use", "id": call.id, "name": call.name, "input": call.input}
+            )
+        # A plain turn stays a plain string so simple conversations keep the
+        # exact request shape they had before tools existed.
+        if len(blocks) == 1 and blocks[0].get("type") == "text":
+            return message.content
+        return blocks
+
     async def generate(self, request: ProviderRequest) -> ProviderResult:
         system_parts: list[str] = []
-        messages: list[dict[str, str]] = []
+        messages: list[dict[str, Any]] = []
         for message in request.messages:
             if message.role == "system":
                 system_parts.append(message.content)
-            else:
-                messages.append({"role": message.role, "content": message.content})
+                continue
+            blocks = self._message_blocks(message)
+            if not blocks:
+                continue
+            messages.append({"role": message.role, "content": blocks})
 
         if not messages:
             raise AssistantProviderError(
@@ -251,16 +284,27 @@ class AnthropicProvider:
                 ProviderDiagnostic(kind="request"),
             )
 
+        parameters: dict[str, Any] = {
+            "model": self._settings.model,
+            "max_tokens": min(request.max_output_tokens, self._settings.max_output_tokens),
+            "system": "\n\n".join(system_parts),
+            "messages": messages,
+        }
+        if request.tools:
+            parameters["tools"] = [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.input_schema,
+                }
+                for tool in request.tools
+            ]
+
         client: Any | None = None
         try:
             client = self._client()
             response = await asyncio.wait_for(
-                client.messages.create(
-                    model=self._settings.model,
-                    max_tokens=min(request.max_output_tokens, self._settings.max_output_tokens),
-                    system="\n\n".join(system_parts),
-                    messages=messages,
-                ),
+                client.messages.create(**parameters),
                 timeout=self._settings.timeout_seconds,
             )
         except AssistantProviderError:
@@ -273,12 +317,37 @@ class AnthropicProvider:
             await self._close(client)
 
         text_parts: list[str] = []
+        tool_calls: list[ProviderToolCall] = []
         for block in _attr(response, "content", []) or []:
-            if _attr(block, "type", "") == "text":
+            block_type = _attr(block, "type", "")
+            if block_type == "text":
                 text = str(_attr(block, "text", "") or "").strip()
                 if text:
                     text_parts.append(text)
+            elif block_type == "tool_use":
+                raw_input = _attr(block, "input", {})
+                tool_calls.append(
+                    ProviderToolCall(
+                        id=str(_attr(block, "id", "") or "")[:200],
+                        name=str(_attr(block, "name", "") or "")[:80],
+                        input=raw_input if isinstance(raw_input, dict) else {},
+                    )
+                )
         text = "\n\n".join(text_parts).strip()
+        stop_reason = str(_attr(response, "stop_reason", "") or "")[:80]
+        if tool_calls:
+            # A tool turn legitimately carries no prose; the client executes the
+            # calls and comes back for the answer.
+            return ProviderResult(
+                text=text,
+                input_tokens=_bounded_usage(_attr(usage_of(response), "input_tokens", 0)),
+                output_tokens=_bounded_usage(_attr(usage_of(response), "output_tokens", 0)),
+                stop_reason=stop_reason,
+                request_id=str(
+                    _attr(response, "_request_id", "") or _attr(response, "id", "") or ""
+                )[:200],
+                tool_calls=tuple(tool_calls),
+            )
         if not text:
             raise AssistantProviderError(
                 "Claude Sonnet returned no text.",

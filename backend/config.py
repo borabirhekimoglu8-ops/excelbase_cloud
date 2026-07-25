@@ -80,6 +80,9 @@ class AssistantSettings:
     # Anyone who can reach the site can then spend the configured Anthropic
     # budget, so this stays opt-in and defaults to false.
     open_access: bool = False
+    # When true Claude may call the mutating tools in the catalogue. Reads stay
+    # available either way.
+    allow_writes: bool = False
     pii_mode: str = "strict"
     allow_raw_documents: bool = False
     max_context_records: int = 25
@@ -114,6 +117,7 @@ def assistant_settings() -> AssistantSettings:
         model=os.environ.get("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5").strip()[:200],
         api_key=_read_api_key(ANTHROPIC_API_KEY_VARIABLE),
         open_access=_env_bool("EXCELBASE_ASSISTANT_OPEN_ACCESS", default=False),
+        allow_writes=_env_bool("EXCELBASE_ASSISTANT_ALLOW_WRITES", default=False),
         pii_mode=pii_mode,
         allow_raw_documents=_env_bool("EXCELBASE_ASSISTANT_ALLOW_RAW_DOCUMENTS"),
         max_context_records=_bounded_env_int("EXCELBASE_ASSISTANT_MAX_CONTEXT_RECORDS", 25, 1, 100),

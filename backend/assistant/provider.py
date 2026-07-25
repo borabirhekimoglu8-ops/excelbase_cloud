@@ -8,9 +8,40 @@ ProviderRole = Literal["system", "user", "assistant"]
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderToolCall:
+    """One tool the model asked for. Executed by the browser, never here."""
+
+    id: str
+    name: str
+    input: dict
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderToolResult:
+    """The browser's answer to a previous tool call."""
+
+    tool_use_id: str
+    content: str
+    is_error: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderMessage:
     role: ProviderRole
-    content: str
+    content: str = ""
+    tool_calls: tuple[ProviderToolCall, ...] = ()
+    tool_results: tuple[ProviderToolResult, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderTool:
+    """A capability offered to the model, with its JSON Schema."""
+
+    name: str
+    description: str
+    input_schema: dict
+    writes: bool = False
+    confirm: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +49,7 @@ class ProviderRequest:
     messages: tuple[ProviderMessage, ...]
     max_output_tokens: int
     allowed_capabilities: tuple[str, ...] = ()
+    tools: tuple[ProviderTool, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +59,7 @@ class ProviderResult:
     output_tokens: int = 0
     stop_reason: str = ""
     request_id: str = ""
+    tool_calls: tuple[ProviderToolCall, ...] = ()
 
 
 class AssistantUnavailableError(RuntimeError):
