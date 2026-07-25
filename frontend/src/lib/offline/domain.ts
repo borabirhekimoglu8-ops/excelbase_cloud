@@ -14,6 +14,7 @@ import type {
   RecordFolder,
   RecordStatus,
 } from "@/lib/api";
+import { autoNamedPassengerDocuments } from "@/lib/passengerFileNaming";
 
 export type StoredPassengerDocument = Omit<PassengerDocument, "category"> & { category?: DocumentCategory };
 
@@ -136,8 +137,8 @@ export function rowIssues(row: StoredPassenger, duplicates: Set<string>): string
   return issues;
 }
 
-function normalizedDocuments(documents: StoredPassengerDocument[] | undefined): PassengerDocument[] {
-  return (documents ?? []).map((document) => ({ ...document, category: document.category ?? "other" }));
+function normalizedDocuments(row: StoredPassenger): PassengerDocument[] {
+  return autoNamedPassengerDocuments(row, row.documents ?? []);
 }
 
 export function resolvedRecordStatus(row: StoredPassenger, issues: string[]): RecordStatus {
@@ -164,7 +165,7 @@ export function toPassenger(row: StoredPassenger, duplicates: Set<string>, photo
     record_source: row.record_source === "manual" ? "manual" : "import",
     record_status: resolvedRecordStatus(row, issues),
     photo_url: photoUrl,
-    documents: normalizedDocuments(row.documents),
+    documents: normalizedDocuments(row),
     issues,
     duplicate: issues.includes("Tekrarlı"),
   };

@@ -91,6 +91,8 @@ export type RecordSource = "manual" | "import";
 export type PassengerDocument = {
   id: string;
   filename: string;
+  /** Original upload name retained for audit/history after automatic naming. */
+  source_filename?: string;
   mime: "application/pdf";
   size: number;
   created_at: string;

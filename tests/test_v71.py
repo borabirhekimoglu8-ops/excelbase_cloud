@@ -74,11 +74,74 @@ def test_composite_dedup_date_scope_package_and_undo(monkeypatch, tmp_path):
 
     package, _ = services.build_operation_package(ids=[0])
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
-        assert {"yolcular.xlsx", "yolcular.csv", "rapor.json"}.issubset(archive.namelist())
+        assert {"passengers.xlsx", "passengers.csv", "report.json"}.issubset(archive.namelist())
 
     ok, _, count = services.undo_import("batch-1")
     assert ok is True
     assert count == 0
+
+
+def test_backend_exports_use_english_lists_and_record_based_photo_names(monkeypatch, tmp_path):
+    _isolate_store(monkeypatch, tmp_path)
+    from openpyxl import load_workbook
+    from backend import services
+
+    imported = services.import_gate_visa_files(
+        [("passenger.csv", _csv("U12345678", "2026-07-15", "JOHN"))],
+        batch_id="english-export",
+        dup_strategy="skip",
+    )
+    assert imported[0] == 1
+    assert services.set_passenger_photo(0, "camera.jpg", b"\xff\xd8\xff" + (b"\x00" * 20))
+
+    csv_data, csv_name, csv_mime = services.export_bytes("csv")
+    assert csv_name.startswith("passengers-")
+    assert csv_mime == "text/csv"
+    csv_header = csv_data.decode("utf-8-sig").splitlines()[0]
+    assert csv_header.split(";") == [
+        "NO",
+        "NAME",
+        "SURNAME",
+        "PASSENGER NAME",
+        "PASSPORT NUMBER",
+        "VOUCHER",
+        "DEPARTURE",
+        "ARRIVAL",
+        "ADULT VISA FEE",
+        "CHILD VISA FEE",
+        "SOURCE FILE",
+        "SHEET",
+        "PHOTO",
+    ]
+
+    xlsx_data, xlsx_name, _ = services.export_bytes("excel")
+    assert xlsx_name.startswith("passengers-")
+    worksheet = load_workbook(io.BytesIO(xlsx_data), read_only=True).active
+    assert [cell.value for cell in worksheet[1]][:5] == [
+        "NO",
+        "NAME",
+        "SURNAME",
+        "PASSENGER NAME",
+        "PASSPORT NUMBER",
+    ]
+
+    package, package_name = services.build_operation_package(ids=[0])
+    assert package_name.startswith("gate-visa-selected-")
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        assert {"passengers.xlsx", "passengers.csv", "report.json", "photos.zip"} == set(
+            archive.namelist()
+        )
+        with zipfile.ZipFile(io.BytesIO(archive.read("photos.zip"))) as photos:
+            assert photos.namelist() == ["2026-07-15_JOHN_DOE_U12345678.jpg"]
+
+    manifest = services.build_manifest_html()
+    assert '<html lang="en">' in manifest
+    assert "Total passengers: 1" in manifest
+    assert "<th>Full Name</th>" in manifest
+    assert "<th>Passport Number</th>" in manifest
+    assert "<th>Departure</th>" in manifest
+    assert ">Print</button>" in manifest
+    assert "Toplam" not in manifest
 
 
 def test_import_parse_does_not_hold_mutation_lock(monkeypatch, tmp_path):

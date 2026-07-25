@@ -93,7 +93,7 @@ describe("passenger exports", () => {
   it("creates an XLSX with the exact 13-column schema", async () => {
     const blob = createPassengerXlsxBlob([passenger]);
     const workbook = XLSX.read(await blob.arrayBuffer(), { type: "array" });
-    const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets.Yolcular, {
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets.Passengers, {
       header: 1,
       defval: "",
       raw: true,
@@ -157,7 +157,9 @@ describe("passenger exports", () => {
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
     expect(html).not.toContain("<img src=x");
     expect(html).toContain("2026-07-17T01:00:00.000Z");
-    expect(html).toContain("<b>4</b><span>Fotoğraf dosyası</span>");
+    expect(html).toContain('<html lang="en">');
+    expect(html).toContain("<b>4</b><span>Photo files</span>");
+    expect(html).toContain("<th>Departure</th>");
   });
 
   it("creates a self-contained IDO-branded printable daily passenger list", async () => {
@@ -177,9 +179,10 @@ describe("passenger exports", () => {
 
     expect(blob.type).toBe("text/html;charset=utf-8");
     expect(html).toContain(`src="${logo}"`);
-    expect(html).toContain("İDO Günlük Yolcu Listesi");
+    expect(html).toContain("İDO Daily Passenger List");
     expect(html).toContain("2026-07-15");
-    expect(html).toContain("YAZDIR / PDF KAYDET");
+    expect(html).toContain("PRINT / SAVE AS PDF");
+    expect(html).toContain("<span>Total passengers</span>");
     expect(html).toContain("@page{size:A4 landscape");
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
     expect(html).not.toContain("<img src=x");
@@ -208,8 +211,8 @@ describe("ZIP exports", () => {
     const contents = await zipContents(await createPhotosZipBlob(photos));
 
     expect(contents.size).toBe(103);
-    expect(contents.get("fotograflar/face.jpg")).toBe("first");
-    expect(contents.get("fotograflar/face (2).jpg")).toBe("second");
+    expect(contents.get("photos/face.jpg")).toBe("first");
+    expect(contents.get("photos/face_02.jpg")).toBe("second");
     expect([...contents.keys()].some((name) => name.includes(".."))).toBe(false);
   });
 
@@ -223,14 +226,14 @@ describe("ZIP exports", () => {
 
     expect(delivery.type).toBe("application/zip");
     expect([...contents.keys()].sort()).toEqual([
-      "fotograflar/ayse.jpg",
-      "standart-gate-visa-sablonu.xlsx",
-      "teslim-manifestosu.html",
-      "yolcu-listesi.csv",
-      "yolcu-listesi.xlsx",
+      "delivery-manifest.html",
+      "passenger-list.csv",
+      "passenger-list.xlsx",
+      "photos/ayse.jpg",
+      "standard-gate-visa-template.xlsx",
     ]);
-    expect(contents.get("teslim-manifestosu.html")).toContain("AYŞE YILMAZ");
-    expect([...(await zipEntryBytes(delivery, "yolcu-listesi.csv")).slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect(contents.get("delivery-manifest.html")).toContain("AYŞE YILMAZ");
+    expect([...(await zipEntryBytes(delivery, "passenger-list.csv")).slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
   });
 
   it("adds passenger PDF documents under isolated safe folders", async () => {
@@ -252,8 +255,8 @@ describe("ZIP exports", () => {
     ];
     const documentZip = await zipContents(await createDocumentsZipBlob(documents));
     expect([...documentZip.keys()].sort()).toEqual([
-      "evraklar/TR123456-7/pasaport (2).pdf",
-      "evraklar/TR123456-7/pasaport.pdf",
+      "documents/UNDATED_AYSE_YILMAZ_TR123456_7/UNDATED_AYSE_YILMAZ_TR123456_OTHER_DOCUMENT.pdf",
+      "documents/UNDATED_AYSE_YILMAZ_TR123456_7/UNDATED_AYSE_YILMAZ_TR123456_OTHER_DOCUMENT_02.pdf",
     ]);
 
     const delivery = await zipContents(await createDeliveryZipBlob(
@@ -261,8 +264,9 @@ describe("ZIP exports", () => {
       [],
       { documents },
     ));
-    expect(delivery.get("evraklar/TR123456-7/pasaport.pdf")).toContain("passport");
-    expect(delivery.get("teslim-manifestosu.html")).toContain("<b>2</b><span>PDF evrak</span>");
+    expect(delivery.get("documents/UNDATED_AYSE_YILMAZ_TR123456_7/UNDATED_AYSE_YILMAZ_TR123456_OTHER_DOCUMENT.pdf"))
+      .toContain("passport");
+    expect(delivery.get("delivery-manifest.html")).toContain("<b>2</b><span>PDF documents</span>");
   });
 
   it("tek birleşik evrak PDF'ini hazır kayıt ve tek arşiv dosyası olarak işler", async () => {
@@ -299,21 +303,21 @@ describe("ZIP exports", () => {
     });
     const entries = await zipEntries(packageBlob);
     const root = "2026-07-25_IDO_GATE_VISA/";
-    const passengerRoot = `${root}001_TR123456_AYSE_YILMAZ/`;
-    const bundlePath = `${passengerRoot}Toplu_Evrak_Dosyasi.pdf`;
+    const passengerRoot = `${root}001_2026-07-15_AYSE_YILMAZ_TR123456/`;
+    const bundlePath = `${passengerRoot}2026-07-15_AYSE_YILMAZ_TR123456.pdf`;
 
     expect(entries.map((entry) => entry.filename).filter((filename) => filename === bundlePath))
       .toHaveLength(1);
     const contents = await zipContents(packageBlob);
     expect(contents.get(bundlePath)).toContain("complete bundle");
-    expect(contents.get(`${root}IDO_Kontrol_Listesi.html`)).toContain("HAZIR");
+    expect(contents.get(`${root}IDO_Checklist.html`)).toContain("READY");
 
     const missingWorkbook = XLSX.read(
-      await zipEntryBytes(packageBlob, `${root}Eksik_Evrak_Raporu.xlsx`),
+      await zipEntryBytes(packageBlob, `${root}Missing_Documents_Report.xlsx`),
       { type: "array" },
     );
     const missingRows = XLSX.utils.sheet_to_json<unknown[]>(
-      missingWorkbook.Sheets["Eksik Evraklar"],
+      missingWorkbook.Sheets["Missing Documents"],
       { header: 1, defval: "" },
     );
     expect(missingRows).toHaveLength(1);
@@ -390,37 +394,46 @@ describe("ZIP exports", () => {
     const entries = await zipEntries(packageBlob);
     const names = entries.map((entry) => entry.filename);
     const root = "2026-07-17_IDO_GATE_VISA/";
-    const passengerRoot = `${root}001_TR0000001_YOLCU1_TEST/`;
+    const passengerRoot = `${root}001_2026-07-15_YOLCU1_TEST_TR0000001/`;
 
     expect(packageBlob.type).toBe("application/zip");
     expect(names).toEqual(expect.arrayContaining([
       root,
-      `${root}IDO_Gunluk_Yolcu_Listesi.xlsx`,
-      `${root}IDO_Kontrol_Listesi.html`,
-      `${root}Eksik_Evrak_Raporu.xlsx`,
+      `${root}IDO_Daily_Passenger_List.xlsx`,
+      `${root}IDO_Checklist.html`,
+      `${root}Missing_Documents_Report.xlsx`,
       passengerRoot,
-      `${passengerRoot}Biyometrik_Fotograf.jpg`,
-      `${passengerRoot}Pasaport.pdf`,
-      `${passengerRoot}Pasaport (2).pdf`,
-      `${passengerRoot}Vize_Basvuru_Formu.pdf`,
-      `${passengerRoot}Diger_EVIL.pdf`,
+      `${passengerRoot}2026-07-15_YOLCU1_TEST_TR0000001.jpg`,
+      `${passengerRoot}2026-07-15_YOLCU1_TEST_TR0000001_PASSPORT.pdf`,
+      `${passengerRoot}2026-07-15_YOLCU1_TEST_TR0000001_PASSPORT_02.pdf`,
+      `${passengerRoot}2026-07-15_YOLCU1_TEST_TR0000001_APPLICATION_FORM.pdf`,
+      `${passengerRoot}2026-07-15_YOLCU1_TEST_TR0000001_OTHER_DOCUMENT.pdf`,
     ]));
     expect(entries.filter((entry) => entry.directory && new RegExp(`^${root}\\d{3}_.+/$`).test(entry.filename)))
       .toHaveLength(101);
     expect(names.some((name) => name.includes("..") || name.includes("\\"))).toBe(false);
 
     const contents = await zipContents(packageBlob);
-    expect(contents.get(`${root}IDO_Kontrol_Listesi.html`)).toContain(`src="${logo}"`);
-    const workbook = XLSX.read(await zipEntryBytes(packageBlob, `${root}IDO_Gunluk_Yolcu_Listesi.xlsx`), { type: "array" });
-    const exportedRows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets.Yolcular, { header: 1, defval: "" });
+    expect(contents.get(`${root}IDO_Checklist.html`)).toContain(`src="${logo}"`);
+    const workbook = XLSX.read(await zipEntryBytes(packageBlob, `${root}IDO_Daily_Passenger_List.xlsx`), { type: "array" });
+    const exportedRows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets.Passengers, { header: 1, defval: "" });
     expect(exportedRows).toHaveLength(102);
 
     const undated = await zipEntries(await createRecordFolderZipBlob(
-      [{ ...passenger, id: 999, passport_no: "../../AUX", full_name: "<Kötü / İsim>" }],
+      [{
+        ...passenger,
+        id: 999,
+        departure_date: "",
+        passport_no: "../../AUX",
+        first_name: "<Kötü",
+        last_name: "/ İsim>",
+        full_name: "<Kötü / İsim>",
+      }],
       [],
       { recordDate: "geçersiz" },
     ));
-    expect(undated.map((entry) => entry.filename)).toContain("Tarihsiz_IDO_GATE_VISA/001_AUX_KOTU_ISIM/");
+    expect(undated.map((entry) => entry.filename))
+      .toContain("Undated_IDO_GATE_VISA/001_UNDATED_KOTU_ISIM_AUX/");
     expect(undated.some((entry) => entry.filename.includes("..") || entry.filename.includes("\\"))).toBe(false);
   });
 });

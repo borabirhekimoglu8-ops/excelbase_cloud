@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
+import { passengerPhotoFilename } from "@/lib/passengerFileNaming";
 import { PassengerPhoto, passengerStatusTone } from "@/components/PassengerCard";
 import { AppHeaderScreen } from "@/components/ido/AppHeader";
 
@@ -396,7 +397,9 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
             <div className="ic-row-id">
               <span className="ic-filetype pdf">FOTO</span>
               <div className="ic-row-copy">
-                <p className="ic-row-title">{passenger.photo ? "JPG biyometrik fotoğraf" : "JPG fotoğraf yüklenmedi"}</p>
+                <p className="ic-row-title">
+                  {passenger.photo ? passengerPhotoFilename(passenger) : "JPG fotoğraf yüklenmedi"}
+                </p>
                 <p className="ic-row-meta">{passenger.photo ? "Yolcu profilinde kullanılıyor" : "Yalnızca .jpg veya .jpeg kabul edilir"}</p>
               </div>
             </div>
@@ -448,6 +451,9 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
                       <p className="ic-row-title" title={document.filename}>{document.filename}</p>
                       <p className="ic-row-meta">
                         {DOCUMENT_CATEGORY_LABELS[document.category ?? "other"]} · {formatDocumentSize(document.size)} · {formatDocumentDate(document.created_at)}
+                        {document.source_filename && document.source_filename !== document.filename
+                          ? ` · Kaynak: ${document.source_filename}`
+                          : ""}
                       </p>
                       {canWrite && (
                         <label className="ic-document-inline-category">

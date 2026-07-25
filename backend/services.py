@@ -9,6 +9,7 @@ import re
 import sys
 import threading
 import time
+import unicodedata
 import uuid
 import zipfile
 from datetime import datetime
@@ -97,6 +98,30 @@ _UPDATE_FIELDS = {
     "child_fee": "Vize Ücreti Çocuk",
 }
 
+_EXPORT_COLUMN_NAMES = {
+    "No": "NO",
+    "Ad": "NAME",
+    "Soyad": "SURNAME",
+    "Yolcu Adı Soyadı": "PASSENGER NAME",
+    "Pasaport No": "PASSPORT NUMBER",
+    "Voucher": "VOUCHER",
+    "Gidiş Tarihi": "DEPARTURE",
+    "Varış Tarihi": "ARRIVAL",
+    "Vize Ücreti Yetişkin": "ADULT VISA FEE",
+    "Vize Ücreti Çocuk": "CHILD VISA FEE",
+    "Kaynak Dosya": "SOURCE FILE",
+    "Sayfa": "SHEET",
+    "Foto": "PHOTO",
+}
+
+_RANGE_EXPORT_LABELS = {
+    "Tümü": "all",
+    "Bugün": "today",
+    "Bu hafta": "this-week",
+    "Bu ay": "this-month",
+    "Aralık": "date-range",
+}
+
 _AUDIT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
     max_workers=2,
     thread_name_prefix="gatevisa-audit",
@@ -108,6 +133,55 @@ def _text(value: object) -> str:
         return ""
     text = str(value).strip()
     return "" if text.lower() == "nan" else text
+
+
+def _english_export_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Translate only the exported view; persisted passenger fields stay unchanged."""
+    return df.copy().rename(columns=_EXPORT_COLUMN_NAMES)
+
+
+def _filename_token(value: object, fallback: str) -> str:
+    text = _text(value) or fallback
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    token = re.sub(r"[^A-Za-z0-9-]+", "_", ascii_text).strip("._-")
+    return token or fallback
+
+
+def _passenger_name_token(value: object) -> str:
+    return _filename_token(value, "UNKNOWN").replace("-", "_").upper()
+
+
+def _passport_filename_token(value: object) -> str:
+    ascii_text = unicodedata.normalize("NFKD", _text(value)).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^A-Z0-9]+", "", ascii_text.upper()) or "NO_PASSPORT"
+
+
+def _passenger_export_basename(row: pd.Series) -> str:
+    """Build DATE_FIRST_LAST_PASSPORT names from the current passenger record."""
+    parsed_departure = parse_date_value(row.get("Gidiş Tarihi"))
+    departure = parsed_departure.isoformat() if parsed_departure else _filename_token(
+        row.get("Gidiş Tarihi"),
+        "UNDATED",
+    )
+
+    first_name = _text(row.get("Ad"))
+    last_name = _text(row.get("Soyad"))
+    if not first_name or not last_name:
+        full_name = _text(row.get("Yolcu Adı Soyadı"))
+        name_parts = full_name.split()
+        if not first_name and name_parts:
+            first_name = name_parts[0]
+        if not last_name and len(name_parts) > 1:
+            last_name = " ".join(name_parts[1:])
+
+    return "_".join(
+        (
+            departure,
+            _passenger_name_token(first_name),
+            _passenger_name_token(last_name),
+            _passport_filename_token(row.get("Pasaport No")),
+        )
+    )
 
 
 def _record(idx: int, row: pd.Series, dup_keys: set[str], with_key: str = "") -> PassengerRecord:
@@ -953,12 +1027,13 @@ def export_bytes(
     df, _, _ = load_state()
     sub = _scoped_df(df, range_choice, start, end)
     sub = _subset_by_ids(sub, ids)
+    export_df = _english_export_dataframe(sub)
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     if kind == "csv":
-        return dataframe_to_csv(sub), f"yolcular-{stamp}.csv", "text/csv"
+        return dataframe_to_csv(export_df), f"passengers-{stamp}.csv", "text/csv"
     return (
-        dataframe_to_xlsx(sub),
-        f"yolcular-{stamp}.xlsx",
+        dataframe_to_xlsx(export_df),
+        f"passengers-{stamp}.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
@@ -978,8 +1053,7 @@ def build_date_photo_zip(df: pd.DataFrame) -> bytes | None:
                 data = base64.b64decode(uri.split(",", 1)[1])
             except Exception:
                 continue
-            base = cell_text(row.get("Pasaport No")) or cell_text(row.get("Yolcu Adı Soyadı")) or "foto"
-            base = "".join(c if c.isalnum() or c in "-_" else "_" for c in base)
+            base = _passenger_export_basename(row)
             name = f"{base}.jpg"
             n = 1
             while name in used:
@@ -1008,23 +1082,29 @@ def build_operation_package(
         "date_meta": extra.get("date_meta", {}),
     }
     buf = BytesIO()
+    export_df = _english_export_dataframe(df)
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("yolcular.xlsx", dataframe_to_xlsx(df))
-        zf.writestr("yolcular.csv", dataframe_to_csv(df))
-        zf.writestr("rapor.json", json.dumps(report, ensure_ascii=False, indent=2))
+        zf.writestr("passengers.xlsx", dataframe_to_xlsx(export_df))
+        zf.writestr("passengers.csv", dataframe_to_csv(export_df))
+        zf.writestr("report.json", json.dumps(report, ensure_ascii=False, indent=2))
         photo_zip = build_date_photo_zip(df)
         if photo_zip:
-            zf.writestr("fotograflar.zip", photo_zip)
+            zf.writestr("photos.zip", photo_zip)
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
-    label = "secili" if ids else ("tum" if range_choice == "Tümü" else (start or range_choice).replace(" ", "-").lower())
-    return buf.getvalue(), f"gatevisa-{label}-{stamp}.zip"
+    if ids:
+        label = "selected"
+    elif range_choice == "Aralık" and (start or end):
+        label = f"{_filename_token(start, 'start')}-to-{_filename_token(end, 'end')}"
+    else:
+        label = _RANGE_EXPORT_LABELS.get(range_choice, _filename_token(range_choice, "all").lower())
+    return buf.getvalue(), f"gate-visa-{label}-{stamp}.zip"
 
 
 def date_photo_zip_by_range(range_choice: str, start: str, end: str) -> tuple[bytes | None, str]:
     df, _, _ = load_state()
     scoped = _scoped_df(df, range_choice, start, end)
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
-    return build_date_photo_zip(scoped), f"fotograflar-{stamp}.zip"
+    return build_date_photo_zip(scoped), f"passenger-photos-{stamp}.zip"
 
 
 def build_backup() -> tuple[bytes, str]:
@@ -1039,7 +1119,7 @@ def build_backup() -> tuple[bytes, str]:
         "date_meta": extra.get("date_meta", {}),
     }
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
-    return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"), f"gatevisa-yedek-{stamp}.json"
+    return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"), f"gate-visa-backup-{stamp}.json"
 
 
 @locked_mutation
@@ -1079,9 +1159,9 @@ def build_manifest_html(range_choice: str = "Tümü", start: str = "", end: str 
         f"<td>{'✓' if str(r.get('Foto', '') or '').strip() else '—'}</td></tr>"
         for i, (_, r) in enumerate(df.iterrows())
     )
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
     return f"""<!DOCTYPE html>
-<html lang="tr"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gate Visa Operations — Manifest</title>
 <style>
@@ -1096,10 +1176,10 @@ def build_manifest_html(range_choice: str = "Tümü", start: str = "", end: str 
   @media print {{ .print-btn {{ display: none; }} }}
 </style></head><body>
 <h3>Gate Visa Operations — Manifest</h3>
-<div class="sub">{now} · Toplam {len(df)} yolcu</div>
-<table><thead><tr><th>#</th><th>Ad Soyad</th><th>Pasaport</th><th>Voucher</th><th>Gidiş</th><th>Varış</th><th>Foto</th></tr></thead>
+<div class="sub">{now} · Total passengers: {len(df)}</div>
+<table><thead><tr><th>#</th><th>Full Name</th><th>Passport Number</th><th>Voucher</th><th>Departure</th><th>Arrival</th><th>Photo</th></tr></thead>
 <tbody>{rows_html}</tbody></table>
-<button class="print-btn" onclick="window.print()">Yazdır</button>
+<button class="print-btn" onclick="window.print()">Print</button>
 </body></html>"""
 
 

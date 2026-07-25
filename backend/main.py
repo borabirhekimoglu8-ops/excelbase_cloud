@@ -981,7 +981,7 @@ def template() -> Response:
     return Response(
         content=services.get_template(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="gate-visa-pax-sablonu.xlsx"'},
+        headers={"Content-Disposition": 'attachment; filename="gate-visa-passenger-template.xlsx"'},
     )
 
 

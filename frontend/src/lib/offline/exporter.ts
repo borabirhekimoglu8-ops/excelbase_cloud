@@ -8,6 +8,11 @@ import {
 
 import type { ParsedPassengerRow } from "./parser";
 import {
+  passengerDocumentFilename,
+  passengerFileBase,
+  passengerPhotoFilename,
+} from "@/lib/passengerFileNaming";
+import {
   COMPLETE_DOCUMENT_CATEGORY,
   DOCUMENT_CATEGORIES,
   REQUIRED_DOCUMENT_CATEGORIES,
@@ -16,19 +21,19 @@ import {
 } from "@/lib/documentCategories";
 
 export const PASSENGER_EXPORT_COLUMNS = [
-  "No",
-  "Ad",
-  "Soyad",
-  "Yolcu Adı Soyadı",
-  "Pasaport No",
-  "Voucher",
-  "Gidiş Tarihi",
-  "Varış Tarihi",
-  "Vize Ücreti Yetişkin",
-  "Vize Ücreti Çocuk",
-  "Kaynak Dosya",
-  "Sayfa",
-  "Foto",
+  "NO",
+  "NAME",
+  "SURNAME",
+  "PASSENGER NAME",
+  "PASSPORT NUMBER",
+  "VOUCHER",
+  "DEPARTURE",
+  "ARRIVAL",
+  "ADULT VISA FEE",
+  "CHILD VISA FEE",
+  "SOURCE FILE",
+  "SHEET",
+  "PHOTO",
 ] as const;
 
 export type ExportPassengerRow = ParsedPassengerRow & {
@@ -47,6 +52,9 @@ export type ExportPhoto = {
   passengerId?: number;
   passengerName?: string;
   passportNo?: string;
+  departureDate?: string;
+  firstName?: string;
+  lastName?: string;
 };
 
 export type ExportDocumentCategory = DocumentCategory;
@@ -89,24 +97,15 @@ type ExportRecord = Record<(typeof PASSENGER_EXPORT_COLUMNS)[number], string>;
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const ZIP_MIME = "application/zip";
 const DOCUMENT_CATEGORY_ORDER: readonly ExportDocumentCategory[] = DOCUMENT_CATEGORIES;
-const DOCUMENT_CATEGORY_FILENAMES: Record<Exclude<ExportDocumentCategory, "other">, string> = {
-  complete_bundle: "Toplu_Evrak_Dosyasi.pdf",
-  passport: "Pasaport.pdf",
-  application_form: "Vize_Basvuru_Formu.pdf",
-  hotel: "Otel_Rezervasyonu.pdf",
-  ferry: "Feribot_Bileti.pdf",
-  insurance: "Seyahat_Sigortasi.pdf",
-  bank: "Banka_Belgesi.pdf",
-};
 const DOCUMENT_CATEGORY_MISSING_LABELS: Record<ExportDocumentCategory, string> = {
-  complete_bundle: "Tek birleşik evrak PDF'i",
-  passport: "Pasaport PDF",
-  application_form: "Başvuru formu PDF",
-  hotel: "Otel rezervasyonu PDF",
-  ferry: "Feribot bileti PDF",
-  insurance: "Seyahat sigortası PDF",
-  bank: "Banka / finansal evrak PDF",
-  other: "Diğer evrak",
+  complete_bundle: "Complete document package PDF",
+  passport: "Passport PDF",
+  application_form: "Visa application form PDF",
+  hotel: "Hotel reservation PDF",
+  ferry: "Ferry ticket PDF",
+  insurance: "Travel insurance PDF",
+  bank: "Bank / financial document PDF",
+  other: "Other document",
 };
 
 function text(value: unknown): string {
@@ -117,19 +116,19 @@ function text(value: unknown): string {
 
 function exportRecord(row: ExportPassengerRow): ExportRecord {
   return {
-    No: text(row.no),
-    Ad: text(row.first_name),
-    Soyad: text(row.last_name),
-    "Yolcu Adı Soyadı": text(row.full_name) || [text(row.first_name), text(row.last_name)].filter(Boolean).join(" "),
-    "Pasaport No": text(row.passport_no),
-    Voucher: text(row.voucher),
-    "Gidiş Tarihi": text(row.departure_date),
-    "Varış Tarihi": text(row.arrival_date),
-    "Vize Ücreti Yetişkin": text(row.adult_fee),
-    "Vize Ücreti Çocuk": text(row.child_fee),
-    "Kaynak Dosya": text(row.source_file),
-    Sayfa: text(row.sheet),
-    Foto: text(row.photo),
+    NO: text(row.no),
+    NAME: text(row.first_name),
+    SURNAME: text(row.last_name),
+    "PASSENGER NAME": text(row.full_name) || [text(row.first_name), text(row.last_name)].filter(Boolean).join(" "),
+    "PASSPORT NUMBER": text(row.passport_no),
+    VOUCHER: text(row.voucher),
+    DEPARTURE: text(row.departure_date),
+    ARRIVAL: text(row.arrival_date),
+    "ADULT VISA FEE": text(row.adult_fee),
+    "CHILD VISA FEE": text(row.child_fee),
+    "SOURCE FILE": text(row.source_file),
+    SHEET: text(row.sheet),
+    PHOTO: text(row.photo),
   };
 }
 
@@ -177,10 +176,10 @@ export function createPassengerXlsxBlob(rows: readonly ExportPassengerRow[]): Bl
   worksheet["!autofilter"] = { ref: `A1:M${lastRow}` };
 
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Yolcular");
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Passengers");
   workbook.Props = {
-    Title: "Gate Visa Checklist Yolcu Listesi",
-    Subject: "Çevrimdışı yolcu verisi dışa aktarımı",
+    Title: "Gate Visa Checklist Passenger List",
+    Subject: "Offline passenger data export",
     Company: "İDO",
   };
   return blobFromBytes(workbookBytes(workbook), XLSX_MIME);
@@ -253,18 +252,18 @@ export function createManifestHtmlBlob(
   options: ManifestOptions = {},
 ): Blob {
   const generatedAt = options.generatedAt ?? new Date();
-  const title = options.title ?? "Gate Visa Checklist Teslim Manifestosu";
+  const title = options.title ?? "Gate Visa Checklist Delivery Manifest";
   const withPhoto = rows.filter((row) => text(row.photo)).length;
   const photoCount = options.photoCount ?? withPhoto;
   const documentCount = options.documentCount
     ?? rows.reduce((count, row) => count + (row.documents?.length ?? 0), 0);
   const tableRows = rows.map((row, index) => {
     const record = exportRecord(row);
-    return `<tr><td>${index + 1}</td><td>${escapeHtml(record["Yolcu Adı Soyadı"])}</td><td>${escapeHtml(record["Pasaport No"])}</td><td>${escapeHtml(record.Voucher)}</td><td>${escapeHtml(record["Gidiş Tarihi"])}</td><td>${escapeHtml(record["Varış Tarihi"])}</td><td>${record.Foto ? "Var" : "Yok"}</td><td>${row.documents?.length ?? 0}</td></tr>`;
+    return `<tr><td>${index + 1}</td><td>${escapeHtml(record["PASSENGER NAME"])}</td><td>${escapeHtml(record["PASSPORT NUMBER"])}</td><td>${escapeHtml(record.VOUCHER)}</td><td>${escapeHtml(record.DEPARTURE)}</td><td>${escapeHtml(record.ARRIVAL)}</td><td>${record.PHOTO ? "Available" : "Missing"}</td><td>${row.documents?.length ?? 0}</td></tr>`;
   }).join("");
 
   const html = `<!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -280,10 +279,10 @@ export function createManifestHtmlBlob(
   </style>
 </head>
 <body><main>
-  <div class="head"><div><div class="eyebrow">Teslim kaydı</div><h1>${escapeHtml(title)}</h1></div><div class="date">${escapeHtml(generatedAt.toISOString())}</div></div>
-  <section class="stats"><div class="stat"><b>${rows.length}</b><span>Yolcu</span></div><div class="stat"><b>${photoCount}</b><span>Fotoğraf dosyası</span></div><div class="stat"><b>${withPhoto}</b><span>Fotoğrafı eşleşmiş yolcu</span></div><div class="stat"><b>${documentCount}</b><span>PDF evrak</span></div></section>
-  <div class="table"><table><thead><tr><th>No</th><th>Yolcu</th><th>Pasaport</th><th>Voucher</th><th>Gidiş</th><th>Varış</th><th>Foto</th><th>PDF</th></tr></thead><tbody>${tableRows}</tbody></table></div>
-  <footer>Bu belge Gate Visa Checklist çevrimdışı teslim paketiyle birlikte oluşturulmuştur.</footer>
+  <div class="head"><div><div class="eyebrow">Delivery record</div><h1>${escapeHtml(title)}</h1></div><div class="date">${escapeHtml(generatedAt.toISOString())}</div></div>
+  <section class="stats"><div class="stat"><b>${rows.length}</b><span>Passengers</span></div><div class="stat"><b>${photoCount}</b><span>Photo files</span></div><div class="stat"><b>${withPhoto}</b><span>Passengers with matched photo</span></div><div class="stat"><b>${documentCount}</b><span>PDF documents</span></div></section>
+  <div class="table"><table><thead><tr><th>No</th><th>Passenger</th><th>Passport</th><th>Voucher</th><th>Departure</th><th>Arrival</th><th>Photo</th><th>PDF</th></tr></thead><tbody>${tableRows}</tbody></table></div>
+  <footer>This document was generated with the Gate Visa Checklist offline delivery package.</footer>
 </main></body></html>`;
   return new Blob([html], { type: "text/html;charset=utf-8" });
 }
@@ -292,15 +291,15 @@ function passengerDisplayName(row: ExportPassengerRow): string {
   return text(row.full_name) || [text(row.first_name), text(row.last_name)].filter(Boolean).join(" ");
 }
 
-function passengerListStatus(row: ExportPassengerRow): "HAZIR" | "KONTROL" {
+function passengerListStatus(row: ExportPassengerRow): "READY" | "REVIEW" {
   return passengerDisplayName(row)
     && text(row.passport_no)
     && text(row.voucher)
     && (text(row.adult_fee) || text(row.child_fee))
     && text(row.photo)
     && hasRequiredDocumentCoverage(row.documents ?? [])
-    ? "HAZIR"
-    : "KONTROL";
+    ? "READY"
+    : "REVIEW";
 }
 
 function passengerListOrder(left: ExportPassengerRow, right: ExportPassengerRow): number {
@@ -324,11 +323,11 @@ export function createIdoDailyPassengerListHtmlBlob(
   const orderedRows = [...rows].sort(passengerListOrder);
   const departureDates = [...new Set(orderedRows.map((row) => text(row.departure_date)).filter(Boolean))];
   const operationLabel = options.operationLabel
-    ?? (departureDates.length === 1 ? departureDates[0] : departureDates.length > 1 ? `${departureDates[0]} – ${departureDates.at(-1)}` : "Tarihsiz");
-  const title = options.title ?? "İDO Günlük Yolcu Listesi";
+    ?? (departureDates.length === 1 ? departureDates[0] : departureDates.length > 1 ? `${departureDates[0]} – ${departureDates.at(-1)}` : "Undated");
+  const title = options.title ?? "İDO Daily Passenger List";
   const photoCount = orderedRows.filter((row) => text(row.photo)).length;
   const documentCount = orderedRows.reduce((count, row) => count + (row.documents?.length ?? 0), 0);
-  const readyCount = orderedRows.filter((row) => passengerListStatus(row) === "HAZIR").length;
+  const readyCount = orderedRows.filter((row) => passengerListStatus(row) === "READY").length;
   const logoDataUrl = /^data:image\/(?:jpeg|jpg|png|webp);base64,[a-z0-9+/=]+$/i.test(options.logoDataUrl ?? "")
     ? options.logoDataUrl ?? ""
     : "";
@@ -339,21 +338,21 @@ export function createIdoDailyPassengerListHtmlBlob(
     const status = passengerListStatus(row);
     return `<tr>
       <td class="num">${index + 1}</td>
-      <td class="passenger"><strong>${escapeHtml(passengerDisplayName(row) || "İsimsiz yolcu")}</strong><small>${escapeHtml(text(row.source_file))}</small></td>
+      <td class="passenger"><strong>${escapeHtml(passengerDisplayName(row) || "Unnamed passenger")}</strong><small>${escapeHtml(text(row.source_file))}</small></td>
       <td>${escapeHtml(text(row.passport_no) || "—")}</td>
       <td>${escapeHtml(text(row.voucher) || "—")}</td>
       <td>${escapeHtml(text(row.departure_date) || "—")}</td>
       <td>${escapeHtml(text(row.arrival_date) || "—")}</td>
       <td class="money">${escapeHtml(text(row.adult_fee) || "—")}</td>
       <td class="money">${escapeHtml(text(row.child_fee) || "—")}</td>
-      <td class="center"><span class="dot ${text(row.photo) ? "ok" : "missing"}">${text(row.photo) ? "VAR" : "YOK"}</span></td>
+      <td class="center"><span class="dot ${text(row.photo) ? "ok" : "missing"}">${text(row.photo) ? "YES" : "NO"}</span></td>
       <td class="center"><span class="count">${row.documents?.length ?? 0}</span></td>
-      <td class="center"><span class="status ${status === "HAZIR" ? "ok" : "review"}">${status}</span></td>
+      <td class="center"><span class="status ${status === "READY" ? "ok" : "review"}">${status}</span></td>
     </tr>`;
   }).join("");
 
   const html = `<!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -378,13 +377,13 @@ export function createIdoDailyPassengerListHtmlBlob(
   </style>
 </head>
 <body>
-  <div class="toolbar"><button class="print" type="button" onclick="window.print()">YAZDIR / PDF KAYDET</button></div>
+  <div class="toolbar"><button class="print" type="button" onclick="window.print()">PRINT / SAVE AS PDF</button></div>
   <main class="sheet">
     <div class="accent"></div>
-    <header>${logo}<div><p class="eyebrow">Gate Visa Checklist</p><h1>${escapeHtml(title)}</h1><p>Kapı vizesi operasyon ve evrak kontrol listesi</p></div><div class="operation"><span>Operasyon tarihi</span><strong>${escapeHtml(operationLabel)}</strong><small>${escapeHtml(new Intl.DateTimeFormat("tr-TR", { dateStyle: "medium", timeStyle: "short" }).format(generatedAt))}</small></div></header>
-    <section class="stats"><div class="stat"><b>${orderedRows.length}</b><span>Toplam yolcu</span></div><div class="stat"><b>${readyCount}</b><span>Hazır kayıt</span></div><div class="stat"><b>${photoCount}</b><span>JPG fotoğraf</span></div><div class="stat"><b>${documentCount}</b><span>PDF evrak</span></div></section>
-    <div class="table-wrap"><table><thead><tr><th class="num">Sıra</th><th>Ad Soyad</th><th>Pasaport No</th><th>Voucher</th><th>Gidiş</th><th>Varış</th><th>Yetişkin</th><th>Çocuk</th><th class="center">JPG</th><th class="center">PDF</th><th class="center">Durum</th></tr></thead><tbody>${tableRows}</tbody></table></div>
-    <footer><div class="sign">Hazırlayan / Operasyon Sorumlusu</div><div class="sign">Kontrol Eden / Teslim Alan</div><div class="footnote">Gate Visa Checklist tarafından cihaz içinde hazırlanmıştır. Yolcu verileri yalnızca yetkili operasyon kullanımı içindir.</div></footer>
+    <header>${logo}<div><p class="eyebrow">Gate Visa Checklist</p><h1>${escapeHtml(title)}</h1><p>Gate visa operations and document checklist</p></div><div class="operation"><span>Operation date</span><strong>${escapeHtml(operationLabel)}</strong><small>${escapeHtml(new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(generatedAt))}</small></div></header>
+    <section class="stats"><div class="stat"><b>${orderedRows.length}</b><span>Total passengers</span></div><div class="stat"><b>${readyCount}</b><span>Ready records</span></div><div class="stat"><b>${photoCount}</b><span>JPG photos</span></div><div class="stat"><b>${documentCount}</b><span>PDF documents</span></div></section>
+    <div class="table-wrap"><table><thead><tr><th class="num">No</th><th>Full Name</th><th>Passport No</th><th>Voucher</th><th>Departure</th><th>Arrival</th><th>Adult</th><th>Child</th><th class="center">JPG</th><th class="center">PDF</th><th class="center">Status</th></tr></thead><tbody>${tableRows}</tbody></table></div>
+    <footer><div class="sign">Prepared by / Operations Officer</div><div class="sign">Checked by / Receiving Officer</div><div class="footnote">Prepared locally by Gate Visa Checklist. Passenger data is for authorised operational use only.</div></footer>
   </main>
 </body>
 </html>`;
@@ -445,12 +444,12 @@ function rowDocuments(row: ExportPassengerRow, documents: readonly ExportDocumen
 
 function missingPassengerFields(row: ExportPassengerRow): string[] {
   const missing: string[] = [];
-  if (!passengerDisplayName(row)) missing.push("Ad soyad");
-  if (!text(row.passport_no)) missing.push("Pasaport no");
+  if (!passengerDisplayName(row)) missing.push("Full name");
+  if (!text(row.passport_no)) missing.push("Passport number");
   if (!text(row.voucher)) missing.push("Voucher");
-  if (!text(row.departure_date)) missing.push("Gidiş tarihi");
-  if (!text(row.arrival_date)) missing.push("Varış tarihi");
-  if (!text(row.adult_fee) && !text(row.child_fee)) missing.push("Vize ücreti");
+  if (!text(row.departure_date)) missing.push("Departure date");
+  if (!text(row.arrival_date)) missing.push("Arrival date");
+  if (!text(row.adult_fee) && !text(row.child_fee)) missing.push("Visa fee");
   return missing;
 }
 
@@ -474,37 +473,37 @@ export function createMissingDocumentsXlsxBlob(
       const availableCategories = new Set(rowDocuments(row, documents).map(documentCategory));
       const completeBundleAvailable = availableCategories.has(COMPLETE_DOCUMENT_CATEGORY);
       const missingDocuments = [
-        ...(rowPhotos(row, photos).length ? [] : ["Biyometrik fotoğraf"]),
+        ...(rowPhotos(row, photos).length ? [] : ["Biometric photo"]),
         ...REQUIRED_DOCUMENT_CATEGORIES
           .filter((category) => !completeBundleAvailable && !availableCategories.has(category))
           .map((category) => DOCUMENT_CATEGORY_MISSING_LABELS[category]),
       ];
       if (!fields.length && !missingDocuments.length) return null;
       return {
-        Sıra: String(index + 1),
-        "Kayıt Tarihi": text(row.record_date) || options.recordDate,
-        "Kayıt Saati": text(row.created_at),
-        "Ad Soyad": passengerDisplayName(row),
-        "Pasaport No": text(row.passport_no),
+        No: String(index + 1),
+        "Record Date": text(row.record_date) || options.recordDate,
+        "Record Time": text(row.created_at),
+        "Full Name": passengerDisplayName(row),
+        "Passport Number": text(row.passport_no),
         Voucher: text(row.voucher),
-        "Gidiş Tarihi": text(row.departure_date),
-        "Eksik Alanlar": fields.join(", "),
-        "Eksik Evraklar": missingDocuments.join(", "),
-        Durum: text(row.record_status).toLocaleLowerCase("tr-TR") === "draft" ? "TASLAK" : "EKSİK",
+        "Departure Date": text(row.departure_date),
+        "Missing Fields": fields.join(", "),
+        "Missing Documents": missingDocuments.join(", "),
+        Status: text(row.record_status).toLocaleLowerCase("en-US") === "draft" ? "DRAFT" : "MISSING",
       };
     })
     .filter((record): record is NonNullable<typeof record> => record !== null);
   const columns = [
-    "Sıra",
-    "Kayıt Tarihi",
-    "Kayıt Saati",
-    "Ad Soyad",
-    "Pasaport No",
+    "No",
+    "Record Date",
+    "Record Time",
+    "Full Name",
+    "Passport Number",
     "Voucher",
-    "Gidiş Tarihi",
-    "Eksik Alanlar",
-    "Eksik Evraklar",
-    "Durum",
+    "Departure Date",
+    "Missing Fields",
+    "Missing Documents",
+    "Status",
   ];
   const worksheet = XLSX.utils.json_to_sheet(records, { header: columns, skipHeader: false });
   worksheet["!cols"] = [
@@ -521,44 +520,29 @@ export function createMissingDocumentsXlsxBlob(
   ];
   worksheet["!autofilter"] = { ref: `A1:J${Math.max(records.length + 1, 1)}` };
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Eksik Evraklar");
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Missing Documents");
   workbook.Props = {
-    Title: `İDO Eksik Evrak Raporu ${options.recordDate}`,
-    Subject: "Gate Visa Checklist kayıt tarihi evrak kontrolü",
+    Title: `İDO Missing Documents Report ${options.recordDate}`,
+    Subject: "Gate Visa Checklist record-date document review",
     Company: "İDO",
   };
   return blobFromBytes(workbookBytes(workbook), XLSX_MIME);
 }
 
-function archiveToken(value: unknown, fallback: string, maxLength = 72): string {
-  const cleaned = text(value)
-    .toLocaleUpperCase("tr-TR")
-    .replace(/[ÇĞİÖŞÜ]/g, (character) => ({ Ç: "C", Ğ: "G", İ: "I", Ö: "O", Ş: "S", Ü: "U" })[character] ?? character)
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, maxLength);
-  return cleaned || fallback;
-}
-
 function passengerFolderName(row: ExportPassengerRow, index: number, width: number): string {
   const order = String(index + 1).padStart(width, "0");
-  const passport = archiveToken(row.passport_no, "PASAPORT_YOK", 42);
-  const name = archiveToken(passengerDisplayName(row), "ISIMSIZ_YOLCU", 72);
-  return sanitizeZipFilename(`${order}_${passport}_${name}`, `${order}_YOLCU`);
+  return sanitizeZipFilename(`${order}_${passengerFileBase(row)}`, `${order}_PASSENGER`);
 }
 
-function categorizedDocumentFilename(document: ExportDocument): string {
-  const category = documentCategory(document);
-  if (category !== "other") return DOCUMENT_CATEGORY_FILENAMES[category];
-  const original = sanitizeZipFilename(document.filename, "Evrak.pdf");
-  const dot = original.lastIndexOf(".");
-  const stem = dot > 0 ? original.slice(0, dot) : original;
-  return `Diger_${archiveToken(stem, "Evrak", 96)}.pdf`;
+function categorizedDocumentFilename(
+  row: ExportPassengerRow,
+  document: ExportDocument,
+  ordinal: number,
+): string {
+  return passengerDocumentFilename(row, documentCategory(document), ordinal);
 }
 
-export function sanitizeZipFilename(filename: string, fallback = "dosya"): string {
+export function sanitizeZipFilename(filename: string, fallback = "file"): string {
   const leaf = text(filename).replaceAll("\\", "/").split("/").pop() ?? "";
   const cleaned = leaf
     .normalize("NFC")
@@ -582,7 +566,7 @@ function uniqueFilename(filename: string, used: Set<string>): string {
   let candidate = sanitized;
   let number = 2;
   while (used.has(candidate.toLocaleLowerCase("en-US"))) {
-    candidate = `${stem} (${number})${suffix}`;
+    candidate = `${stem}_${String(number).padStart(2, "0")}${suffix}`;
     number += 1;
   }
   used.add(candidate.toLocaleLowerCase("en-US"));
@@ -596,14 +580,28 @@ async function addPhotos<Output>(
 ): Promise<void> {
   const used = new Set<string>();
   for (const photo of photos) {
-    const filename = uniqueFilename(photo.filename, used);
+    const hasPassengerIdentity = Boolean(
+      photo.departureDate || photo.firstName || photo.lastName || photo.passengerName || photo.passportNo,
+    );
+    const filename = uniqueFilename(
+      hasPassengerIdentity
+        ? passengerPhotoFilename({
+            departure_date: photo.departureDate,
+            first_name: photo.firstName,
+            last_name: photo.lastName,
+            full_name: photo.passengerName,
+            passport_no: photo.passportNo,
+          })
+        : photo.filename,
+      used,
+    );
     await writer.add(`${prefix}${filename}`, new BlobReader(photo.blob), { useWebWorkers: false, level: 0 });
   }
 }
 
 export async function createPhotosZipBlob(photos: readonly ExportPhoto[]): Promise<Blob> {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { useWebWorkers: false });
-  await addPhotos(writer, photos, "fotograflar/");
+  await addPhotos(writer, photos, "photos/");
   const bytes = await writer.close();
   return blobFromBytes(bytes, ZIP_MIME);
 }
@@ -613,16 +611,29 @@ async function addDocuments<Output>(
   documents: readonly ExportDocument[],
 ): Promise<void> {
   const usedByFolder = new Map<string, Set<string>>();
+  const categoryCountsByFolder = new Map<string, Map<ExportDocumentCategory, number>>();
   for (const document of documents) {
-    const label = document.passportNo || document.passengerName || `yolcu-${document.passengerId}`;
+    const identity = {
+      departure_date: document.departureDate,
+      first_name: document.firstName,
+      last_name: document.lastName,
+      full_name: document.passengerName,
+      passport_no: document.passportNo,
+    };
+    const label = passengerFileBase(identity);
     const folder = sanitizeZipFilename(
-      document.passengerId ? `${label}-${document.passengerId}` : label,
-      `yolcu-${document.passengerId || "evrak"}`,
+      document.passengerId ? `${label}_${document.passengerId}` : label,
+      `passenger-${document.passengerId || "document"}`,
     );
     const used = usedByFolder.get(folder) ?? new Set<string>();
     usedByFolder.set(folder, used);
-    const filename = uniqueFilename(document.filename, used);
-    await writer.add(`evraklar/${folder}/${filename}`, new BlobReader(document.blob), {
+    const categoryCounts = categoryCountsByFolder.get(folder) ?? new Map<ExportDocumentCategory, number>();
+    categoryCountsByFolder.set(folder, categoryCounts);
+    const category = documentCategory(document);
+    const ordinal = (categoryCounts.get(category) ?? 0) + 1;
+    categoryCounts.set(category, ordinal);
+    const filename = uniqueFilename(passengerDocumentFilename(identity, category, ordinal), used);
+    await writer.add(`documents/${folder}/${filename}`, new BlobReader(document.blob), {
       useWebWorkers: false,
       level: 0,
     });
@@ -650,13 +661,13 @@ export async function createRecordFolderZipBlob(
   const documents = options.documents ?? [];
   const recordDate = /^\d{4}-\d{2}-\d{2}$/.test(text(options.recordDate))
     ? text(options.recordDate)
-    : "Tarihsiz";
+    : "Undated";
   const root = `${recordDate}_IDO_GATE_VISA/`;
   const writer = new ZipWriter(new BlobWriter(ZIP_MIME), { useWebWorkers: false });
   const dailyXlsx = createPassengerXlsxBlob(orderedRows);
   const controlHtml = createIdoDailyPassengerListHtmlBlob(orderedRows, {
     ...options,
-    title: options.title ?? "İDO Kontrol Listesi",
+    title: options.title ?? "İDO Checklist",
     operationLabel: options.operationLabel ?? recordDate,
   });
   const missingXlsx = createMissingDocumentsXlsxBlob(orderedRows, {
@@ -666,15 +677,15 @@ export async function createRecordFolderZipBlob(
   });
 
   await writer.add(root, undefined, { directory: true });
-  await writer.add(`${root}IDO_Gunluk_Yolcu_Listesi.xlsx`, new BlobReader(dailyXlsx), {
+  await writer.add(`${root}IDO_Daily_Passenger_List.xlsx`, new BlobReader(dailyXlsx), {
     useWebWorkers: false,
     level: 6,
   });
-  await writer.add(`${root}IDO_Kontrol_Listesi.html`, new BlobReader(controlHtml), {
+  await writer.add(`${root}IDO_Checklist.html`, new BlobReader(controlHtml), {
     useWebWorkers: false,
     level: 6,
   });
-  await writer.add(`${root}Eksik_Evrak_Raporu.xlsx`, new BlobReader(missingXlsx), {
+  await writer.add(`${root}Missing_Documents_Report.xlsx`, new BlobReader(missingXlsx), {
     useWebWorkers: false,
     level: 6,
   });
@@ -687,14 +698,18 @@ export async function createRecordFolderZipBlob(
     await writer.add(prefix, undefined, { directory: true });
 
     for (const photo of rowPhotos(row, photos)) {
-      const filename = uniqueFilename("Biyometrik_Fotograf.jpg", used);
+      const filename = uniqueFilename(passengerPhotoFilename(row), used);
       await writer.add(`${prefix}${filename}`, new BlobReader(photo.blob), {
         useWebWorkers: false,
         level: 0,
       });
     }
+    const categoryCounts = new Map<ExportDocumentCategory, number>();
     for (const document of rowDocuments(row, documents)) {
-      const filename = uniqueFilename(categorizedDocumentFilename(document), used);
+      const category = documentCategory(document);
+      const ordinal = (categoryCounts.get(category) ?? 0) + 1;
+      categoryCounts.set(category, ordinal);
+      const filename = uniqueFilename(categorizedDocumentFilename(row, document, ordinal), used);
       await writer.add(`${prefix}${filename}`, new BlobReader(document.blob), {
         useWebWorkers: false,
         level: 0,
@@ -720,16 +735,16 @@ export async function createDeliveryZipBlob(
     documentCount: options.documentCount ?? documents.length,
   });
 
-  await writer.add("yolcu-listesi.xlsx", new BlobReader(xlsx), { useWebWorkers: false, level: 6 });
-  await writer.add("yolcu-listesi.csv", new BlobReader(csv), { useWebWorkers: false, level: 6 });
-  await writer.add("teslim-manifestosu.html", new BlobReader(manifest), { useWebWorkers: false, level: 6 });
+  await writer.add("passenger-list.xlsx", new BlobReader(xlsx), { useWebWorkers: false, level: 6 });
+  await writer.add("passenger-list.csv", new BlobReader(csv), { useWebWorkers: false, level: 6 });
+  await writer.add("delivery-manifest.html", new BlobReader(manifest), { useWebWorkers: false, level: 6 });
   if (options.includeTemplate) {
-    await writer.add("standart-gate-visa-sablonu.xlsx", new BlobReader(createGateVisaTemplateXlsxBlob()), {
+    await writer.add("standard-gate-visa-template.xlsx", new BlobReader(createGateVisaTemplateXlsxBlob()), {
       useWebWorkers: false,
       level: 6,
     });
   }
-  await addPhotos(writer, photos, "fotograflar/");
+  await addPhotos(writer, photos, "photos/");
   await addDocuments(writer, documents);
 
   const bytes = await writer.close();
@@ -737,7 +752,7 @@ export async function createDeliveryZipBlob(
 }
 
 export async function saveBlob(blob: Blob, filename: string): Promise<SaveBlobResult> {
-  const safeFilename = sanitizeZipFilename(filename, "gate-visa-checklist-dosya");
+  const safeFilename = sanitizeZipFilename(filename, "gate-visa-checklist-file");
   if (typeof navigator !== "undefined" && typeof navigator.share === "function" && typeof File !== "undefined") {
     const file = new File([blob], safeFilename, { type: blob.type || "application/octet-stream" });
     const shareData: ShareData = { files: [file], title: safeFilename };

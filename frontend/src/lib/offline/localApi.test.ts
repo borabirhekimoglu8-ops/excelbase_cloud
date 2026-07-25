@@ -13,6 +13,9 @@ import {
   localCreateWorkspaceTask,
   localDeletePassengerDocument,
   localDeletePassenger,
+  localExportDocuments,
+  localExportPhotos,
+  localExportRows,
   localListCodeRecords,
   localListOfficeDocuments,
   localListWorkFiles,
@@ -181,7 +184,11 @@ describe("local offline API", () => {
     await unlockVault("123456");
     expect((await localPassengers()).map((row) => row.passport_no)).toEqual(["BACK123"]);
     const restored = await localPassengerDocumentFile(passengerId, document.id);
-    expect(restored.metadata).toMatchObject({ filename: "BACK123-pasaport.pdf", mime: "application/pdf" });
+    expect(restored.metadata).toMatchObject({
+      filename: "2026-07-16_YEDEK_YOLCU_BACK123_OTHER_DOCUMENT.pdf",
+      source_filename: "BACK123-pasaport.pdf",
+      mime: "application/pdf",
+    });
     expect(await restored.blob.text()).toContain("Gate Visa Checklist test evrakı");
   });
 
@@ -190,7 +197,12 @@ describe("local offline API", () => {
     const passengerId = (await localPassengers())[0].id;
 
     const [document] = await localUploadPassengerDocuments(passengerId, [pdfFile("DOC12345-pasaport.pdf")]);
-    expect(document).toMatchObject({ filename: "DOC12345-pasaport.pdf", mime: "application/pdf", category: "other" });
+    expect(document).toMatchObject({
+      filename: "2026-07-16_EVRAK_YOLCU_DOC12345_OTHER_DOCUMENT.pdf",
+      source_filename: "DOC12345-pasaport.pdf",
+      mime: "application/pdf",
+      category: "other",
+    });
     expect(document.size).toBeGreaterThan(0);
     expect(await localPassengerDocuments(passengerId)).toEqual([document]);
     expect((await localPassengers())[0].documents).toEqual([document]);
@@ -216,7 +228,7 @@ describe("local offline API", () => {
       [pdfFile("pasaport.pdf")],
       "passport",
     );
-    const passportDocument = documentsAfterPassport.find((document) => document.filename === "pasaport.pdf");
+    const passportDocument = documentsAfterPassport.find((document) => document.source_filename === "pasaport.pdf");
 
     expect(defaultDocument.category).toBe("other");
     expect(passportDocument?.category).toBe("passport");
@@ -240,11 +252,45 @@ describe("local offline API", () => {
     );
     const bundle = documents.find((document) => document.category === "complete_bundle");
 
-    expect(bundle).toMatchObject({ filename: "tum-evraklar.pdf", category: "complete_bundle" });
+    expect(bundle).toMatchObject({
+      filename: "2026-07-16_TOPLU_EVRAK_PKG12345.pdf",
+      source_filename: "tum-evraklar.pdf",
+      category: "complete_bundle",
+    });
     expect((await localPassengerDocumentFile(passengerId, bundle!.id)).metadata.category)
       .toBe("complete_bundle");
     expect(await (await localPassengerDocumentFile(passengerId, bundle!.id)).blob.text())
       .toContain("pasaport ve başvuru formu");
+  });
+
+  it("PDF ve JPG çıktı adını yolcunun güncel kayıt bilgilerinden otomatik üretir", async () => {
+    await localQueueImportFile(workbookFile("adlandirma.xlsx", "Eski İsim", "OLD12345"), false, "skip", "name", "name-job");
+    const passengerId = (await localPassengers())[0].id;
+    await localSetPassengerPhoto(passengerId, jpegFile("kaynak-foto.jpg"));
+    const [document] = await localUploadPassengerDocuments(
+      passengerId,
+      [pdfFile("kaynak-evrak.pdf")],
+      "complete_bundle",
+    );
+
+    await localUpdatePassenger(passengerId, {
+      first_name: "Ece",
+      last_name: "Deniş",
+      passport_no: "TR 7654321",
+      departure_date: "2026-08-15",
+    });
+
+    const rows = await localExportRows(undefined, [passengerId]);
+    const [photo] = await localExportPhotos(rows);
+    const [exportedDocument] = await localExportDocuments(rows);
+    const opened = await localPassengerDocumentFile(passengerId, document.id);
+
+    expect(photo.filename).toBe("2026-08-15_ECE_DENIS_TR7654321.jpg");
+    expect(exportedDocument.filename).toBe("2026-08-15_ECE_DENIS_TR7654321.pdf");
+    expect(opened.metadata).toMatchObject({
+      filename: "2026-08-15_ECE_DENIS_TR7654321.pdf",
+      source_filename: "kaynak-evrak.pdf",
+    });
   });
 
   it("overwrite aktarımı mevcut kayıt tarihi ve oluşturan bilgisini korur", async () => {
@@ -436,7 +482,11 @@ describe("local offline API", () => {
 
     await localMergeDuplicates();
     const [merged] = await localPassengers();
-    expect(merged.documents?.map((document) => document.filename).sort()).toEqual(["pasaport.pdf", "vize.pdf"]);
+    expect(merged.documents?.map((document) => document.filename).sort()).toEqual([
+      "2026-07-16_BIR_YOLCU_MERGE123_OTHER_DOCUMENT.pdf",
+      "2026-07-16_BIR_YOLCU_MERGE123_OTHER_DOCUMENT_02.pdf",
+    ]);
+    expect(merged.documents?.map((document) => document.source_filename).sort()).toEqual(["pasaport.pdf", "vize.pdf"]);
     expect((await listBinaryIds()).filter((id) => id.startsWith("document:"))).toHaveLength(2);
 
     await localDeletePassenger(merged.id);
