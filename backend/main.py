@@ -80,6 +80,7 @@ from .auth import (
     Actor,
     assistant_csrf_token,
     assistant_csrf_token_for_session,
+    assistant_network_allowed,
     bootstrap_token_required,
     create_user,
     deactivate_user,
@@ -249,7 +250,7 @@ def assistant_session(request: Request, response: Response) -> AssistantSessionR
     still apply to every turn.
     """
     actor = optional_assistant_actor(request)
-    if actor is None and assistant_settings().open_access:
+    if actor is None and assistant_settings().open_access and assistant_network_allowed(request):
         actor, token = issue_open_assistant_session()
         _set_assistant_session_cookie(response, token)
         request.state.actor = actor

@@ -15,12 +15,16 @@ from urllib.parse import urlsplit
 
 from fastapi import Header, HTTPException, Query, Request, status
 
+from ipaddress import ip_address
+
 from .config import (
     SESSION_COOKIE,
     SESSION_DAYS,
     allowed_origins,
     api_key,
+    assistant_allowed_networks,
     assistant_settings,
+    assistant_trusted_proxy_hops,
     require_auth,
 )
 from .state import load_state, save_state
@@ -431,6 +435,40 @@ def assistant_csrf_token(request: Request) -> str:
     )
 
 
+def assistant_client_ip(request: Request) -> str:
+    """Resolve the caller's address as the nearest trusted proxy saw it.
+
+    ``X-Forwarded-For`` grows left to right, so a client can prepend anything it
+    likes; only the entries a proxy *appended* are trustworthy. Counting back
+    ``hops`` from the right therefore yields the address Render observed, not
+    the one the caller claimed.
+    """
+    hops = assistant_trusted_proxy_hops()
+    if hops:
+        forwarded = [
+            item.strip()
+            for item in request.headers.get("x-forwarded-for", "").split(",")
+            if item.strip()
+        ]
+        if len(forwarded) >= hops:
+            return forwarded[-hops]
+    return request.client.host if request.client else ""
+
+
+def assistant_network_allowed(request: Request) -> bool:
+    """True when no allowlist is configured, or the caller is inside it."""
+    networks = assistant_allowed_networks()
+    if not networks:
+        return True
+    raw = assistant_client_ip(request)
+    try:
+        address = ip_address(raw)
+    except ValueError:
+        # An unparseable source cannot be proven to be inside the allowlist.
+        return False
+    return any(address in network for network in networks)
+
+
 def _assistant_origin_allowed(request: Request) -> bool:
     origin = request.headers.get("origin", "").strip()
     if not origin:
@@ -455,6 +493,13 @@ def require_assistant_session(
 
     The legacy shared API key intentionally cannot authorize Sonnet spending.
     """
+    # Checked before the session so an off-network caller learns nothing about
+    # whether a credential would have worked.
+    if not assistant_network_allowed(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Asistan bu ağdan kullanılamaz.",
+        )
     actor = optional_assistant_actor(request)
     if actor is None:
         raise HTTPException(

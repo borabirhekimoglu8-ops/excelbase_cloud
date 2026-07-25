@@ -16,6 +16,7 @@ import db
 from backend.config import (
     ANTHROPIC_API_KEY_VARIABLE,
     AssistantSettings,
+    assistant_allowed_networks,
     assistant_settings,
     misnamed_anthropic_key_variables,
 )
@@ -372,6 +373,31 @@ def assistant_configuration_state(settings: AssistantSettings) -> str:
     return "ready"
 
 
+def writes_enabled(settings: AssistantSettings) -> bool:
+    """Decide whether the mutating tools may be published at all.
+
+    Autonomy is safe in proportion to who can reach the door. An open
+    deployment on a public URL plus write authority means any visitor can
+    mutate the operation, so the two are only combined once the deployment is
+    network-scoped -- which is what "closed server" means for a browser app
+    whose API must stay reachable from the operator's browser.
+    """
+    if not settings.allow_writes:
+        return False
+    if settings.open_access and not assistant_allowed_networks():
+        return False
+    return True
+
+
+def autonomy_state(settings: AssistantSettings) -> str:
+    """Non-secret posture summary for operators."""
+    if not settings.allow_writes:
+        return "read_only"
+    if writes_enabled(settings):
+        return "full"
+    return "blocked_open_network"
+
+
 def get_assistant_provider(
     settings: AssistantSettings | None = None,
 ) -> AssistantProvider:
@@ -404,6 +430,8 @@ def assistant_status() -> AssistantStatusResponse:
         model_label="Claude Sonnet",
         capabilities=list(ACTIVE_CAPABILITIES),
         open_access=settings.open_access,
+        autonomy=autonomy_state(settings),
+        network_scoped=bool(assistant_allowed_networks()),
     )
 
 
@@ -542,7 +570,7 @@ def _sanitize_tool_calls(
     settings: AssistantSettings,
 ) -> list[AssistantToolCall]:
     """Publish only calls the catalogue allows, with server-set safety flags."""
-    allowed = {tool.name for tool in available_tools(allow_writes=settings.allow_writes)}
+    allowed = {tool.name for tool in available_tools(allow_writes=writes_enabled(settings))}
     sanitized: list[AssistantToolCall] = []
     for call in calls:
         tool = TOOLS_BY_NAME.get(call.name)
@@ -602,9 +630,9 @@ def _provider_request(payload: AssistantChatRequest, settings: AssistantSettings
             f"Mesaj ve geçmiş toplamı {settings.max_input_chars:,} karakteri aşamaz."
         )
 
-    tools = available_tools(allow_writes=settings.allow_writes)
+    tools = available_tools(allow_writes=writes_enabled(settings))
     system = (
-        f"{_SYSTEM_PROMPT.format(authority=_WRITE_AUTHORITY if settings.allow_writes else _READ_ONLY_AUTHORITY)}\n\n"
+        f"{_SYSTEM_PROMPT.format(authority=_WRITE_AUTHORITY if writes_enabled(settings) else _READ_ONLY_AUTHORITY)}\n\n"
         f"{_tool_instructions(tools)}\n\n"
         "<operasyon_baglamı>\n"
         f"{context_json}\n"

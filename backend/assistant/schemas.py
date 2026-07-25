@@ -73,6 +73,11 @@ class AssistantStatusResponse(BaseModel):
     # any visitor discovers it by loading the page, and the owner needs to see
     # that their Anthropic budget is publicly reachable.
     open_access: bool = False
+    # "read_only" | "full" | "blocked_open_network" -- the last means writes are
+    # configured but withheld because the deployment is open to everyone.
+    autonomy: Literal["read_only", "full", "blocked_open_network"] = "read_only"
+    # True when an IP allowlist scopes who can reach the assistant.
+    network_scoped: bool = False
 
 
 class AssistantDiagnosticsResponse(BaseModel):

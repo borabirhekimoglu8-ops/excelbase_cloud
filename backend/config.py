@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from ipaddress import ip_address, ip_network
 
 
 def allowed_origins() -> list[str]:
@@ -54,13 +55,6 @@ def misnamed_anthropic_key_variables() -> tuple[str, ...]:
     )
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
     raw = os.environ.get(name, "").strip()
     try:
@@ -68,6 +62,47 @@ def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int
     except ValueError:
         parsed = default
     return max(minimum, min(maximum, parsed))
+
+
+def assistant_allowed_networks() -> tuple[ip_network, ...]:
+    """Source networks allowed to reach the assistant, empty when unrestricted.
+
+    This is how a browser application is "closed": the API must stay reachable
+    from wherever the operator's browser is, so it cannot be hidden from the
+    network entirely -- but it can be scoped to the addresses the operation
+    actually works from.
+    """
+    raw = os.environ.get("EXCELBASE_ASSISTANT_ALLOWED_IPS", "")
+    networks: list[ip_network] = []
+    for item in raw.split(","):
+        candidate = item.strip()
+        if not candidate:
+            continue
+        try:
+            # strict=False so a plain host address is accepted as a /32 or /128.
+            networks.append(ip_network(candidate, strict=False))
+        except ValueError:
+            # A typo must not silently widen access, so the entry is dropped and
+            # the remaining ones still apply.
+            continue
+    return tuple(networks)
+
+
+def assistant_trusted_proxy_hops() -> int:
+    """How many proxies sit in front of us, for reading X-Forwarded-For.
+
+    Render terminates TLS and appends the real client address, so the default
+    of one hop means "take the entry Render appended", which a client cannot
+    forge by sending its own header.
+    """
+    return _bounded_env_int("EXCELBASE_ASSISTANT_TRUSTED_PROXY_HOPS", 1, 0, 8)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True, slots=True)

@@ -92,6 +92,8 @@ def test_public_status_reports_readiness_and_never_leaks_provider_configuration(
         "model_label": "Claude Sonnet",
         "capabilities": list(ACTIVE_CAPABILITIES),
         "open_access": False,
+        "autonomy": "read_only",
+        "network_scoped": False,
     }
     serialized = response.text.lower()
     assert secret not in serialized
@@ -1277,3 +1279,128 @@ def test_tool_continuation_does_not_charge_the_daily_budget_again(monkeypatch):
             await generate_assistant_reply(opening, actor_id="a", request_id="r3")
 
     asyncio.run(exercise())
+
+
+# ----------------------------------------------------- closed (scoped) server
+def _closed_env(monkeypatch, allowed="203.0.113.5") -> None:
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "server-secret")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ALLOWED_IPS", allowed)
+    reset_assistant_runtime()
+
+
+def test_allowlist_admits_the_office_and_refuses_everyone_else(monkeypatch):
+    _closed_env(monkeypatch, allowed="203.0.113.5, 10.0.0.0/8")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_OPEN_ACCESS", "1")
+
+    app.dependency_overrides.pop(require_assistant_session, None)
+    with TestClient(app, base_url="https://excelbase.test") as client:
+        inside = client.get(
+            "/api/assistant/v1/session", headers={"X-Forwarded-For": "203.0.113.5"}
+        ).json()
+        in_subnet = client.get(
+            "/api/assistant/v1/session", headers={"X-Forwarded-For": "10.4.4.4"}
+        ).json()
+    assert inside["authenticated"] is True
+    assert in_subnet["authenticated"] is True
+
+    with TestClient(app, base_url="https://excelbase.test") as outsider:
+        blocked = outsider.get(
+            "/api/assistant/v1/session", headers={"X-Forwarded-For": "198.51.100.9"}
+        ).json()
+        chat = outsider.post(
+            "/api/assistant/v1/chat",
+            json=_chat_payload(),
+            headers={"X-Forwarded-For": "198.51.100.9", "Origin": "https://excelbase.test"},
+        )
+    # Off-network callers get no session and cannot reach the billable endpoint.
+    assert blocked["authenticated"] is False
+    assert chat.status_code == 403
+
+
+def test_forwarded_for_cannot_be_spoofed_past_the_allowlist(monkeypatch):
+    """A caller prepending its own X-Forwarded-For must not get in."""
+    _closed_env(monkeypatch, allowed="203.0.113.5")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_OPEN_ACCESS", "1")
+
+    with TestClient(app, base_url="https://excelbase.test") as client:
+        # Render appends the real address on the right; the forged entry is left.
+        spoofed = client.get(
+            "/api/assistant/v1/session",
+            headers={"X-Forwarded-For": "203.0.113.5, 198.51.100.9"},
+        ).json()
+        genuine = client.get(
+            "/api/assistant/v1/session",
+            headers={"X-Forwarded-For": "198.51.100.9, 203.0.113.5"},
+        ).json()
+
+    assert spoofed["authenticated"] is False
+    assert genuine["authenticated"] is True
+
+
+def test_full_autonomy_is_withheld_while_the_deployment_is_open_and_unscoped(monkeypatch):
+    from backend.assistant.service import autonomy_state, writes_enabled
+    from backend.assistant.tools import WRITE_TOOL_NAMES, available_tools
+
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ALLOW_WRITES", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_OPEN_ACCESS", "1")
+    monkeypatch.delenv("EXCELBASE_ASSISTANT_ALLOWED_IPS", raising=False)
+
+    settings = assistant_settings()
+    assert settings.allow_writes is True  # configured...
+    assert writes_enabled(settings) is False  # ...but withheld
+    assert autonomy_state(settings) == "blocked_open_network"
+    offered = {tool.name for tool in available_tools(allow_writes=writes_enabled(settings))}
+    assert not (offered & WRITE_TOOL_NAMES)
+
+
+def test_scoping_the_network_unlocks_full_autonomy(monkeypatch):
+    """The closed server is exactly what makes full authority safe to grant."""
+    from backend.assistant.service import autonomy_state, writes_enabled
+    from backend.assistant.tools import WRITE_TOOL_NAMES, available_tools
+
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ALLOW_WRITES", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_OPEN_ACCESS", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ALLOWED_IPS", "203.0.113.5")
+
+    settings = assistant_settings()
+    assert writes_enabled(settings) is True
+    assert autonomy_state(settings) == "full"
+    offered = {tool.name for tool in available_tools(allow_writes=writes_enabled(settings))}
+    assert offered >= WRITE_TOOL_NAMES
+
+    with TestClient(app) as client:
+        status_body = client.get("/api/assistant/v1/status").json()
+    assert status_body["autonomy"] == "full"
+    assert status_body["network_scoped"] is True
+
+
+def test_closing_open_access_also_unlocks_autonomy_without_an_allowlist(monkeypatch):
+    """Requiring the access code is the other way to close the deployment."""
+    from backend.assistant.service import writes_enabled
+
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ALLOW_WRITES", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_OPEN_ACCESS", "0")
+    monkeypatch.delenv("EXCELBASE_ASSISTANT_ALLOWED_IPS", raising=False)
+
+    assert writes_enabled(assistant_settings()) is True
+
+
+def test_a_malformed_allowlist_entry_does_not_widen_access(monkeypatch):
+    from backend.config import assistant_allowed_networks
+
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ALLOWED_IPS", "203.0.113.5, not-an-ip, ")
+    networks = assistant_allowed_networks()
+    assert len(networks) == 1
+    assert str(networks[0]) == "203.0.113.5/32"

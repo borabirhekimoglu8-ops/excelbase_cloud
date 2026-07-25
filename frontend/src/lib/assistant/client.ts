@@ -38,6 +38,10 @@ export type AssistantStatus = {
   model_label: string;
   /** True when the server connects Sonnet without asking for an access code. */
   open_access?: boolean;
+  /** Whether Claude may change records: read_only, full, or withheld. */
+  autonomy?: "read_only" | "full" | "blocked_open_network";
+  /** True when an IP allowlist scopes who can reach the assistant. */
+  network_scoped?: boolean;
 };
 
 export type AssistantSessionStatus = {
@@ -137,6 +141,12 @@ function isAssistantStatus(value: unknown): value is AssistantStatus {
   return (
     typeof status.available === "boolean"
     && (status.open_access === undefined || typeof status.open_access === "boolean")
+    && (status.network_scoped === undefined || typeof status.network_scoped === "boolean")
+    && (
+      status.autonomy === undefined
+      || (typeof status.autonomy === "string"
+        && ["read_only", "full", "blocked_open_network"].includes(status.autonomy))
+    )
     && validConfigurationState
     && status.online_required === true
     && status.privacy_mode === "aggregate_context_only"

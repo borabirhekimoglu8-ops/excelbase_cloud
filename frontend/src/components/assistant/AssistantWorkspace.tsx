@@ -423,9 +423,13 @@ export function AssistantWorkspace({
           </strong>
           <small>
             {ready && online
-              ? status?.open_access
-                ? "Erişim kodu istenmiyor · bu adrese ulaşan herkes kullanabilir"
-                : "Uygulama içinden güvenli, salt okunur sohbet"
+              ? status?.autonomy === "blocked_open_network"
+                ? "Yazma yetkisi bekliyor · önce erişimi kapatın veya IP kısıtı ekleyin"
+                : status?.autonomy === "full"
+                  ? `Tam yetki${status?.network_scoped ? " · IP kısıtlı" : ""}`
+                  : status?.open_access
+                    ? "Erişim kodu istenmiyor · bu adrese ulaşan herkes kullanabilir"
+                    : "Uygulama içinden güvenli, salt okunur sohbet"
               : "Yerel kasa ve çevrimdışı mod çalışmaya devam eder"}
           </small>
         </div>
