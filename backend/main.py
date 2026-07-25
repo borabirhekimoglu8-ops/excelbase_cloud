@@ -51,6 +51,7 @@ from .models import (
     UserView,
 )
 from .assistant.provider import (
+    AssistantConfigurationError,
     AssistantProviderError,
     AssistantRateLimitError,
     AssistantTimeoutError,
@@ -60,6 +61,7 @@ from .assistant.body_limit import AssistantBodyLimitMiddleware
 from .assistant.schemas import (
     AssistantChatRequest,
     AssistantChatResponse,
+    AssistantDiagnosticsResponse,
     AssistantSessionResponse,
     AssistantStatusResponse,
 )
@@ -67,6 +69,7 @@ from .assistant.service import (
     AssistantDuplicateRequestError,
     AssistantInputError,
     AssistantQuotaError,
+    assistant_diagnostics,
     assistant_status,
     generate_assistant_reply,
 )
@@ -305,6 +308,37 @@ def assistant_session_logout(
     return SimpleResult(ok=True, message="Sonnet oturumu kapatıldı.")
 
 
+@app.post("/api/assistant/v1/diagnostics", response_model=AssistantDiagnosticsResponse)
+async def assistant_diagnostics_check(
+    request: Request,
+    actor: Actor = Depends(require_assistant_session),
+) -> AssistantDiagnosticsResponse:
+    """Report why Claude Sonnet is not answering, without billing a turn.
+
+    Requires the same session and CSRF proof as a chat turn, because it
+    confirms whether this deployment's Anthropic credentials are accepted.
+    """
+    request_id = str(getattr(request.state, "request_id", ""))
+    try:
+        return await assistant_diagnostics(actor.id)
+    except AssistantQuotaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Çok sık denetim isteği. Kısa süre sonra tekrar deneyin.",
+            headers={"Retry-After": str(getattr(exc, "retry_after", 30))},
+        ) from None
+    except Exception:
+        logger.exception(
+            "assistant diagnostics failed request_id=%s actor_id=%s",
+            request_id,
+            actor.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Asistan denetimi tamamlanamadı.",
+        ) from None
+
+
 @app.post("/api/assistant/v1/chat", response_model=AssistantChatResponse)
 async def assistant_chat(
     payload: AssistantChatRequest,
@@ -350,11 +384,27 @@ async def assistant_chat(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Claude Sonnet henüz kullanıma hazır değil.",
         ) from None
-    except AssistantProviderError:
-        logger.warning(
-            "assistant provider failure request_id=%s actor_id=%s",
+    except AssistantConfigurationError as exc:
+        # A rejected key, an unscoped key or an unknown model cannot be fixed
+        # by retrying, so say what to correct instead of reporting an outage.
+        logger.error(
+            "assistant configuration failure request_id=%s actor_id=%s %s",
             request_id,
             actor.id,
+            exc.diagnostic.as_log_fields(),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from None
+    except AssistantProviderError as exc:
+        # The taxonomy is non-secret by construction: no prompt, context or
+        # upstream body ever reaches the log line.
+        logger.warning(
+            "assistant provider failure request_id=%s actor_id=%s %s",
+            request_id,
+            actor.id,
+            exc.diagnostic.as_log_fields(),
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

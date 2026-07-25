@@ -12,6 +12,8 @@ from starlette.requests import Request
 
 from backend.assistant.anthropic_provider import AnthropicProvider
 from backend.assistant.provider import (
+    AssistantConfigurationError,
+    AssistantProviderError,
     AssistantUnavailableError,
     DisabledProvider,
     ProviderMessage,
@@ -26,6 +28,7 @@ from backend.assistant.schemas import (
     AssistantUsage,
 )
 from backend.assistant.service import (
+    SUPPORTED_SONNET_MODELS,
     AssistantQuotaError,
     bounded_amount,
     bounded_int,
@@ -563,3 +566,232 @@ def test_scrypt_login_guard_rejects_excess_concurrency_before_auth_state(monkeyp
     with pytest.raises(HTTPException) as saturated:
         auth.authenticate("123456", client_key="saturated-test-client")
     assert saturated.value.status_code == 429
+
+
+class _UpstreamStatusError(Exception):
+    """Minimal stand-in for anthropic.APIStatusError.
+
+    Carries the same public surface the adapter is allowed to read: a status
+    code, the provider's error-type slug, an opaque request id and a message
+    that must never reach the client or the logs.
+    """
+
+    def __init__(self, status_code: int, error_type: str) -> None:
+        super().__init__("upstream detail with prompt echo: Durumu özetle")
+        self.status_code = status_code
+        self.type = error_type
+        self.request_id = "req_upstream_123"
+
+
+def _failing_provider(exc: Exception, *, model: str = "claude-sonnet-5") -> AnthropicProvider:
+    class FakeMessages:
+        async def create(self, **kwargs):
+            raise exc
+
+        async def count_tokens(self, **kwargs):
+            raise exc
+
+    class FakeClient:
+        messages = FakeMessages()
+
+        async def close(self):
+            return None
+
+    settings = AssistantSettings(
+        enabled=True,
+        provider="anthropic",
+        model=model,
+        api_key="server-secret",
+    )
+    return AnthropicProvider(settings, client_factory=lambda **kwargs: FakeClient())
+
+
+def _generate(provider: AnthropicProvider):
+    return provider.generate(ProviderRequest(
+        messages=(
+            ProviderMessage(role="system", content="Kurumsal yanıt ver."),
+            ProviderMessage(role="user", content="Durumu özetle"),
+        ),
+        max_output_tokens=500,
+    ))
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_type", "expected_kind"),
+    [
+        (401, "authentication_error", "auth"),
+        (403, "permission_error", "permission"),
+        (404, "not_found_error", "model"),
+    ],
+)
+def test_rejected_credentials_raise_an_actionable_configuration_error(
+    status_code,
+    error_type,
+    expected_kind,
+):
+    provider = _failing_provider(_UpstreamStatusError(status_code, error_type))
+
+    with pytest.raises(AssistantConfigurationError) as failure:
+        asyncio.run(_generate(provider))
+
+    diagnostic = failure.value.diagnostic
+    assert diagnostic.kind == expected_kind
+    assert diagnostic.status_code == status_code
+    assert diagnostic.error_type == error_type
+    assert diagnostic.upstream_request_id == "req_upstream_123"
+    # The operator gets a fix, not a retry prompt, and never the upstream body.
+    assert "Durumu özetle" not in str(failure.value)
+    assert "prompt echo" not in diagnostic.as_log_fields()
+
+
+def test_upstream_outage_stays_generic_but_still_carries_a_diagnostic():
+    provider = _failing_provider(_UpstreamStatusError(500, "api_error"))
+
+    with pytest.raises(AssistantProviderError) as failure:
+        asyncio.run(_generate(provider))
+
+    assert not isinstance(failure.value, AssistantConfigurationError)
+    assert str(failure.value) == "Claude Sonnet request failed."
+    assert failure.value.diagnostic.kind == "upstream"
+    assert failure.value.diagnostic.status_code == 500
+
+
+def test_unreachable_provider_is_classified_as_a_network_failure():
+    provider = _failing_provider(OSError("dns lookup failed"))
+
+    with pytest.raises(AssistantProviderError) as failure:
+        asyncio.run(_generate(provider))
+
+    assert failure.value.diagnostic.kind == "network"
+    assert failure.value.diagnostic.status_code == 0
+    assert "dns lookup failed" not in str(failure.value)
+
+
+def test_hostile_upstream_error_fields_are_rejected_before_logging():
+    hostile = _UpstreamStatusError(500, "api_error\ninjected log line")
+    hostile.request_id = "x" * 400
+    provider = _failing_provider(hostile)
+
+    with pytest.raises(AssistantProviderError) as failure:
+        asyncio.run(_generate(provider))
+
+    assert failure.value.diagnostic.error_type == ""
+    assert failure.value.diagnostic.upstream_request_id == ""
+
+
+def test_probe_verifies_credentials_without_spending_output_tokens():
+    counted: list[dict] = []
+
+    class FakeMessages:
+        async def create(self, **kwargs):
+            raise AssertionError("a probe must never bill a completion")
+
+        async def count_tokens(self, **kwargs):
+            counted.append(kwargs)
+            return SimpleNamespace(input_tokens=7)
+
+    class FakeClient:
+        messages = FakeMessages()
+
+        async def close(self):
+            return None
+
+    settings = AssistantSettings(
+        enabled=True,
+        provider="anthropic",
+        model="claude-sonnet-5",
+        api_key="server-secret",
+    )
+    provider = AnthropicProvider(settings, client_factory=lambda **kwargs: FakeClient())
+
+    probe = asyncio.run(provider.probe())
+
+    assert probe.ok is True
+    assert probe.kind == "ok"
+    assert counted == [{
+        "model": "claude-sonnet-5",
+        "messages": [{"role": "user", "content": "ping"}],
+    }]
+
+
+def test_probe_reports_a_rejected_key_instead_of_an_outage():
+    provider = _failing_provider(_UpstreamStatusError(401, "authentication_error"))
+
+    probe = asyncio.run(provider.probe())
+
+    assert probe.ok is False
+    assert probe.kind == "auth"
+    assert probe.status_code == 401
+    assert probe.error_type == "authentication_error"
+    assert "ANTHROPIC_API_KEY" in probe.detail
+
+
+def test_diagnostics_endpoint_reports_configuration_gaps_without_calling_out(monkeypatch):
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    reset_assistant_runtime()
+
+    app.dependency_overrides[require_assistant_session] = lambda: Actor(
+        id="actor-1",
+        name="Operasyon",
+        role="admin",
+    )
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/assistant/v1/diagnostics")
+    finally:
+        app.dependency_overrides.pop(require_assistant_session, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configuration_state"] == "api_key_missing"
+    assert body["reachable"] is False
+    assert body["reason"] == "not_configured"
+    assert "ANTHROPIC_API_KEY" in body["detail"]
+
+
+def test_diagnostics_endpoint_surfaces_a_rejected_key_and_hides_the_secret(monkeypatch):
+    secret = "anthropic-secret-must-never-leak"
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_ENABLED", "1")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_PROVIDER", "anthropic")
+    monkeypatch.setenv("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
+    reset_assistant_runtime()
+
+    provider = _failing_provider(_UpstreamStatusError(401, "authentication_error"))
+    monkeypatch.setattr(
+        "backend.assistant.service.get_assistant_provider",
+        lambda settings=None: provider,
+    )
+
+    app.dependency_overrides[require_assistant_session] = lambda: Actor(
+        id="actor-1",
+        name="Operasyon",
+        role="admin",
+    )
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/assistant/v1/diagnostics")
+    finally:
+        app.dependency_overrides.pop(require_assistant_session, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configuration_state"] == "ready"
+    assert body["reachable"] is False
+    assert body["reason"] == "auth"
+    assert body["upstream_status"] == 401
+    assert body["upstream_error_type"] == "authentication_error"
+    assert secret not in response.text
+    assert "claude-sonnet-5" not in response.text
+
+
+def test_supported_sonnet_models_cover_the_served_family_and_exclude_other_tiers():
+    assert "claude-sonnet-5" in SUPPORTED_SONNET_MODELS
+    assert "claude-sonnet-4-6" in SUPPORTED_SONNET_MODELS
+    assert not any(
+        model.startswith(("claude-opus", "claude-haiku"))
+        for model in SUPPORTED_SONNET_MODELS
+    )

@@ -50,6 +50,39 @@ export type AssistantChatTurn = {
   content: string;
 };
 
+export const ASSISTANT_DIAGNOSTIC_REASONS = [
+  "ok",
+  "not_configured",
+  "auth",
+  "permission",
+  "model",
+  "request",
+  "rate_limit",
+  "timeout",
+  "network",
+  "upstream",
+  "response",
+  "unknown",
+] as const;
+
+export type AssistantDiagnosticReason = (typeof ASSISTANT_DIAGNOSTIC_REASONS)[number];
+
+/**
+ * Server-attested readiness report. Carries a fixed reason vocabulary plus
+ * opaque upstream identifiers only; the API key and provider model id never
+ * cross this boundary.
+ */
+export type AssistantDiagnostics = {
+  configuration_state: AssistantConfigurationState;
+  reachable: boolean;
+  reason: AssistantDiagnosticReason;
+  detail: string;
+  upstream_status: number;
+  upstream_error_type: string;
+  upstream_request_id: string;
+  duration_ms: number;
+};
+
 export type AssistantChatResponse = {
   message: string;
   usage: {
@@ -143,6 +176,25 @@ function isChatResponse(value: unknown): value is AssistantChatResponse {
     && !Array.isArray(usage)
     && typeof (usage as Record<string, unknown>).input_tokens === "number"
     && typeof (usage as Record<string, unknown>).output_tokens === "number"
+  );
+}
+
+const DIAGNOSTIC_REASON_SET = new Set<string>(ASSISTANT_DIAGNOSTIC_REASONS);
+
+function isDiagnostics(value: unknown): value is AssistantDiagnostics {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const report = value as Record<string, unknown>;
+  return (
+    typeof report.configuration_state === "string"
+    && CONFIGURATION_STATE_SET.has(report.configuration_state)
+    && typeof report.reachable === "boolean"
+    && typeof report.reason === "string"
+    && DIAGNOSTIC_REASON_SET.has(report.reason)
+    && typeof report.detail === "string"
+    && typeof report.upstream_status === "number"
+    && typeof report.upstream_error_type === "string"
+    && typeof report.upstream_request_id === "string"
+    && typeof report.duration_ms === "number"
   );
 }
 
@@ -247,6 +299,34 @@ export async function logoutAssistantSession(
   if (!response.ok) {
     throw await errorFromResponse(response, "Çevrimiçi asistan oturumu kapatılamadı.");
   }
+}
+
+/**
+ * Asks the server to verify its own Anthropic credentials and model.
+ * Free upstream: it never spends output tokens or the daily chat budget.
+ */
+export async function runAssistantDiagnostics(
+  csrfToken: string,
+  signal?: AbortSignal,
+): Promise<AssistantDiagnostics> {
+  const response = await fetch("/api/assistant/v1/diagnostics", {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+      "X-CSRF-Token": csrfToken,
+    },
+    signal,
+  });
+  if (!response.ok) {
+    throw await errorFromResponse(response, "Asistan denetimi tamamlanamadı.");
+  }
+  const payload: unknown = await response.json();
+  if (!isDiagnostics(payload)) {
+    throw new AssistantClientError("Asistan denetim yanıtı geçersiz.", 502);
+  }
+  return payload;
 }
 
 export async function sendAssistantMessage(

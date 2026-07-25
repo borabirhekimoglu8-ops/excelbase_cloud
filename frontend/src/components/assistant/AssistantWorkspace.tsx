@@ -18,9 +18,11 @@ import {
   fetchAssistantSession,
   fetchAssistantStatus,
   logoutAssistantSession,
+  runAssistantDiagnostics,
   sendAssistantMessage,
   unlockAssistantSession,
 } from "@/lib/assistant/client";
+import type { AssistantDiagnostics } from "@/lib/assistant/client";
 import { buildAssistantContext } from "@/lib/assistant/context";
 import {
   ASSISTANT_MESSAGE_MAX_CHARS,
@@ -126,6 +128,9 @@ export function AssistantWorkspace({
   const [disconnecting, setDisconnecting] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [diagnostics, setDiagnostics] = useState<AssistantDiagnostics | null>(null);
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState("");
   const requestRef = useRef<AbortController | null>(null);
   const connectionRef = useRef<AbortController | null>(null);
   const connectionSequenceRef = useRef(0);
@@ -321,6 +326,20 @@ export function AssistantWorkspace({
     setConversation(emptyAssistantConversation(privacyAcknowledged));
   }
 
+  async function checkDiagnostics() {
+    if (!session?.csrf_token || diagnosticsBusy) return;
+    setDiagnosticsBusy(true);
+    setDiagnosticsError("");
+    try {
+      setDiagnostics(await runAssistantDiagnostics(session.csrf_token));
+    } catch (error) {
+      setDiagnostics(null);
+      setDiagnosticsError(friendlyError(error));
+    } finally {
+      setDiagnosticsBusy(false);
+    }
+  }
+
   async function disconnectSession() {
     if (!session?.csrf_token || disconnecting) return;
     setDisconnecting(true);
@@ -494,6 +513,42 @@ export function AssistantWorkspace({
           <h2>Bağlantı kurulamadı</h2>
           <p>{connectionError}</p>
           <button type="button" onClick={() => void refreshConnection()}>TEKRAR DENE</button>
+        </section>
+      )}
+
+      {/* Yapılandırma "hazır" göründüğü hâlde yanıt alınamadığında, sorunun
+          anahtar mı, model mi, ağ mı olduğunu ücretsiz bir denetimle gösterir. */}
+      {ready && (sendError || diagnostics || diagnosticsError) && (
+        <section
+          className={`assistant-state-card${diagnostics && !diagnostics.reachable ? " warning" : ""}`}
+        >
+          <p>SUNUCU DENETİMİ</p>
+          <h2>
+            {diagnostics
+              ? diagnostics.reachable
+                ? "Anthropic bağlantısı doğrulandı"
+                : "Anthropic bağlantısı doğrulanamadı"
+              : "Sonnet yanıt vermiyor mu?"}
+          </h2>
+          <p>
+            {diagnosticsError
+              || diagnostics?.detail
+              || "Anthropic anahtarını ve modelini token harcamadan sınayın."}
+          </p>
+          {diagnostics && !diagnostics.reachable && diagnostics.upstream_status > 0 && (
+            <p className="assistant-diagnostics-meta">
+              {`HTTP ${diagnostics.upstream_status}`}
+              {diagnostics.upstream_error_type ? ` · ${diagnostics.upstream_error_type}` : ""}
+              {diagnostics.upstream_request_id ? ` · ${diagnostics.upstream_request_id}` : ""}
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={diagnosticsBusy || sending}
+            onClick={() => void checkDiagnostics()}
+          >
+            {diagnosticsBusy ? "DENETLENİYOR…" : "BAĞLANTIYI DENETLE"}
+          </button>
         </section>
       )}
 

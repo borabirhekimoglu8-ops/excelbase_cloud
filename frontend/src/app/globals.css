@@ -1877,6 +1877,12 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .assistant-state-card h2 { margin: 0; color: var(--ido-primary-deep); font-size: 18px; line-height: 1.25; }
 .assistant-state-card > p:not(:first-child) { margin: 0; color: var(--ido-muted); font-size: 11px; line-height: 1.55; }
 .assistant-state-card code { color: var(--ido-primary-deep); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* Yalnizca ustteki saglayicidan gelen opak tanimlayicilar; gizli deger tasimaz. */
+.assistant-state-card > p.assistant-diagnostics-meta {
+  color: var(--ido-primary-deep);
+  font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
 .assistant-state-card > button,
 .assistant-pair-form > button {
   min-height: 46px;

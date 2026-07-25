@@ -45,8 +45,73 @@ class AssistantTimeoutError(RuntimeError):
     """Raised when the provider does not answer within the configured timeout."""
 
 
+ProviderFailureKind = Literal[
+    "auth",
+    "permission",
+    "model",
+    "request",
+    "rate_limit",
+    "timeout",
+    "network",
+    "upstream",
+    "response",
+    "unknown",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderDiagnostic:
+    """Non-secret taxonomy for one upstream failure.
+
+    Every field is either a fixed enum value chosen by this module or a short
+    opaque identifier emitted by the provider.  Prompt text, context, response
+    bodies and exception reprs are deliberately absent, so a diagnostic is safe
+    to log and to return to an authenticated operator.
+    """
+
+    kind: ProviderFailureKind = "unknown"
+    status_code: int = 0
+    error_type: str = ""
+    upstream_request_id: str = ""
+
+    def as_log_fields(self) -> str:
+        return (
+            f"kind={self.kind} upstream_status={self.status_code or '-'} "
+            f"upstream_error_type={self.error_type or '-'} "
+            f"upstream_request_id={self.upstream_request_id or '-'}"
+        )
+
+
 class AssistantProviderError(RuntimeError):
     """Raised for a sanitized provider or response failure."""
+
+    def __init__(
+        self,
+        message: str,
+        diagnostic: ProviderDiagnostic | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.diagnostic = diagnostic or ProviderDiagnostic()
+
+
+class AssistantConfigurationError(AssistantProviderError):
+    """Raised when the upstream rejects our own credentials or model.
+
+    Separated from a transient outage because retrying cannot help: a deploy
+    time change (API key, key scope, model id) is required.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderProbe:
+    """Result of a free, non-billable upstream reachability check."""
+
+    ok: bool
+    kind: ProviderFailureKind | Literal["ok"] = "ok"
+    status_code: int = 0
+    error_type: str = ""
+    upstream_request_id: str = ""
+    detail: str = ""
 
 
 @runtime_checkable
@@ -56,6 +121,9 @@ class AssistantProvider(Protocol):
 
     async def generate(self, request: ProviderRequest) -> ProviderResult:
         """Generate a response without mutating Excelbase state."""
+
+    async def probe(self) -> ProviderProbe:
+        """Verify credentials and model without spending output tokens."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,3 +139,8 @@ class DisabledProvider:
         # DNS, or perform any other operation that could leak local context.
         del request
         raise AssistantUnavailableError(self.reason)
+
+    async def probe(self) -> ProviderProbe:
+        # A disabled provider must not resolve DNS or construct a client, so
+        # the configured reason is the whole answer.
+        return ProviderProbe(ok=False, kind="unknown", detail=self.reason)
