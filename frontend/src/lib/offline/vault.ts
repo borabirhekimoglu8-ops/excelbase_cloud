@@ -64,9 +64,24 @@ let databasePromise: Promise<IDBPDatabase<VaultSchema>> | null = null;
 let dataKey: CryptoKey | null = null;
 let unlockedUser: VaultAuthUser | null = null;
 
+/**
+ * Browsers expose `crypto.subtle` only in a secure context, so a LAN address
+ * served over plain http:// has no Web Crypto at all -- on iOS Safari in
+ * particular. Blaming the browser there sends people looking for a Safari
+ * setting that does not exist, when the fix is the address: HTTPS, or
+ * localhost on the machine itself.
+ */
 function cryptography(): Crypto {
   const value = globalThis.crypto;
-  if (!value?.subtle) throw new Error("Bu tarayıcı güvenli yerel şifrelemeyi desteklemiyor.");
+  if (!value?.subtle) {
+    if (typeof globalThis.isSecureContext === "boolean" && !globalThis.isSecureContext) {
+      throw new Error(
+        "Bu adres güvenli değil (HTTPS gerekiyor). Şifreli kasa yalnızca https:// "
+        + "adreslerde ve sunucunun kendisindeki localhost'ta açılabilir.",
+      );
+    }
+    throw new Error("Bu tarayıcı güvenli yerel şifrelemeyi desteklemiyor.");
+  }
   return value;
 }
 

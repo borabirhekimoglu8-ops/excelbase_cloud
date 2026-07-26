@@ -105,9 +105,53 @@ EXCELBASE_ASSISTANT_ALLOW_WRITES=1    # Claude kayıt değiştirebilir
 EXCELBASE_ASSISTANT_ALLOWED_IPS=192.168.1.0/24
 ```
 
-> Uzaktan da erişmeniz gerekiyorsa doğru çözüm portu internete açmak değil,
-> **VPN** (WireGuard/Tailscale). Cihaz VPN'e girdiğinde LAN'daymış gibi
-> davranır, kurulum aynı kalır.
+## 2b. iPhone ve diğer telefonlar — HTTPS zorunlu
+
+**Telefondan düz `http://192.168.1.50:8000` adresi çalışmaz.** Sebebi Safari
+değil, tarayıcı standardı: `crypto.subtle` yalnızca **güvenli bağlamda**
+(https:// veya sunucunun kendisindeki localhost) tanımlıdır. Şifreli kasa buna
+dayandığı için güvensiz bir adreste hiç açılmaz; servis işçisi de kaydolmaz,
+yani çevrimdışı mod da gider.
+
+Uygulama bu durumda artık doğru sebebi söylüyor ("Bu adres güvenli değil"),
+ama çözüm adresi HTTPS yapmaktır. Kapalı kalmayı sürdüren en kısa yol:
+
+### Tailscale (önerilen)
+
+Ücretsiz, port açmaz, hem ofiste hem dışarıda çalışır ve **geçerli bir HTTPS
+sertifikası** verir — telefona sertifika yüklemek gerekmez.
+
+1. Sunucu makinesine ve iPhone'a Tailscale kurun, ikisinde de aynı hesapla
+   oturum açın (App Store'da "Tailscale").
+2. Tailscale yönetim panelinde **HTTPS Certificates** ayarını açın.
+3. Sunucuda:
+
+```sh
+tailscale serve --bg 8000
+tailscale serve status        # verilen https adresini gösterir
+```
+
+4. iPhone'da Safari ile `https://<makine-adi>.<tailnet>.ts.net` açın →
+   **Paylaş → Ana Ekrana Ekle**. Uygulama tam ekran PWA olarak çalışır.
+
+Sunucu yerelde dinlemeye devam etsin (`BIND_ADDRESS=127.0.0.1`); Tailscale
+zaten önüne geçiyor. IP kısıtı kullanacaksanız Tailscale aralığını verin:
+
+```
+EXCELBASE_ASSISTANT_TRUSTED_PROXY_HOPS=1
+EXCELBASE_ASSISTANT_ALLOWED_IPS=100.64.0.0/10
+```
+
+### Alternatifler
+
+| Yol | Not |
+|---|---|
+| Gerçek alan adı + Caddy | Port 80/443 açmayı ve DNS'i gerektirir; artık kapalı değil |
+| Kendi imzalı sertifika | iPhone'a profil yükleyip **Ayarlar → Genel → Hakkında → Sertifika Güveni**'nden güvenmek gerekir; her cihazda tekrar |
+| Yalnızca masaüstü | Sunucunun kendisinde `http://127.0.0.1:8000` güvenli bağlam sayılır, sorunsuz çalışır |
+
+> Uzaktan erişim için portu internete açmayın; Tailscale/WireGuard cihazı
+> LAN'daymış gibi davrandırır ve kurulum aynı kalır.
 
 ## 3. İnternete açacaksanız
 

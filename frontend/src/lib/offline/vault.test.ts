@@ -224,3 +224,31 @@ function containsBytes(haystack: Uint8Array, needle: Uint8Array): boolean {
   }
   return false;
 }
+
+describe("insecure origin diagnosis", () => {
+  const realCrypto = globalThis.crypto;
+  const realSecure = globalThis.isSecureContext;
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, "crypto", { value: realCrypto, configurable: true });
+    Object.defineProperty(globalThis, "isSecureContext", { value: realSecure, configurable: true });
+  });
+
+  it("blames the address, not the browser, when the origin is not secure", async () => {
+    // What an iPhone sees on http://192.168.1.50:8000 — Web Crypto is absent
+    // because the context is insecure, not because Safari lacks the feature.
+    Object.defineProperty(globalThis, "crypto", { value: {}, configurable: true });
+    Object.defineProperty(globalThis, "isSecureContext", { value: false, configurable: true });
+
+    const { setupVault } = await import("./vault");
+    await expect(setupVault("Operasyon", "123456")).rejects.toThrow(/HTTPS gerekiyor/);
+  });
+
+  it("still reports a genuinely unsupported browser on a secure origin", async () => {
+    Object.defineProperty(globalThis, "crypto", { value: {}, configurable: true });
+    Object.defineProperty(globalThis, "isSecureContext", { value: true, configurable: true });
+
+    const { setupVault } = await import("./vault");
+    await expect(setupVault("Operasyon", "123456")).rejects.toThrow(/tarayıcı güvenli yerel şifrelemeyi/);
+  });
+});
