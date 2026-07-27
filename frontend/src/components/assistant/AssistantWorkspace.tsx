@@ -28,6 +28,7 @@ import type {
   AssistantToolResultPayload,
 } from "@/lib/assistant/client";
 import { describeToolCall, executeAssistantTool } from "@/lib/assistant/toolExecutor";
+import { memoryDigest } from "@/lib/assistant/memory";
 import { buildAssistantContext } from "@/lib/assistant/context";
 import {
   ASSISTANT_MESSAGE_MAX_CHARS,
@@ -157,6 +158,7 @@ export function AssistantWorkspace({
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [diagnosticsError, setDiagnosticsError] = useState("");
   const [toolActivity, setToolActivity] = useState<string[]>([]);
+  const [memory, setMemory] = useState<string[]>([]);
   const requestRef = useRef<AbortController | null>(null);
   const connectionRef = useRef<AbortController | null>(null);
   const connectionSequenceRef = useRef(0);
@@ -166,9 +168,24 @@ export function AssistantWorkspace({
   const { messages, draft, privacyAcknowledged } = conversation;
 
   const safeContext = useMemo(
-    () => buildAssistantContext(summary, dateScope),
-    [dateScope, summary],
+    () => buildAssistantContext(summary, dateScope, memory),
+    [dateScope, memory, summary],
   );
+
+  // Reloaded after every turn: a `remember` call during the turn should be in
+  // context for the next question, not the one after it.
+  const refreshMemory = useCallback(async () => {
+    try {
+      setMemory(await memoryDigest());
+    } catch {
+      // The vault may be locked; the assistant simply works without memory.
+      setMemory([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshMemory();
+  }, [refreshMemory]);
 
   const refreshConnection = useCallback(async () => {
     if (!navigator.onLine) {
@@ -382,6 +399,7 @@ export function AssistantWorkspace({
         requestRef.current = null;
         setSending(false);
         setToolActivity([]);
+        void refreshMemory();
       }
     }
   }

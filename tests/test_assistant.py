@@ -1450,3 +1450,61 @@ def test_continuation_orders_tool_results_directly_after_their_tool_use():
     # Each result immediately follows the call it answers.
     assert turns[2].tool_results[0].tool_use_id == turns[1].tool_calls[0].id
     assert turns[4].tool_results[0].tool_use_id == turns[3].tool_calls[0].id
+
+
+# ------------------------------------------------------------------- memory
+def test_memory_is_replayed_in_its_own_block_not_as_an_attested_metric():
+    """Free text must not sit inside the numbers the app vouches for."""
+    from backend.assistant.service import _provider_request
+
+    payload = AssistantChatRequest.model_validate({
+        **_chat_payload(),
+        "context": {
+            **_chat_payload()["context"],
+            "memory": ["Cuma seferlerinde fotoğraf eksikleri artıyor."],
+        },
+    })
+    request = _provider_request(payload, _tool_settings())
+    system = next(m for m in request.messages if m.role == "system").content
+
+    assert "<hatirladiklarin>" in system
+    assert "Cuma seferlerinde" in system
+    # The operational JSON stays purely numeric. The tag name also appears in
+    # the rules above, so the last segment is the actual data block.
+    context_json = system.split("<operasyon_baglamı>")[-1]
+    assert "Cuma seferlerinde" not in context_json
+
+
+def test_memory_entries_are_bounded_and_blank_ones_dropped():
+    from backend.assistant.schemas import AssistantSafeContext
+
+    context = AssistantSafeContext.model_validate({
+        "memory": ["  ", "geçerli not", "x" * 900],
+    })
+    assert context.memory[0] == "geçerli not"
+    assert len(context.memory[1]) == 400
+    assert len(context.memory) == 2
+
+    with pytest.raises(Exception):
+        AssistantSafeContext.model_validate({"memory": ["not"] * 41})
+
+
+def test_memory_tools_survive_a_read_only_deployment():
+    """Remembering how an operation works changes nothing about it."""
+    from backend.assistant.tools import (
+        MEMORY_TOOL_NAMES,
+        WRITE_TOOL_NAMES,
+        available_tools,
+    )
+
+    read_only = {tool.name for tool in available_tools(allow_writes=False)}
+    assert read_only >= MEMORY_TOOL_NAMES
+    assert not (read_only & WRITE_TOOL_NAMES)
+    # And a memory tool can never be a destructive one.
+    assert not (MEMORY_TOOL_NAMES & CONFIRM_NAMES())
+
+
+def CONFIRM_NAMES():
+    from backend.assistant.tools import CONFIRM_TOOL_NAMES
+
+    return CONFIRM_TOOL_NAMES

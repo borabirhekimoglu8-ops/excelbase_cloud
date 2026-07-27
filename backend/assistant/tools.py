@@ -124,6 +124,29 @@ _READ_TOOLS: tuple[ProviderTool, ...] = (
     ),
 )
 
+# ------------------------------------------------------------------- memory
+# Writes, but to the assistant's own notes rather than to operational records,
+# so they are available even on a read-only deployment: remembering how an
+# operation works changes nothing about the operation.
+_MEMORY_TOOLS: tuple[ProviderTool, ...] = (
+    _tool(
+        "remember",
+        "Sonraki konuşmalarda hatırlanmak üzere kalıcı bir not yazar. "
+        "Operasyonun düzeni, tekrarlayan sorunlar ve kullanıcının tercihleri "
+        "için kullan. Kişisel veri yazma; zaten sende yok.",
+        {"text": {"type": "string", "minLength": 1, "maxLength": 400}},
+        ["text"],
+        writes=True,
+    ),
+    _tool(
+        "forget",
+        "Yanlış veya güncelliğini yitirmiş bir hatırayı siler.",
+        {"ref": _REF},
+        ["ref"],
+        writes=True,
+    ),
+)
+
 # -------------------------------------------------------------------- write
 _WRITE_TOOLS: tuple[ProviderTool, ...] = (
     _tool(
@@ -191,10 +214,11 @@ _WRITE_TOOLS: tuple[ProviderTool, ...] = (
     ),
 )
 
-ASSISTANT_TOOLS: tuple[ProviderTool, ...] = _READ_TOOLS + _WRITE_TOOLS
+ASSISTANT_TOOLS: tuple[ProviderTool, ...] = _READ_TOOLS + _MEMORY_TOOLS + _WRITE_TOOLS
 TOOLS_BY_NAME: dict[str, ProviderTool] = {tool.name: tool for tool in ASSISTANT_TOOLS}
 READ_TOOL_NAMES: frozenset[str] = frozenset(tool.name for tool in _READ_TOOLS)
 WRITE_TOOL_NAMES: frozenset[str] = frozenset(tool.name for tool in _WRITE_TOOLS)
+MEMORY_TOOL_NAMES: frozenset[str] = frozenset(tool.name for tool in _MEMORY_TOOLS)
 CONFIRM_TOOL_NAMES: frozenset[str] = frozenset(
     tool.name for tool in ASSISTANT_TOOLS if tool.confirm
 )
@@ -208,4 +232,6 @@ def available_tools(*, allow_writes: bool) -> tuple[ProviderTool, ...]:
     """Publish the contract, narrowed when the deployment is read-only."""
     if allow_writes:
         return ASSISTANT_TOOLS
-    return _READ_TOOLS
+    # Memory survives a read-only deployment: it mutates the assistant's own
+    # notes, never a passenger record.
+    return _READ_TOOLS + _MEMORY_TOOLS

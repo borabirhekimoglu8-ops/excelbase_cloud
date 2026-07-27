@@ -510,10 +510,24 @@ async def assistant_diagnostics(actor_id: str) -> AssistantDiagnosticsResponse:
     )
 
 
+def _memory_block(payload: AssistantChatRequest) -> str:
+    """Earlier conclusions, kept apart from the operational numbers.
+
+    Folding them into the context JSON would make free text look like an
+    attested metric; a separate block keeps the model's own notes visibly the
+    model's own.
+    """
+    if not payload.context.memory:
+        return ""
+    lines = "\n".join(f"- {item}" for item in payload.context.memory)
+    return f"<hatirladiklarin>\n{lines}\n</hatirladiklarin>\n\n"
+
+
 def _context_json(payload: AssistantChatRequest) -> str:
     # Pydantic has already rejected every extra field at each nested level.
+    # Memory has its own block, so it is excluded from the attested numbers.
     return json.dumps(
-        payload.context.model_dump(mode="json"),
+        payload.context.model_dump(mode="json", exclude={"memory"}),
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
@@ -635,6 +649,7 @@ def _provider_request(payload: AssistantChatRequest, settings: AssistantSettings
     system = (
         f"{_SYSTEM_PROMPT.format(authority=_WRITE_AUTHORITY if writes_enabled(settings) else _READ_ONLY_AUTHORITY)}\n\n"
         f"{_tool_instructions(tools)}\n\n"
+        f"{_memory_block(payload)}"
         "<operasyon_baglamı>\n"
         f"{context_json}\n"
         "</operasyon_baglamı>"

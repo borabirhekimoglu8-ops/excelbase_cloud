@@ -26,6 +26,8 @@ export type AssistantSummarySource = {
 
 export type SafeAssistantContext = {
   version: 1;
+  /** What the assistant wrote down for itself in earlier conversations. */
+  memory: string[];
   scope: {
     range: "all" | "today" | "week" | "month" | "custom";
     field: "departure" | "created";
@@ -118,9 +120,13 @@ function safeIssues(value: unknown): SafeAssistantContext["issues"] {
 export function buildAssistantContext(
   summary: AssistantSummarySource,
   scope: AssistantDateScope = {},
+  memory: string[] = [],
 ): SafeAssistantContext {
   return {
     version: 1,
+    // Bounded here as well as on the server: an unbounded prompt is the one
+    // way memory turns from a feature into a cost.
+    memory: memory.map((item) => item.trim().slice(0, 400)).filter(Boolean).slice(0, 40),
     scope: {
       range: RANGE_MAP[scope.range ?? ""] ?? "all",
       field: scope.field === "created" ? "created" : "departure",

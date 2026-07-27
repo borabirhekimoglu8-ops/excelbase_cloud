@@ -23,6 +23,7 @@ import {
   updatePassenger,
 } from "@/lib/api";
 import type { DateScope } from "@/lib/api";
+import { forgetFact, listMemories, rememberFact } from "@/lib/assistant/memory";
 
 export type AssistantToolCall = {
   id: string;
@@ -40,6 +41,7 @@ export type AssistantToolResult = {
 
 const PASSENGER_PREFIX = "p_";
 const TASK_PREFIX = "t_";
+const MEMORY_PREFIX = "m_";
 
 /** Fields the model may never receive, guarded at the point of projection. */
 const MAX_RESULT_ITEMS = 100;
@@ -209,6 +211,21 @@ async function run(
           status: workFile.status,
         })),
       };
+    }
+
+    // ------------------------------------------------------------- memory
+    case "remember": {
+      const entry = await rememberFact(String(input.text ?? ""));
+      return { ok: true, ref: `${MEMORY_PREFIX}${entry.id}` };
+    }
+    case "forget": {
+      const text = String(input.ref ?? "");
+      if (!text.startsWith(MEMORY_PREFIX)) {
+        throw new AssistantToolError(`Geçersiz hatıra referansı: ${text.slice(0, 32)}`);
+      }
+      const removed = await forgetFact(text.slice(MEMORY_PREFIX.length));
+      if (!removed) throw new AssistantToolError("Böyle bir hatıra yok.");
+      return { ok: true };
     }
 
     // ------------------------------------------------------------- writes

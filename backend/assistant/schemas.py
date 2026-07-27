@@ -200,6 +200,17 @@ class AssistantSafeContext(BaseModel):
     scope: AssistantContextScope = Field(default_factory=AssistantContextScope)
     metrics: AssistantContextMetrics = Field(default_factory=AssistantContextMetrics)
     issues: AssistantContextIssues = Field(default_factory=AssistantContextIssues)
+    # What the assistant wrote down for itself in earlier conversations. Free
+    # text, but text the model authored from pseudonymous data -- it never had
+    # a name or passport number to record. Bounded so a long-lived deployment
+    # cannot grow the prompt without limit.
+    memory: list[str] = Field(default_factory=list, max_length=40)
+
+    @field_validator("memory")
+    @classmethod
+    def validate_memory(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip()[:400] for item in value]
+        return [item for item in cleaned if item]
 
 
 class AssistantToolCall(BaseModel):

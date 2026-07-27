@@ -42,6 +42,7 @@ describe("buildAssistantContext", () => {
 
     expect(context).toEqual({
       version: 1,
+      memory: [],
       scope: {
         range: "custom",
         field: "created",
