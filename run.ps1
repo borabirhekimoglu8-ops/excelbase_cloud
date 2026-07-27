@@ -64,15 +64,54 @@ if (-not (Test-Path ".venv")) {
     Write-Host "Python ortami kuruluyor..." -ForegroundColor Cyan
     python -m venv .venv
     & .\.venv\Scripts\python.exe -m pip install --upgrade pip --quiet
+}
+
+# Bagimliliklar yalnizca .venv yokken kurulsaydi, `git pull` ile gelen yeni bir
+# paket hicbir zaman kurulmazdi: uygulama eski paketlerle sessizce calisir ve
+# yeni ozellik "acmadim mi?" diye aranirdi. Damga dosyasi son kurulumdan bu yana
+# requirements degisti mi sorusunu cevaplar.
+$stamp = ".venv\.requirements-installed"
+$needsInstall = -not (Test-Path $stamp)
+if (-not $needsInstall) {
+    $stampTime = (Get-Item $stamp).LastWriteTimeUtc
+    foreach ($file in @("requirements.txt", "backend\requirements.txt")) {
+        if ((Get-Item $file).LastWriteTimeUtc -gt $stampTime) { $needsInstall = $true }
+    }
+}
+if ($needsInstall) {
+    Write-Host "Python bagimliliklari kuruluyor/guncelleniyor..." -ForegroundColor Cyan
     & .\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt --quiet
+    New-Item -ItemType File -Path $stamp -Force | Out-Null
 }
 
 # --- frontend --------------------------------------------------------------
-# FastAPI, frontend/out icindeki statik ciktiyi servis eder.
-if (-not $SkipBuild -and -not (Test-Path "frontend\out\index.html")) {
+# FastAPI, frontend/out icindeki statik ciktiyi servis eder. Kaynaklardan biri
+# derlemeden yeniyse yeniden derlenir; yoksa `git pull` ile gelen arayuz
+# degisikligi tarayiciya hic ulasmaz ve "calismiyor" gibi gorunur.
+function Test-FrontendStale {
+    if (-not (Test-Path "frontend\out\index.html")) { return $true }
+    $built = (Get-Item "frontend\out\index.html").LastWriteTimeUtc
+    $sources = @(Get-ChildItem -Path "frontend\src" -Recurse -File -ErrorAction SilentlyContinue)
+    $sources += @(Get-ChildItem -Path "frontend\public" -Recurse -File -ErrorAction SilentlyContinue)
+    # Kok dizindeki dosyalar tek tek sayilir. "Tum dosyalar" denseydi derleme
+    # sirasinda yazilan tsconfig.tsbuildinfo her seferinde ciktidan yeni gorunur
+    # ve arayuz her acilista bastan derlenirdi.
+    foreach ($name in @("package.json", "package-lock.json", "next.config.ts", "tsconfig.json")) {
+        $path = Join-Path "frontend" $name
+        if (Test-Path $path) { $sources += @(Get-Item $path) }
+    }
+    foreach ($source in $sources) {
+        if ($source.LastWriteTimeUtc -gt $built) { return $true }
+    }
+    return $false
+}
+
+if (-not $SkipBuild -and (Test-FrontendStale)) {
     Write-Host "Arayuz derleniyor (ilk sefer birkac dakika)..." -ForegroundColor Cyan
     Push-Location frontend
-    npm ci
+    if (-not (Test-Path "node_modules") -or ((Get-Item "package-lock.json").LastWriteTimeUtc -gt (Get-Item "node_modules").LastWriteTimeUtc)) {
+        npm ci
+    }
     npm run build
     Pop-Location
 }

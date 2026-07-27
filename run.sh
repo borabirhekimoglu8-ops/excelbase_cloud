@@ -56,13 +56,47 @@ if [ ! -d .venv ]; then
     echo "Python ortamı kuruluyor..."
     python3 -m venv .venv
     ./.venv/bin/python -m pip install --upgrade pip --quiet
-    ./.venv/bin/python -m pip install -r backend/requirements.txt --quiet
 fi
 
-# FastAPI, frontend/out içindeki statik çıktıyı servis eder.
-if [ -z "${SKIP_BUILD:-}" ] && [ ! -f frontend/out/index.html ]; then
+# Bağımlılıklar yalnızca .venv yokken kurulsaydı, `git pull` ile gelen yeni bir
+# paket hiçbir zaman kurulmazdı: uygulama eski paketlerle sessizce çalışır ve
+# yeni özellik "açmadım mı?" diye aranırdı. Damga dosyası son kurulumdan bu yana
+# requirements değişti mi sorusunu cevaplar.
+stamp=.venv/.requirements-installed
+if [ ! -f "$stamp" ] || [ requirements.txt -nt "$stamp" ] || [ backend/requirements.txt -nt "$stamp" ]; then
+    echo "Python bağımlılıkları kuruluyor/güncelleniyor..."
+    ./.venv/bin/python -m pip install -r backend/requirements.txt --quiet
+    touch "$stamp"
+fi
+
+# FastAPI, frontend/out içindeki statik çıktıyı servis eder. Kaynaklardan biri
+# derlemeden yeniyse yeniden derlenir; yoksa `git pull` ile gelen arayüz
+# değişikliği tarayıcıya hiç ulaşmaz ve "çalışmıyor" gibi görünür.
+frontend_is_stale() {
+    [ -f frontend/out/index.html ] || return 0
+    local newer=""
+    # Paths are listed explicitly rather than globbed: an unmatched glob would
+    # be passed to find literally. `|| true` because find still exits non-zero
+    # after reporting a path that no longer exists, and `set -e` would take
+    # that as a reason to stop the whole script.
+    newer=$(find \
+        frontend/src \
+        frontend/public \
+        frontend/package.json \
+        frontend/package-lock.json \
+        frontend/next.config.ts \
+        frontend/tsconfig.json \
+        -newer frontend/out/index.html -print -quit 2>/dev/null) || true
+    [ -n "$newer" ]
+}
+
+if [ -z "${SKIP_BUILD:-}" ] && frontend_is_stale; then
     echo "Arayüz derleniyor (ilk sefer birkaç dakika)..."
-    (cd frontend && npm ci && npm run build)
+    (
+        cd frontend
+        if [ ! -d node_modules ] || [ package-lock.json -nt node_modules ]; then npm ci; fi
+        npm run build
+    )
 fi
 
 echo

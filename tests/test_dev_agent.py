@@ -109,6 +109,30 @@ def test_open_access_scoped_to_named_networks_still_counts_as_closed(monkeypatch
     assert dev_agent_state(dev_agent_settings()) == "ready"
 
 
+def test_dev_agent_never_reports_ready_without_the_sdk_it_runs_on(repository, monkeypatch):
+    """"Ready" followed by a failure on first use is an undiagnosable outage."""
+    monkeypatch.delitem(sys.modules, "claude_agent_sdk", raising=False)
+    monkeypatch.setattr(
+        devagent.importlib.util,
+        "find_spec",
+        lambda name: None if name == "claude_agent_sdk" else object(),
+    )
+
+    assert dev_agent_state(_settings(repository)) == "sdk_missing"
+
+
+def test_a_malformed_sdk_installation_is_not_an_installation(repository, monkeypatch):
+    """The status endpoint answers; it does not propagate an import error."""
+    monkeypatch.delitem(sys.modules, "claude_agent_sdk", raising=False)
+
+    def _broken(name: str):
+        raise ValueError("claude_agent_sdk.__spec__ is None")
+
+    monkeypatch.setattr(devagent.importlib.util, "find_spec", _broken)
+
+    assert dev_agent_state(_settings(repository)) == "sdk_missing"
+
+
 def test_dev_agent_names_a_missing_key_and_a_missing_repository(tmp_path, repository):
     assert dev_agent_state(_settings(repository, api_key="")) == "api_key_missing"
     assert (

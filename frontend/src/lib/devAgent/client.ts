@@ -12,7 +12,8 @@ export type DevAgentState =
   | "disabled"
   | "blocked_open_network"
   | "api_key_missing"
-  | "not_a_repository";
+  | "not_a_repository"
+  | "sdk_missing";
 
 export type DevAgentStatus = {
   state: DevAgentState;
@@ -42,6 +43,7 @@ const DEV_AGENT_STATES = new Set<string>([
   "blocked_open_network",
   "api_key_missing",
   "not_a_repository",
+  "sdk_missing",
 ]);
 
 export class DevAgentClientError extends Error {

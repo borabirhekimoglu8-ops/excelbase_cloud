@@ -20,9 +20,11 @@ revert data that can no longer be decrypted.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 import shutil
 import subprocess
+import sys
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -107,7 +109,23 @@ def dev_agent_state(settings: DevAgentSettings | None = None) -> str:
         return "api_key_missing"
     if not (Path(resolved.repository) / ".git").exists():
         return "not_a_repository"
+    # Checked here rather than at the first run, because "ready" followed by a
+    # failure the moment the operator asks for something is the shape of an
+    # outage they cannot diagnose.
+    if not _sdk_installed():
+        return "sdk_missing"
     return "ready"
+
+
+def _sdk_installed() -> bool:
+    if "claude_agent_sdk" in sys.modules:
+        return True
+    try:
+        return importlib.util.find_spec("claude_agent_sdk") is not None
+    except (ImportError, ValueError):
+        # An unimportable or malformed installation is not an installation, and
+        # a status endpoint must answer rather than raise.
+        return False
 
 
 def _git(repository: Path, *args: str, check: bool = True) -> str:

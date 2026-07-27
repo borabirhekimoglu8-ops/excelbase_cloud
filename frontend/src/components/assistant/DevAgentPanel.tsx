@@ -34,6 +34,12 @@ const UNAVAILABLE: Record<Exclude<DevAgentState, "ready">, { title: string; body
       "Geliştirme, uygulamanın git deposu üzerinde çalışır. Kurulum git ile yapılmadıysa "
       + "EXCELBASE_DEV_AGENT_REPOSITORY ile depo yolunu verin.",
   },
+  sdk_missing: {
+    title: "Geliştirme paketi kurulu değil",
+    body:
+      "Sunucuda claude-agent-sdk eksik. run.ps1 / run.sh betiğini yeniden çalıştırın; "
+      + "eksik paketleri kendisi kurar.",
+  },
 };
 
 /**
@@ -46,6 +52,7 @@ const UNAVAILABLE: Record<Exclude<DevAgentState, "ready">, { title: string; body
  */
 export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
   const [state, setState] = useState<DevAgentState | null>(null);
+  const [statusError, setStatusError] = useState("");
   const [instruction, setInstruction] = useState("");
   const [running, setRunning] = useState(false);
   const [log, setLog] = useState<string[]>([]);
@@ -63,9 +70,23 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
     if (!csrfToken) return;
     const controller = new AbortController();
     fetchDevAgentStatus(csrfToken, controller.signal)
-      .then((status) => setState(status.state))
-      // A status call that fails must not leave the panel claiming readiness.
-      .catch(() => setState(null));
+      .then((status) => {
+        setState(status.state);
+        setStatusError("");
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        // A status call that fails must not leave the panel claiming readiness
+        // -- but it must not disappear silently either. A panel that renders
+        // nothing looks identical to a setting that was never applied, which is
+        // exactly the dead end an operator cannot debug.
+        setState(null);
+        setStatusError(
+          cause instanceof Error && cause.message
+            ? cause.message
+            : "Geliştirme ajanı durumu alınamadı.",
+        );
+      });
     return () => controller.abort();
   }, [csrfToken]);
 
@@ -153,7 +174,20 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
     }
   }, [applicable, applying, csrfToken]);
 
-  if (state === null) return null;
+  if (state === null) {
+    if (!statusError) return null;
+    return (
+      <section className="assistant-state-card warning" aria-label="Uygulama içi geliştirme">
+        <h2>Geliştirme durumu okunamadı</h2>
+        <p>
+          {statusError}
+          {" "}
+          Sunucu eski sürümü çalıştırıyor olabilir: `git pull` sonrası run.ps1 / run.sh
+          betiğini yeniden çalıştırın.
+        </p>
+      </section>
+    );
+  }
   if (state !== "ready") {
     const message = UNAVAILABLE[state];
     return (
