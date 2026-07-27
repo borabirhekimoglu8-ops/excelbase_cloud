@@ -35,12 +35,24 @@ if ($envText -notmatch '(?m)^GATEVISA_DATA_SECRET=.+$') {
 
 # Satirlari ortama tasi. Tirnaklar kirpilir: panodan yapistirilan bir deger
 # tirnaklariyla gelirse Anthropic onu gecersiz anahtar sayardi.
+#
+# Ayirma islemi IndexOf ile yapilir, Split ile degil: PowerShell'de
+# `.Split("=", 2)` beklenen "en fazla iki parca" degil, ikinci argumani
+# StringSplitOptions sayan baska bir asiri yuke baglanabilir ve icinde "="
+# gecen bir deger sessizce kirpilir. Bir API anahtarinin yarisi, gecersiz bir
+# anahtardan daha kotudur: hata mesaji dogruyu soylemez.
 Get-Content ".env" | ForEach-Object {
     $line = $_.Trim()
-    if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
-        $name, $value = $line.Split("=", 2)
-        $value = $value.Trim().Trim('"').Trim("'")
-        [Environment]::SetEnvironmentVariable($name.Trim(), $value, "Process")
+    # Notepad "UTF-8" olarak kaydederse dosyanin basina BOM koyar; kirpilmazsa
+    # ilk degisken adi gorunmez bir karakterle baslar ve hicbir zaman eslesmez.
+    $line = $line.TrimStart([char]0xFEFF)
+    if ($line -and -not $line.StartsWith("#")) {
+        $separator = $line.IndexOf("=")
+        if ($separator -gt 0) {
+            $name = $line.Substring(0, $separator).Trim()
+            $value = $line.Substring($separator + 1).Trim().Trim('"').Trim("'")
+            [Environment]::SetEnvironmentVariable($name, $value, "Process")
+        }
     }
 }
 
@@ -120,8 +132,24 @@ Write-Host ""
 Write-Host "  Excelbase calisiyor:  http://$bind`:$port" -ForegroundColor Green
 if (-not $env:ANTHROPIC_API_KEY) {
     # Uygulamanin geri kalani anahtarsiz calisir; yalnizca asistan kapali olur.
-    Write-Host "  Claude asistani kapali. Acmak icin .env icindeki ANTHROPIC_API_KEY" -ForegroundColor Yellow
-    Write-Host "  satirina anahtarinizi yazip bu pencereyi kapatip tekrar calistirin." -ForegroundColor Yellow
+    # Dosyanin tam yolu yazilir: ayni depodan birden fazla klasor acilmissa
+    # "ama ben yazdim" ile "orada yazmiyor" ayni anda dogru olabilir.
+    Write-Host "  Claude asistani kapali: ANTHROPIC_API_KEY bos." -ForegroundColor Yellow
+    Write-Host "  Duzenlenecek dosya: $((Resolve-Path '.env').Path)" -ForegroundColor Yellow
+    Write-Host "  Yazdiktan sonra bu pencereyi kapatip tekrar calistirin." -ForegroundColor Yellow
+}
+# Gelistirme paneli neden gorunmuyor sorusunu tarayiciya bakmadan cevaplar.
+$devState = & .\.venv\Scripts\python.exe -c "from backend.devagent.service import dev_agent_state; print(dev_agent_state())" 2>$null
+if ($devState -and $devState -ne "ready") {
+    $devReason = switch ($devState) {
+        "disabled"             { ".env icinde EXCELBASE_DEV_AGENT=1 yok" }
+        "blocked_open_network" { "kurulum acik; once erisim kodu veya IP kisiti gerekir" }
+        "api_key_missing"      { "ANTHROPIC_API_KEY bos" }
+        "not_a_repository"     { "bu klasor bir git deposu degil" }
+        "sdk_missing"          { "claude-agent-sdk kurulu degil" }
+        default                { $devState }
+    }
+    Write-Host "  Uygulama ici gelistirme kapali: $devReason" -ForegroundColor Yellow
 }
 Write-Host "  Durdurmak icin: Ctrl+C"
 Write-Host ""

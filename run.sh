@@ -103,8 +103,25 @@ echo
 echo "  Excelbase çalışıyor:  http://$BIND:$PORT"
 if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
     # Uygulamanın geri kalanı anahtarsız çalışır; yalnızca asistan kapalı olur.
-    echo "  Claude asistanı kapalı. Açmak için .env içindeki ANTHROPIC_API_KEY"
-    echo "  satırına anahtarınızı yazıp betiği yeniden çalıştırın."
+    # Dosyanın tam yolu yazılır: aynı depodan birden fazla klasör açılmışsa
+    # "ama ben yazdım" ile "orada yazmıyor" aynı anda doğru olabilir.
+    echo "  Claude asistanı kapalı: ANTHROPIC_API_KEY boş."
+    echo "  Düzenlenecek dosya: $(pwd)/.env"
+    echo "  Yazdıktan sonra betiği yeniden çalıştırın."
+fi
+# Geliştirme paneli neden görünmüyor sorusunu tarayıcıya bakmadan cevaplar.
+dev_state=$(./.venv/bin/python -c \
+    'from backend.devagent.service import dev_agent_state; print(dev_agent_state())' 2>/dev/null) || dev_state=""
+if [ -n "$dev_state" ] && [ "$dev_state" != "ready" ]; then
+    case "$dev_state" in
+        disabled)             reason=".env içinde EXCELBASE_DEV_AGENT=1 yok" ;;
+        blocked_open_network) reason="kurulum açık; önce erişim kodu veya IP kısıtı gerekir" ;;
+        api_key_missing)      reason="ANTHROPIC_API_KEY boş" ;;
+        not_a_repository)     reason="bu klasör bir git deposu değil" ;;
+        sdk_missing)          reason="claude-agent-sdk kurulu değil" ;;
+        *)                    reason="$dev_state" ;;
+    esac
+    echo "  Uygulama içi geliştirme kapalı: $reason"
 fi
 echo "  Durdurmak için: Ctrl+C"
 echo
