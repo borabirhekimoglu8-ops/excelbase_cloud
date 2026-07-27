@@ -14,12 +14,23 @@ Set-Location -Path $PSScriptRoot
 # --- .env ------------------------------------------------------------------
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
-    Write-Host ""
-    Write-Host "  .env olusturuldu. Acip su iki degeri doldurun, sonra tekrar calistirin:" -ForegroundColor Yellow
-    Write-Host "    GATEVISA_DATA_SECRET   (rastgele uzun bir metin)"
-    Write-Host "    ANTHROPIC_API_KEY      (sk-ant- ile baslar; bos birakilirsa asistan kapali calisir)"
-    Write-Host ""
-    exit 1
+    Write-Host "  .env olusturuldu." -ForegroundColor Cyan
+}
+
+# Sifreleme anahtarini insan uydurmamali: rastgeleligi burada uretmek hem daha
+# guvenli hem de kurulumdan bir adim siler.
+$envText = Get-Content ".env" -Raw
+if ($envText -notmatch '(?m)^GATEVISA_DATA_SECRET=.+$') {
+    $bytes = New-Object byte[] 48
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $secret = [Convert]::ToBase64String($bytes)
+    if ($envText -match '(?m)^GATEVISA_DATA_SECRET=') {
+        $envText = $envText -replace '(?m)^GATEVISA_DATA_SECRET=.*$', "GATEVISA_DATA_SECRET=$secret"
+    } else {
+        $envText = $envText.TrimEnd() + "`nGATEVISA_DATA_SECRET=$secret`n"
+    }
+    Set-Content ".env" $envText -NoNewline
+    Write-Host "  Sifreleme anahtari uretildi ve .env icine yazildi." -ForegroundColor Cyan
 }
 
 # Satirlari ortama tasi. Tirnaklar kirpilir: panodan yapistirilan bir deger
@@ -68,6 +79,11 @@ if (-not $SkipBuild -and -not (Test-Path "frontend\out\index.html")) {
 
 Write-Host ""
 Write-Host "  Excelbase calisiyor:  http://$bind`:$port" -ForegroundColor Green
+if (-not $env:ANTHROPIC_API_KEY) {
+    # Uygulamanin geri kalani anahtarsiz calisir; yalnizca asistan kapali olur.
+    Write-Host "  Claude asistani kapali. Acmak icin .env icindeki ANTHROPIC_API_KEY" -ForegroundColor Yellow
+    Write-Host "  satirina anahtarinizi yazip bu pencereyi kapatip tekrar calistirin." -ForegroundColor Yellow
+}
 Write-Host "  Durdurmak icin: Ctrl+C"
 Write-Host ""
 

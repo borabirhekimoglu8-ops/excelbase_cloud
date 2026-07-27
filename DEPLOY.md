@@ -40,13 +40,24 @@ cd excelbase_cloud
 ./run.sh
 ```
 
-İlk çalıştırma `.env` dosyasını oluşturup durur. Açın, iki değeri doldurun ve
-tekrar çalıştırın:
+Hepsi bu. Betik gerekli her şeyi kurar, şifreleme anahtarını kendisi üretir ve
+sunucuyu başlatır: `http://127.0.0.1:8000`.
 
-| Değer | Nasıl |
-|---|---|
-| `GATEVISA_DATA_SECRET` | Rastgele uzun bir metin (`openssl rand -base64 48`) |
-| `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys. Boş bırakılırsa asistan kapalı, gerisi çalışır |
+**Claude asistanını açmak için** (uygulamanın geri kalanı anahtarsız da çalışır)
+proje klasöründeki `.env` dosyasını Not Defteri ile açın, şu satırı bulun:
+
+```
+ANTHROPIC_API_KEY=
+```
+
+`=` işaretinin sağına anahtarınızı yapıştırın — boşluk ve tırnak olmadan:
+
+```
+ANTHROPIC_API_KEY=sk-ant-api03-xxxxxxxx
+```
+
+Kaydedin, pencereyi kapatın, betiği tekrar çalıştırın. (Anahtar:
+console.anthropic.com → Settings → API Keys)
 
 Sonraki çalıştırmalar hazır ortamı kullanır; arayüzü yeniden derlememek için
 `.\run.ps1 -SkipBuild` (veya `SKIP_BUILD=1 ./run.sh`).

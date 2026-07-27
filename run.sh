@@ -12,14 +12,20 @@ cd "$(dirname "$0")"
 
 if [ ! -f .env ]; then
     cp .env.example .env
-    cat <<'MSG'
+    echo "  .env oluşturuldu."
+fi
 
-  .env oluşturuldu. Açıp şu iki değeri doldurun, sonra tekrar çalıştırın:
-    GATEVISA_DATA_SECRET   ->  openssl rand -base64 48
-    ANTHROPIC_API_KEY      ->  sk-ant- ile başlar (boşsa asistan kapalı çalışır)
-
-MSG
-    exit 1
+# Şifreleme anahtarını insan uydurmamalı: rastgeleliği burada üretmek hem daha
+# güvenli hem de kurulumdan bir adım siler.
+if ! grep -qE '^GATEVISA_DATA_SECRET=.+$' .env; then
+    secret=$(head -c 48 /dev/urandom | base64 | tr -d '\n')
+    if grep -qE '^GATEVISA_DATA_SECRET=' .env; then
+        tmp=$(mktemp)
+        sed "s|^GATEVISA_DATA_SECRET=.*$|GATEVISA_DATA_SECRET=$secret|" .env > "$tmp" && mv "$tmp" .env
+    else
+        printf '\nGATEVISA_DATA_SECRET=%s\n' "$secret" >> .env
+    fi
+    echo "  Şifreleme anahtarı üretildi ve .env içine yazıldı."
 fi
 
 # Satırları ortama taşı. Tırnaklar kırpılır: panodan yapıştırılan bir değer
@@ -61,6 +67,11 @@ fi
 
 echo
 echo "  Excelbase çalışıyor:  http://$BIND:$PORT"
+if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+    # Uygulamanın geri kalanı anahtarsız çalışır; yalnızca asistan kapalı olur.
+    echo "  Claude asistanı kapalı. Açmak için .env içindeki ANTHROPIC_API_KEY"
+    echo "  satırına anahtarınızı yazıp betiği yeniden çalıştırın."
+fi
 echo "  Durdurmak için: Ctrl+C"
 echo
 
