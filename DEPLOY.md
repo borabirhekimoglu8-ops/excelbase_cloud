@@ -180,6 +180,38 @@ Bu sayı önünüzdeki vekil sayısıyla eşleşmezse IP kısıtı yanlış adre
 Cloudflare da kullanıyorsanız `2` olur. Yanlış ayarlanırsa kısıtlama ya
 herkesi engeller ya da kimseyi.
 
+## 3b. Uygulamanın içinde geliştirme yapan Claude
+
+Uygulamanın kendi kodunu geliştiren bir Claude'u vardır. Sohbetten "şu ekrana
+şunu ekle" dersiniz; değişikliği yapar, testleri çalıştırır, size dosya
+listesini ve sonucu gösterir. Kod ancak siz **UYGULA** dedikten sonra
+çalıştırdığınız sürüme geçer.
+
+```
+EXCELBASE_DEV_AGENT=1
+EXCELBASE_DEV_AGENT_MODEL=claude-opus-5
+EXCELBASE_DEV_AGENT_MAX_BUDGET_CENTS=500     # çalışma başına üst sınır (5 $)
+```
+
+Üç kural gömülüdür ve kapatılamaz:
+
+1. **Çalışan uygulama kendini düzenlemez.** Ajan ayrı bir git *worktree*'sinde
+   (`.dev-worktree/`) çalışır; siz uygulayana kadar canlı kod hiç değişmez.
+2. **Test kapısından geçmeyen değişiklik işlenmez.** `pytest` ve —
+   `frontend/node_modules` kuruluysa — `npm run lint` ile `npm test` yeşil
+   değilse commit oluşmaz, dolayısıyla uygulanacak bir şey de olmaz.
+3. **Açık sunucuda hiç açılmaz.** Deployment kapalı değilse (erişim kodu ya da
+   `EXCELBASE_ASSISTANT_ALLOWED_IPS`) durum `blocked_open_network` döner. Kod
+   yazabilen, internetten erişilebilen bir uygulama arka kapıdır.
+
+Sebebi şu: bu uygulama gerçek yolcuların pasaport verisini tarayıcıdaki şifreli
+kasada tutuyor. Kasa şifreleme kodundaki bir hata mevcut verileri kalıcı olarak
+okunamaz hale getirir — git kodu geri alır, veriyi geri almaz.
+
+Uyguladıktan sonra sunucuyu yeniden başlatın (frontend değiştiyse `run.ps1` /
+`run.sh` yeniden derler). Beğenmediğiniz bir uygulamayı geri almak için
+`git revert HEAD`.
+
 ## 4. Render'daki hesapları taşımak (isteğe bağlı)
 
 Yalnızca mevcut erişim hesaplarını korumak istiyorsanız gerekir; sıfırdan

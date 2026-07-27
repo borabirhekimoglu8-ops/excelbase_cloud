@@ -27,6 +27,7 @@ import type {
   AssistantStep,
   AssistantToolResultPayload,
 } from "@/lib/assistant/client";
+import { DevAgentPanel } from "@/components/assistant/DevAgentPanel";
 import { describeToolCall, executeAssistantTool } from "@/lib/assistant/toolExecutor";
 import { memoryDigest } from "@/lib/assistant/memory";
 import { buildAssistantContext } from "@/lib/assistant/context";
@@ -765,6 +766,10 @@ export function AssistantWorkspace({
             </form>
             <small>Sonnet hata yapabilir. Önemli operasyon kararlarını kaynaktan doğrulayın.</small>
           </section>
+
+          {/* Renders nothing unless the server reports a state; a deployment
+              that never opened this door shows no development console at all. */}
+          <DevAgentPanel csrfToken={session?.csrf_token ?? ""} />
         </>
       )}
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -8,7 +9,7 @@ from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from .config import (
     ALLOWED_IMPORT_EXTENSIONS,
@@ -99,6 +100,14 @@ from .auth import (
     setup_admin,
     setup_required,
     authenticate,
+)
+from .devagent.schemas import DevAgentRequest
+from .devagent.service import (
+    DevAgentError,
+    DevAgentUnavailableError,
+    apply_run,
+    dev_agent_state,
+    stream_development,
 )
 from . import services
 from .state import APP_VERSION
@@ -355,6 +364,66 @@ async def assistant_diagnostics_check(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Asistan denetimi tamamlanamadı.",
+        ) from None
+
+
+@app.get("/api/dev-agent/v1/status")
+def dev_agent_status_endpoint(
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    """Whether an in-app development agent is available, and why not."""
+    state = dev_agent_state()
+    return {"state": state, "available": state == "ready"}
+
+
+@app.post("/api/dev-agent/v1/run")
+async def dev_agent_run(
+    payload: DevAgentRequest,
+    request: Request,
+    actor: Actor = Depends(require_assistant_session),
+) -> StreamingResponse:
+    """Run one development request in the isolated worktree, streaming progress.
+
+    Nothing here touches the code the live process is serving: the agent works
+    in a separate checkout and the operator applies the result separately.
+    """
+    request_id = str(getattr(request.state, "request_id", ""))
+
+    async def events():
+        try:
+            async for event in stream_development(payload.instruction):
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+        except DevAgentUnavailableError as exc:
+            yield json.dumps({"type": "error", "state": str(exc)}, ensure_ascii=False) + "\n"
+        except DevAgentError as exc:
+            yield json.dumps({"type": "error", "detail": str(exc)}, ensure_ascii=False) + "\n"
+        except Exception:
+            logger.exception(
+                "dev agent run failed request_id=%s actor_id=%s", request_id, actor.id
+            )
+            yield json.dumps(
+                {"type": "error", "detail": "Geliştirme çalışması tamamlanamadı."},
+                ensure_ascii=False,
+            ) + "\n"
+
+    return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+@app.post("/api/dev-agent/v1/apply")
+def dev_agent_apply(
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    """Take the agent's reviewed commit into the branch the operator runs."""
+    if dev_agent_state() != "ready":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Geliştirme ajanı kullanılabilir değil.",
+        )
+    try:
+        return {"ok": True, "commit": apply_run()}
+    except DevAgentError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
         ) from None
 
 

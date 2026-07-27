@@ -9,3 +9,6 @@ Pillow>=10.0
 pillow-heif>=0.16
 cryptography>=44.0
 anthropic==0.119.0
+# Uygulama içi geliştirme ajanı (EXCELBASE_DEV_AGENT=1). Kurulu değilse
+# uygulama normal çalışır, yalnızca geliştirme paneli devre dışı kalır.
+claude-agent-sdk>=0.2.128

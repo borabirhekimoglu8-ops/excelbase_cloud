@@ -2017,6 +2017,93 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 }
 .assistant-inline-error.transcript-error { align-self: stretch; }
 
+/* Uygulama ici gelistirme konsolu. Yalnizca kapali kurulumda gorunur. */
+.assistant-dev-agent {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--ido-border);
+  border-top: 3px solid var(--ido-primary-deep);
+  background: #fff;
+}
+.assistant-dev-agent header { display: grid; gap: 4px; }
+.assistant-dev-agent h2 { margin: 0; color: var(--ido-primary-deep); font-size: 15px; }
+.assistant-dev-agent h3 {
+  margin: 0 0 4px;
+  color: var(--ido-primary);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.assistant-dev-agent header small { color: var(--ido-muted); font-size: 10px; line-height: 1.5; }
+.assistant-dev-agent textarea {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid var(--ido-border);
+  border-radius: 2px;
+  background: #f9fbfc;
+  color: var(--ido-ink);
+  font-size: 16px;
+  line-height: 1.45;
+  resize: vertical;
+  outline: none;
+}
+.assistant-dev-agent textarea:focus { border-color: var(--ido-primary); background: #fff; }
+.assistant-dev-agent-actions { display: flex; align-items: center; gap: 8px; }
+.assistant-dev-agent-actions button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  background: var(--ido-primary-deep);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+.assistant-dev-agent-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.assistant-dev-agent-actions small { color: var(--ido-muted); font-size: 10px; }
+.assistant-dev-agent-error { margin: 0; color: var(--ido-red); font-size: 11px; line-height: 1.5; }
+.assistant-dev-agent-log {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px 11px;
+  border-left: 2px solid var(--ido-border);
+  background: #f9fbfc;
+}
+.assistant-dev-agent-log p { margin: 0 0 6px; color: var(--ido-ink); font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
+.assistant-dev-agent-log p:last-child { margin-bottom: 0; }
+.assistant-dev-agent-changes ul,
+.assistant-dev-agent-tests ul { margin: 0; padding-left: 16px; }
+.assistant-dev-agent-changes li,
+.assistant-dev-agent-tests li { color: var(--ido-ink); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.assistant-dev-agent pre {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  background: #f4f7f9;
+  color: var(--ido-primary-deep);
+  font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+}
+.assistant-dev-agent-tests.green li strong { color: var(--ido-primary-deep); }
+.assistant-dev-agent-tests.red li strong { color: var(--ido-red); }
+.assistant-dev-agent-apply {
+  min-height: 48px;
+  border: 0;
+  background: var(--ido-primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .1em;
+  cursor: pointer;
+}
+/* Testler yesil degilse dugme kullanilamaz; gorunum de bunu soylemeli. */
+.assistant-dev-agent-apply:disabled { opacity: .4; cursor: not-allowed; }
+.assistant-dev-agent-applied { margin: 0; color: var(--ido-primary-deep); font-size: 11px; line-height: 1.5; }
+
 .assistant-composer-shell {
   position: relative;
   z-index: 20;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from ipaddress import ip_address, ip_network
 
 
@@ -103,6 +104,48 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(frozen=True, slots=True)
+class DevAgentSettings:
+    """Configuration for the in-app development agent.
+
+    Off by default and refused outright on a deployment anyone can reach: an
+    agent that edits code is a development tool on a closed machine and a
+    remote-code-execution feature on a public one.
+    """
+
+    enabled: bool
+    closed_deployment: bool
+    repository: str
+    api_key: str = field(repr=False)
+    model: str = "claude-opus-5"
+    max_turns: int = 40
+    max_budget_usd: float = 5.0
+
+
+def dev_agent_settings() -> DevAgentSettings:
+    assistant = assistant_settings()
+    return DevAgentSettings(
+        enabled=_env_bool("EXCELBASE_DEV_AGENT", default=False),
+        # Same rule the write tools use: closed by an access code, or scoped to
+        # named networks. Reusing it means there is one definition of "closed".
+        closed_deployment=(
+            not assistant.open_access or bool(assistant_allowed_networks())
+        ),
+        repository=os.environ.get(
+            "EXCELBASE_DEV_AGENT_REPOSITORY",
+            str(Path(__file__).resolve().parents[1]),
+        ),
+        api_key=_read_api_key(ANTHROPIC_API_KEY_VARIABLE),
+        model=os.environ.get("EXCELBASE_DEV_AGENT_MODEL", "claude-opus-5").strip()[:200],
+        max_turns=_bounded_env_int("EXCELBASE_DEV_AGENT_MAX_TURNS", 40, 1, 200),
+        # A hard ceiling on one run, enforced by the SDK rather than by asking
+        # the model to be careful.
+        max_budget_usd=float(
+            _bounded_env_int("EXCELBASE_DEV_AGENT_MAX_BUDGET_CENTS", 500, 10, 100_000)
+        ) / 100.0,
+    )
 
 
 @dataclass(frozen=True, slots=True)
