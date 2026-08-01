@@ -1018,6 +1018,29 @@ def test_open_access_connects_sonnet_without_an_access_code(monkeypatch):
     assert status_body["open_access"] is True
 
 
+def test_assistant_cookie_reaches_dev_agent_routes_not_just_assistant_ones(monkeypatch):
+    """The session cookie's Path is a browser-enforced allowlist: a request
+    outside it is sent with no cookie at all, which the server cannot tell
+    apart from "never logged in". A cookie scoped to /api/assistant/ would
+    leave every /api/dev-agent/ call looking like a fresh, unauthenticated
+    browser -- exactly what shipped once, diagnosed as a 401 on the dev-agent
+    status endpoint by a real browser's own cookie jar. This uses a real
+    signed cookie via TestClient's own cookie jar (not a hand-built header),
+    so a Path regression fails here instead of only in someone's browser."""
+    _open_access_env(monkeypatch)
+    reset_assistant_runtime()
+
+    with TestClient(app) as client:
+        session = client.get("/api/assistant/v1/session").json()
+
+        response = client.get(
+            "/api/dev-agent/v1/status",
+            headers={"X-CSRF-Token": session["csrf_token"]},
+        )
+
+    assert response.status_code == 200
+
+
 def test_open_access_session_still_proves_csrf_and_origin(monkeypatch):
     """Dropping the access code must not drop the remaining request checks."""
     _open_access_env(monkeypatch)

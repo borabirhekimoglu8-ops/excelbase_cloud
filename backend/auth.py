@@ -60,7 +60,13 @@ ASSISTANT_SESSION_COOKIE = (
     if _assistant_cookie_name and _assistant_cookie_name != SESSION_COOKIE
     else f"{SESSION_COOKIE}_sonnet"
 )
-ASSISTANT_SESSION_PATH = "/api/assistant/"
+# Scoped to /api/ rather than /api/assistant/ so the same cookie also reaches
+# /api/dev-agent/*: a cookie's Path attribute is a browser-enforced allowlist,
+# and a request outside it is sent with no cookie at all -- not a wrong one,
+# none -- which reads at the server as "no session" rather than as a scoping
+# mismatch. Both routers require this cookie and no other /api/ route reads it
+# (they check a differently named cookie), so broadening it adds no exposure.
+ASSISTANT_SESSION_PATH = "/api/"
 ASSISTANT_SESSION_SECONDS = 12 * 60 * 60
 
 # Identity used when EXCELBASE_ASSISTANT_OPEN_ACCESS lets visitors reach Sonnet
