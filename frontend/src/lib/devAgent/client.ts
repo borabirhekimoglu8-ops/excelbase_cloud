@@ -27,6 +27,7 @@ export type DevAgentEvent =
   | { type: "changes"; files: string[]; diff: string }
   | { type: "testing" }
   | { type: "test"; name: string; passed: boolean; detail: string }
+  | { type: "limit"; reason: "turns" | "budget" }
   | {
       type: "finished";
       summary: string;
@@ -34,6 +35,7 @@ export type DevAgentEvent =
       committed: string;
       cost_usd: number;
       applicable: boolean;
+      stopped_early: string;
     }
   | { type: "error"; detail?: string; state?: string };
 
@@ -112,6 +114,10 @@ export function parseDevAgentEvent(line: string): DevAgentEvent | null {
             detail: typeof event.detail === "string" ? event.detail : "",
           }
         : null;
+    case "limit":
+      return event.reason === "turns" || event.reason === "budget"
+        ? { type: "limit", reason: event.reason }
+        : null;
     case "finished":
       return {
         type: "finished",
@@ -120,6 +126,7 @@ export function parseDevAgentEvent(line: string): DevAgentEvent | null {
         committed: typeof event.committed === "string" ? event.committed : "",
         cost_usd: typeof event.cost_usd === "number" ? event.cost_usd : 0,
         applicable: event.applicable === true,
+        stopped_early: typeof event.stopped_early === "string" ? event.stopped_early : "",
       };
     case "error":
       return {

@@ -2121,6 +2121,17 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .assistant-dev-agent-actions button:disabled { opacity: .5; cursor: not-allowed; }
 .assistant-dev-agent-actions small { color: var(--ido-muted); font-size: 10px; }
 .assistant-dev-agent-error { margin: 0; color: var(--ido-red); font-size: 11px; line-height: 1.5; }
+/* Sinira takilip erken durmak bir cokme degil: yazdiklari duruyor ve test
+   ediliyor. Kirmizi degil, uyari renginde gosterilir. */
+.assistant-dev-agent-limit {
+  margin: 0;
+  padding: 9px 11px;
+  border-left: 2px solid var(--ido-amber);
+  background: #fdf7ec;
+  color: var(--ido-ink);
+  font-size: 11px;
+  line-height: 1.5;
+}
 .assistant-dev-agent-log {
   max-height: 220px;
   overflow-y: auto;

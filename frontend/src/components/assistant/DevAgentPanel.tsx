@@ -65,6 +65,7 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
   const [tests, setTests] = useState<TestLine[]>([]);
   const [applicable, setApplicable] = useState(false);
   const [cost, setCost] = useState(0);
+  const [limit, setLimit] = useState("");
   const [error, setError] = useState("");
   const [applied, setApplied] = useState("");
   const [applying, setApplying] = useState(false);
@@ -114,6 +115,11 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
       case "testing":
         setLog((lines) => [...lines, "Testler çalıştırılıyor…"]);
         break;
+      case "limit":
+        // Not an error: the agent stopped at a ceiling we set, and whatever it
+        // wrote is still reviewed and tested below.
+        setLimit(event.reason);
+        break;
       case "test":
         setTests((current) => [...current, event]);
         break;
@@ -139,6 +145,7 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
     setTests([]);
     setApplicable(false);
     setCost(0);
+    setLimit("");
     setError("");
   }, []);
 
@@ -314,6 +321,18 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
       {error && (
         <p className="assistant-dev-agent-error" role="alert">
           {error}
+        </p>
+      )}
+
+      {limit && (
+        <p className="assistant-dev-agent-limit" role="status">
+          {limit === "turns"
+            ? "Ajan tur sınırına ulaştığı için erken durdu. O ana kadar yazdıkları aşağıda "
+              + "ve testlerden geçirildi. İş yarım kaldıysa isteği daha küçük parçalara "
+              + "bölün ya da .env içindeki EXCELBASE_DEV_AGENT_MAX_TURNS değerini artırın."
+            : "Ajan bütçe sınırına ulaştığı için erken durdu. O ana kadar yazdıkları aşağıda "
+              + "ve testlerden geçirildi. Sınırı .env içindeki "
+              + "EXCELBASE_DEV_AGENT_MAX_BUDGET_CENTS ile artırabilirsiniz."}
         </p>
       )}
 

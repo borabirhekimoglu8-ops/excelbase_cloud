@@ -267,6 +267,22 @@ def commit_changes(worktree: Path, message: str) -> str:
     return _git(worktree, "rev-parse", "HEAD").strip()
 
 
+def _limit_reason(exc: Exception) -> str:
+    """Turn a stop-limit exception into an operator-facing reason, or "".
+
+    The SDK reports these as a plain ``Exception`` whose text is the CLI's
+    result string, so matching on the text is the only signal available. Only
+    the two limits *we* configured are recognised; anything else is a genuine
+    failure and is re-raised rather than quietly reported as a tidy stop.
+    """
+    text = str(exc).lower()
+    if "maximum number of turns" in text:
+        return "turns"
+    if "budget" in text and ("exceed" in text or "reached" in text or "limit" in text):
+        return "budget"
+    return ""
+
+
 async def stream_development(
     instruction: str,
     settings: DevAgentSettings | None = None,
@@ -317,16 +333,28 @@ async def stream_development(
 
     summary_parts: list[str] = []
     cost = 0.0
-    async for message in query(prompt=cleaned, options=options):
-        if isinstance(message, AssistantMessage):
-            for block in message.content:
-                if isinstance(block, TextBlock) and block.text.strip():
-                    summary_parts.append(block.text.strip())
-                    yield {"type": "text", "text": block.text.strip()}
-                elif isinstance(block, ToolUseBlock):
-                    yield {"type": "tool", "name": block.name}
-        elif isinstance(message, ResultMessage):
-            cost = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
+    stopped_early = ""
+    try:
+        async for message in query(prompt=cleaned, options=options):
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock) and block.text.strip():
+                        summary_parts.append(block.text.strip())
+                        yield {"type": "text", "text": block.text.strip()}
+                    elif isinstance(block, ToolUseBlock):
+                        yield {"type": "tool", "name": block.name}
+            elif isinstance(message, ResultMessage):
+                cost = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
+    except Exception as exc:  # noqa: BLE001 - the SDK signals limits as bare Exception
+        # Running out of turns or budget is an expected end to a large request,
+        # not a crash. Letting it propagate threw away everything the agent had
+        # already written: no diff, no test gate, nothing to review -- the work
+        # was paid for and then discarded. The files it produced are still in
+        # the worktree, so the run continues to the gate and is judged on them.
+        stopped_early = _limit_reason(exc)
+        if not stopped_early:
+            raise
+        yield {"type": "limit", "reason": stopped_early}
 
     changed, diff = await asyncio.to_thread(collect_changes, worktree)
     yield {"type": "changes", "files": changed, "diff": diff}
@@ -356,6 +384,8 @@ async def stream_development(
         "committed": committed,
         "cost_usd": round(cost, 4),
         "applicable": bool(changed) and all(test.passed for test in tests),
+        # An empty string means it finished on its own terms.
+        "stopped_early": stopped_early,
     }
 
 

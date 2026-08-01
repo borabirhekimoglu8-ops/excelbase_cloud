@@ -38,10 +38,19 @@ describe("parseDevAgentEvent", () => {
       committed: "",
       cost_usd: 0,
       applicable: false,
+      stopped_early: "",
     });
     expect(
       parseDevAgentEvent(JSON.stringify({ type: "finished", applicable: "yes" })),
     ).toMatchObject({ applicable: false });
+  });
+
+  it("accepts only the two stop reasons the server can actually report", () => {
+    expect(parseDevAgentEvent(JSON.stringify({ type: "limit", reason: "turns" })))
+      .toEqual({ type: "limit", reason: "turns" });
+    expect(parseDevAgentEvent(JSON.stringify({ type: "limit", reason: "budget" })))
+      .toEqual({ type: "limit", reason: "budget" });
+    expect(parseDevAgentEvent(JSON.stringify({ type: "limit", reason: "vibes" }))).toBeNull();
   });
 
   it("keeps only the string entries of a file list", () => {

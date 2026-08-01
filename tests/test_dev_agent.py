@@ -294,8 +294,13 @@ def test_a_run_is_refused_before_the_agent_is_available(repository):
     assert str(excinfo.value) == "disabled"
 
 
-def _install_fake_sdk(monkeypatch, on_run) -> dict:
-    """Stand in for claude-agent-sdk, recording the options it was handed."""
+def _install_fake_sdk(monkeypatch, on_run, raise_after: Exception | None = None) -> dict:
+    """Stand in for claude-agent-sdk, recording the options it was handed.
+
+    ``raise_after`` reproduces how the real SDK ends a run it stopped early: it
+    raises a bare Exception whose text is the CLI's result string, after the
+    agent has already written files.
+    """
     recorded: dict = {}
 
     class ClaudeAgentOptions:
@@ -322,6 +327,8 @@ def _install_fake_sdk(monkeypatch, on_run) -> dict:
         recorded["prompt"] = prompt
         on_run(Path(recorded["cwd"]))
         yield AssistantMessage([TextBlock("Sürümü yükselttim."), ToolUseBlock("Edit")])
+        if raise_after is not None:
+            raise raise_after
         yield ResultMessage(0.42)
 
     module = ModuleType("claude_agent_sdk")
@@ -368,6 +375,63 @@ def test_a_run_edits_the_worktree_and_commits_only_when_the_gate_is_green(
     assert finished["cost_usd"] == 0.42
     # Committed on the agent's branch only; applying is a separate decision.
     assert (repository / "app.py").read_text(encoding="utf-8") == "VERSION = 1\n"
+
+
+def test_running_out_of_turns_still_reviews_and_tests_what_was_written(
+    repository, monkeypatch
+):
+    """Hitting a ceiling we set is an expected end to a large request, not a
+    crash. Letting it propagate threw away everything the agent had already
+    written -- no diff, no test gate, nothing to review -- so the work was paid
+    for and then discarded. Observed against the real SDK, which reports it as
+    a bare Exception."""
+    recorded = _install_fake_sdk(
+        monkeypatch,
+        lambda cwd: (cwd / "app.py").write_text("VERSION = 2\n", encoding="utf-8"),
+        raise_after=Exception(
+            "Claude Code returned an error result: Reached maximum number of turns (40)"
+        ),
+    )
+    assert recorded is not None
+    monkeypatch.setattr(
+        devagent,
+        "run_test_gate",
+        lambda worktree: [TestOutcome(name="pytest", passed=True, detail="ok")],
+    )
+    settings = _settings(repository)
+
+    async def consume():
+        return [event async for event in stream_development("büyük iş", settings)]
+
+    events = asyncio.run(consume())
+    kinds = [event["type"] for event in events]
+    finished = events[-1]
+
+    assert "limit" in kinds
+    assert next(e for e in events if e["type"] == "limit")["reason"] == "turns"
+    # The gate still ran, and a green run is still applicable.
+    assert "testing" in kinds
+    assert finished["files"] == ["app.py"]
+    assert finished["applicable"] is True
+    assert finished["committed"]
+    assert finished["stopped_early"] == "turns"
+
+
+def test_a_genuine_sdk_failure_is_not_reported_as_a_tidy_stop(repository, monkeypatch):
+    """Only the two limits we configured are recognised; anything else is a
+    real failure and must not be dressed up as a clean early finish."""
+    _install_fake_sdk(
+        monkeypatch,
+        lambda cwd: None,
+        raise_after=Exception("Claude Code returned an error result: ENOENT node"),
+    )
+    settings = _settings(repository)
+
+    async def consume():
+        return [event async for event in stream_development("bir şey", settings)]
+
+    with pytest.raises(Exception, match="ENOENT"):
+        asyncio.run(consume())
 
 
 def test_a_red_test_gate_leaves_nothing_to_apply(repository, monkeypatch):

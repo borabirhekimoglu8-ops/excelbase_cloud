@@ -120,7 +120,7 @@ class DevAgentSettings:
     repository: str
     api_key: str = field(repr=False)
     model: str = "claude-opus-5"
-    max_turns: int = 40
+    max_turns: int = 120
     max_budget_usd: float = 5.0
 
 
@@ -139,7 +139,11 @@ def dev_agent_settings() -> DevAgentSettings:
         ),
         api_key=_read_api_key(ANTHROPIC_API_KEY_VARIABLE),
         model=os.environ.get("EXCELBASE_DEV_AGENT_MODEL", "claude-opus-5").strip()[:200],
-        max_turns=_bounded_env_int("EXCELBASE_DEV_AGENT_MAX_TURNS", 40, 1, 200),
+        # A real change -- read the code, edit, run the tests, fix what broke --
+        # spends turns quickly, and 40 stopped ordinary requests halfway. Money
+        # is what actually needs bounding, and max_budget_usd bounds it; the
+        # turn limit is only a guard against a loop that spends nothing.
+        max_turns=_bounded_env_int("EXCELBASE_DEV_AGENT_MAX_TURNS", 120, 1, 400),
         # A hard ceiling on one run, enforced by the SDK rather than by asking
         # the model to be careful.
         max_budget_usd=float(
