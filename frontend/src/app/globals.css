@@ -879,6 +879,11 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 }
 .ido-nav-item {
   flex: 1 1 0;
+  /* Bir flex ogesinin varsayilan min-width degeri auto, yani icerigin
+     min-content genisligi. Isaretcinin sabit 70px'i her sekmeye 70px taban
+     dayatiyordu; yedi sekmede bu 490px eder ve 390px'lik telefonda tum sayfa
+     yana kayardi. Sifirlanmasi isaretcinin max-width kuralini isler kilar. */
+  min-width: 0;
   display: grid;
   justify-items: center;
   gap: 5px;
@@ -888,10 +893,176 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   cursor: pointer;
   padding: 0;
 }
-.ido-nav-marker { width: 70px; max-width: 80%; height: 2px; background: transparent; }
+/* width:70px + max-width:80% ters calisiyordu: yuzde, ogenin kutusuna degil
+   isaretcinin kendi 70px'inden dogan grid izine gore cozuluyor, yani 56px'de
+   sabitlenip dar sekmeden tasiyordu. Once oran, sonra tavan: her iki halde de
+   sekmenin icinde kalir. */
+.ido-nav-marker { width: 80%; max-width: 70px; height: 2px; background: transparent; }
+.ido-nav-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ido-nav-item.active .ido-nav-marker { background: var(--ido-primary); }
 .ido-nav-label { color: var(--ido-faint); font-weight: 500; font-size: 9px; letter-spacing: .01em; }
 .ido-nav-item.active .ido-nav-label { color: var(--ido-primary); font-weight: 600; }
+
+/* Kapı Vizesi kabuğu: yükleme eylemleri + gunluk kayit klasorleri */
+.ic-gatevisa-page { display: grid; gap: 12px; }
+.ic-gatevisa-actions { display: grid; gap: 8px; }
+.ic-gatevisa-primary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  padding: 12px 14px;
+  border: 1px solid var(--ido-border);
+  border-left: 3px solid var(--ido-primary);
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.ic-gatevisa-primary > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--ido-blue-tint);
+  color: var(--ido-primary-deep);
+  font-size: 18px;
+}
+.ic-gatevisa-primary > span:last-child { display: grid; gap: 2px; }
+.ic-gatevisa-primary strong { color: var(--ido-primary-deep); font-size: 11px; letter-spacing: .06em; }
+.ic-gatevisa-primary small { color: var(--ido-muted); font-size: 10px; }
+.ic-gatevisa-secondary {
+  min-height: 44px;
+  border: 1px solid var(--ido-border);
+  background: #fff;
+  color: var(--ido-primary-deep);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  cursor: pointer;
+}
+
+/* Satis verileri */
+.ic-sales-page { display: grid; gap: 12px; min-width: 0; }
+.ic-sales-hero {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--ido-border);
+  border-top: 3px solid var(--ido-primary);
+  background: #fff;
+}
+.ic-sales-hero > div { display: grid; gap: 4px; }
+.ic-sales-hero p {
+  margin: 0;
+  color: var(--ido-primary);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .14em;
+}
+.ic-sales-hero h2 { margin: 0; color: var(--ido-primary-deep); font-size: 17px; line-height: 1.25; }
+.ic-sales-hero span { color: var(--ido-muted); font-size: 10px; line-height: 1.55; }
+.ic-sales-upload {
+  display: block;
+  min-height: 46px;
+  line-height: 46px;
+  text-align: center;
+  background: var(--ido-primary-deep);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  cursor: pointer;
+}
+.ic-sales-upload.busy { opacity: .6; cursor: wait; }
+/* Dosya girdisi gizlenir ama erisilebilir kalir: label tiklamayi tasir. */
+.ic-sales-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.ic-sales-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.ic-sales-tabs button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--ido-border);
+  background: #fff;
+  color: var(--ido-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.ic-sales-tabs button.active { border-color: var(--ido-primary); color: var(--ido-primary-deep); font-weight: 700; }
+.ic-sales-sheet {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--ido-border);
+  background: #fff;
+}
+.ic-sales-sheet header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.ic-sales-sheet header > div { display: grid; gap: 2px; min-width: 0; }
+.ic-sales-sheet header strong {
+  color: var(--ido-primary-deep);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ic-sales-sheet header span { color: var(--ido-muted); font-size: 10px; }
+.ic-sales-sheet header button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--ido-border);
+  background: #fff;
+  color: var(--ido-red);
+  font-size: 9px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.ic-sales-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--ido-border);
+  border: 1px solid var(--ido-border);
+}
+.ic-sales-totals > div { display: grid; gap: 2px; padding: 8px 10px; background: #fff; }
+.ic-sales-totals span {
+  color: var(--ido-faint);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .06em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ic-sales-totals strong { color: var(--ido-primary-deep); font-size: 13px; }
+/* Genis tablo sayfayi degil kendi kabini kaydirir. min-width:0 sart: bir grid
+   ogesinin varsayilan min-width degeri auto, yani icerigi kadar buyur ve
+   overflow-x hic devreye girmez -- tablo tum sayfayi yana tasiriyordu. */
+.ic-sales-table-wrap { min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ic-sales-table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 11px; }
+.ic-sales-table th,
+.ic-sales-table td {
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--ido-border);
+  text-align: left;
+  white-space: nowrap;
+}
+.ic-sales-table th {
+  position: sticky;
+  top: 0;
+  background: #f4f7f9;
+  color: var(--ido-primary-deep);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .05em;
+}
+.ic-sales-table td { color: var(--ido-ink); }
+.ic-sales-more { margin: 0; color: var(--ido-muted); font-size: 10px; }
 
 /* Kayıt / sefer tarihi ayrımı */
 .ic-scope-control {

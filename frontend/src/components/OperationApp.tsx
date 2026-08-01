@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AuthGate, useAuth } from "@/lib/auth";
 import { StoreProvider, useStore } from "@/lib/store";
 import { AppHeaderHome, AppHeaderScreen } from "@/components/ido/AppHeader";
-import { BottomNav, NavKey, PrimaryNavKey } from "@/components/ido/BottomNav";
+import { BottomNav, NavKey, PrimaryNavKey, isPrimaryNavKey } from "@/components/ido/BottomNav";
 import { QuickCreateSheet } from "@/components/QuickCreateSheet";
 import { AssistantWorkspace } from "@/components/assistant/AssistantWorkspace";
 import {
@@ -26,6 +26,8 @@ import { ManagementTab } from "@/components/tabs/ManagementTab";
 import { DateScopeBar } from "@/components/DateScopeBar";
 import { PassengerRecordForm } from "@/components/PassengerRecordForm";
 import { RecordsTab } from "@/components/tabs/RecordsTab";
+import { GateVisaTab } from "@/components/tabs/GateVisaTab";
+import { SalesTab } from "@/components/tabs/SalesTab";
 import { WorkFileForm } from "@/components/WorkFileForm";
 import { WorkFileDetail } from "@/components/WorkFileDetail";
 import {
@@ -53,9 +55,11 @@ type Screen =
   | { kind: "settings-sub"; sub: SettingsSub };
 
 const ROOT_TITLES: Record<Exclude<PrimaryNavKey, "home">, string> = {
+  "gate-visa": "Kapı Vizesi",
   "work-files": "İş Dosyaları",
   passengers: "Gate Visa · Yolcular",
   documents: "Evrak Merkezi",
+  sales: "Satış Verileri",
   reports: "Raporlar",
 };
 
@@ -113,7 +117,7 @@ function Shell() {
       goRoot("passengers", { passengerStatus: "Eksik" });
       return;
     }
-    if (target === "home" || target === "work-files" || target === "passengers" || target === "documents" || target === "reports") {
+    if (isPrimaryNavKey(target)) {
       goRoot(target);
       return;
     }
@@ -129,7 +133,7 @@ function Shell() {
   }
 
   function onNavSelect(key: NavKey) {
-    if (key === "home" || key === "work-files" || key === "passengers" || key === "documents" || key === "reports") {
+    if (isPrimaryNavKey(key)) {
       goRoot(key);
       return;
     }
@@ -149,7 +153,7 @@ function Shell() {
   const bottomNavActive: PrimaryNavKey | null = screen.kind === "root"
     ? screen.tab
     : screen.kind === "import"
-      ? "passengers"
+      ? "gate-visa"
       : screen.kind === "records"
         ? "reports"
         : null;
@@ -263,6 +267,14 @@ function Shell() {
               onOpenGallery={() => setScreen({ kind: "settings-sub", sub: "gallery" })}
             />
           )}
+          {screen.kind === "root" && screen.tab === "gate-visa" && (
+            <GateVisaTab
+              canCreate={user.role !== "viewer"}
+              onImport={() => setScreen({ kind: "import" })}
+              onCreate={() => setScreen({ kind: "new-passenger" })}
+            />
+          )}
+          {screen.kind === "root" && screen.tab === "sales" && <SalesTab />}
           {screen.kind === "root" && screen.tab === "reports" && <ReportsTab onOpen={openReport} />}
           {screen.kind === "work-file" && <WorkFileDetail id={screen.id} onBack={() => goRoot("work-files")} />}
           {screen.kind === "new-work-file" && (
