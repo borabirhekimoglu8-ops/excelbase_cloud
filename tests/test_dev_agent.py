@@ -541,6 +541,18 @@ def test_a_red_test_gate_leaves_nothing_to_apply(repository, monkeypatch):
         apply_run(settings)
 
 
+def test_the_prompt_requires_an_edit_rather_than_a_report():
+    """A real run spent $2.15 exploring the repository and wrote an analysis
+    instead of code: no files changed, no gate, APPLY dark, nothing to show
+    for it. The instruction to implement has to be explicit, so it is asserted
+    rather than left to drift out of the prompt."""
+    prompt = devagent._SYSTEM_PROMPT
+
+    assert "GÖREVİN KOD YAZMAK" in prompt
+    assert "BAŞARISIZDIR" in prompt
+    assert "Analiz raporu" in prompt
+
+
 def test_a_run_that_changed_nothing_never_reaches_the_test_gate(repository, monkeypatch):
     _install_fake_sdk(monkeypatch, lambda cwd: None)
 

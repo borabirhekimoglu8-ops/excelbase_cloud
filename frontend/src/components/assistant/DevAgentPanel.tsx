@@ -66,6 +66,7 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
   const [applicable, setApplicable] = useState(false);
   const [cost, setCost] = useState(0);
   const [limit, setLimit] = useState("");
+  const [changedNothing, setChangedNothing] = useState(false);
   const [error, setError] = useState("");
   const [applied, setApplied] = useState("");
   const [applying, setApplying] = useState(false);
@@ -126,7 +127,9 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
       case "finished":
         setApplicable(event.applicable);
         setCost(event.cost_usd);
-        if (!event.files.length) setLog((lines) => [...lines, "Değişiklik yapılmadı."]);
+        // The case that leaves APPLY dark with no test result to explain it,
+        // so it is stated outright rather than left as one line in the log.
+        setChangedNothing(event.files.length === 0);
         break;
       case "error":
         setError(
@@ -146,6 +149,7 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
     setApplicable(false);
     setCost(0);
     setLimit("");
+    setChangedNothing(false);
     setError("");
   }, []);
 
@@ -321,6 +325,14 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
       {error && (
         <p className="assistant-dev-agent-error" role="alert">
           {error}
+        </p>
+      )}
+
+      {changedNothing && !error && (
+        <p className="assistant-dev-agent-limit" role="status">
+          Ajan hiçbir dosyayı değiştirmedi — inceleyip durmuş, kod yazmamış.
+          Uygulanacak bir şey olmadığı için UYGULA kapalı. İsteği daha somut
+          yazmayı deneyin: hangi ekrana, ne eklensin, ne yapsın.
         </p>
       )}
 
