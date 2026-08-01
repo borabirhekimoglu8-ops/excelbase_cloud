@@ -226,6 +226,35 @@ def test_the_gate_uses_this_servers_interpreter_not_whatever_python_resolves_to(
     assert commands[0][1:] == ["-m", "pytest", "tests", "-q"]
 
 
+def test_a_missing_pytest_is_reported_as_a_missing_tool_not_a_failing_test(
+    repository, monkeypatch
+):
+    """pytest was never a declared dependency, so the gate stayed red on a
+    machine where the agent's code was fine -- failing because of its own
+    missing tool rather than the code it was judging. The operator's next move
+    is to install it, so the message has to say that."""
+    worktree = prepare_worktree(_settings(repository))
+
+    def fake_suite(wt, name, command, cwd):
+        if name == "pytest":
+            return TestOutcome(
+                name="pytest",
+                passed=False,
+                detail="C:\\...\\.venv\\Scripts\\python.exe: No module named pytest",
+            )
+        return TestOutcome(name=name, passed=True, detail="")
+
+    monkeypatch.setattr(devagent, "_run_suite", fake_suite)
+    monkeypatch.setattr(devagent, "_npm_executable", lambda: "/usr/bin/npm")
+    monkeypatch.setattr(devagent, "_link_node_modules", lambda wt: True)
+
+    outcomes = {outcome.name: outcome for outcome in run_test_gate(worktree)}
+
+    assert outcomes["pytest"].passed is False
+    assert "pytest kurulu değil" in outcomes["pytest"].detail
+    assert "run.ps1" in outcomes["pytest"].detail
+
+
 def test_the_gate_resolves_npm_rather_than_trusting_the_bare_name(
     repository, monkeypatch
 ):

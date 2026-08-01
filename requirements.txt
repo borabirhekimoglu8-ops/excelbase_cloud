@@ -12,3 +12,8 @@ anthropic==0.119.0
 # Uygulama içi geliştirme ajanı (EXCELBASE_DEV_AGENT=1). Kurulu değilse
 # uygulama normal çalışır, yalnızca geliştirme paneli devre dışı kalır.
 claude-agent-sdk>=0.2.128
+
+# Geliştirme ajanının test kapısı bunu çalıştırır. Kurulu olmadığında ajan
+# doğru kodu yazsa bile hiçbir değişiklik uygulanamıyordu: kapı, yargılaması
+# gereken kod yüzünden değil, kendi eksiği yüzünden kırmızı kalıyordu.
+pytest>=8.0

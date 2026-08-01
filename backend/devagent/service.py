@@ -254,14 +254,24 @@ def _npm_executable() -> str | None:
 
 def run_test_gate(worktree: Path) -> list[TestOutcome]:
     """Everything that must be green before a run may be applied."""
-    outcomes = [
-        _run_suite(
-            worktree,
-            "pytest",
-            [_python_executable(), "-m", "pytest", "tests", "-q"],
-            worktree,
-        ),
-    ]
+    pytest_outcome = _run_suite(
+        worktree,
+        "pytest",
+        [_python_executable(), "-m", "pytest", "tests", "-q"],
+        worktree,
+    )
+    if not pytest_outcome.passed and "No module named pytest" in pytest_outcome.detail:
+        # Distinct from a failing test, and the operator's next move is
+        # different: the gate is missing a tool, not reporting a defect.
+        pytest_outcome = TestOutcome(
+            name="pytest",
+            passed=False,
+            detail=(
+                "pytest kurulu değil, bu yüzden testler hiç çalışmadı. "
+                "run.ps1 / run.sh betiğini yeniden çalıştırın; eksik paketi kurar."
+            ),
+        )
+    outcomes = [pytest_outcome]
     frontend = worktree / "frontend"
     npm = _npm_executable()
     if npm is None:
