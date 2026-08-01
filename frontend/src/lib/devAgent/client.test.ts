@@ -2,20 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyDevAgentRun,
+  fetchDevAgentRun,
   fetchDevAgentStatus,
   parseDevAgentEvent,
-  streamDevAgentRun,
+  startDevAgentRun,
 } from "@/lib/devAgent/client";
-
-function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  return new ReadableStream({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
-      controller.close();
-    },
-  });
-}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -60,52 +51,75 @@ describe("parseDevAgentEvent", () => {
   });
 });
 
-describe("streamDevAgentRun", () => {
-  it("delivers each event as it arrives, across chunk boundaries", async () => {
-    const events: unknown[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(
-        streamOf([
-          '{"type":"started","worktree":"/x"}\n{"type":"te',
-          'xt","text":"Yaptım."}\n',
-          '{"type":"finished","files":["app.py"],"applicable":true}',
-        ]),
-        { status: 200 },
-      )),
-    );
-
-    await streamDevAgentRun({
-      instruction: "bir şey yap",
-      csrfToken: "csrf",
-      onEvent: (event) => events.push(event),
-    });
-
-    expect(events).toEqual([
-      { type: "started", worktree: "/x" },
-      { type: "text", text: "Yaptım." },
-      {
-        type: "finished",
-        summary: "",
-        files: ["app.py"],
-        committed: "",
-        cost_usd: 0,
-        applicable: true,
-      },
-    ]);
-  });
-
-  it("sends the CSRF token and rejects when the run cannot start", async () => {
+describe("startDevAgentRun", () => {
+  it("returns as soon as the server owns the run, without waiting for it", async () => {
     let sent: RequestInit | undefined;
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
       sent = init;
-      return new Response("", { status: 403 });
+      return Response.json({ id: "run-1", status: "running" }, { status: 202 });
     }));
 
-    await expect(
-      streamDevAgentRun({ instruction: "x", csrfToken: "csrf", onEvent: () => {} }),
-    ).rejects.toThrow();
+    await expect(startDevAgentRun("bir şey yap", "csrf")).resolves.toBe("run-1");
     expect((sent?.headers as Record<string, string>)["X-CSRF-Token"]).toBe("csrf");
+  });
+
+  it("surfaces a refusal to start a second concurrent run", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(
+      { detail: "Zaten süren bir geliştirme çalışması var." },
+      { status: 409 },
+    )));
+
+    await expect(startDevAgentRun("x", "csrf")).rejects.toThrow(/Zaten süren/);
+  });
+});
+
+describe("fetchDevAgentRun", () => {
+  it("reads a run that is still going, so a reopened panel resumes it", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      id: "run-1",
+      instruction: "sürümü yükselt",
+      status: "running",
+      events: [
+        { type: "started", worktree: "/x" },
+        { type: "text", text: "Bakıyorum." },
+      ],
+      error: "",
+    })));
+
+    const state = await fetchDevAgentRun("csrf");
+
+    expect(state.status).toBe("running");
+    expect(state.id).toBe("run-1");
+    expect(state.events).toEqual([
+      { type: "started", worktree: "/x" },
+      { type: "text", text: "Bakıyorum." },
+    ]);
+  });
+
+  it("drops an unrecognised event rather than rendering it", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      id: "run-1",
+      status: "finished",
+      events: [
+        { type: "exec", cmd: "rm -rf /" },
+        { type: "test", name: "pytest", passed: true, detail: "" },
+      ],
+    })));
+
+    const state = await fetchDevAgentRun("csrf");
+
+    expect(state.events).toEqual([
+      { type: "test", name: "pytest", passed: true, detail: "" },
+    ]);
+  });
+
+  it("treats an unknown status as idle instead of guessing", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ status: "whatever" })));
+
+    await expect(fetchDevAgentRun("csrf")).resolves.toMatchObject({
+      status: "idle",
+      events: [],
+    });
   });
 });
 

@@ -151,46 +151,102 @@ export async function fetchDevAgentStatus(
   return payload;
 }
 
-/** Runs one instruction, invoking `onEvent` for each line as it arrives. */
-export async function streamDevAgentRun(
-  options: { instruction: string; csrfToken: string; onEvent: (event: DevAgentEvent) => void },
+export type DevRunStatus = "idle" | "running" | "finished" | "error" | "cancelled";
+
+export type DevRunState = {
+  id: string;
+  instruction: string;
+  status: DevRunStatus;
+  events: DevAgentEvent[];
+  error: string;
+};
+
+const RUN_STATUSES = new Set<string>(["idle", "running", "finished", "error", "cancelled"]);
+
+/**
+ * Starts a run and returns as soon as the server has it.
+ *
+ * The run belongs to the server, not to this request: closing the panel or
+ * moving to another screen no longer cancels work that is already underway.
+ */
+export async function startDevAgentRun(
+  instruction: string,
+  csrfToken: string,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<string> {
   const response = await fetch("/api/dev-agent/v1/run", {
     method: "POST",
     credentials: "same-origin",
     cache: "no-store",
     headers: {
-      Accept: "application/x-ndjson",
+      Accept: "application/json",
       "Content-Type": "application/json",
-      "X-CSRF-Token": options.csrfToken,
+      "X-CSRF-Token": csrfToken,
     },
-    body: JSON.stringify({ instruction: options.instruction }),
+    body: JSON.stringify({ instruction }),
     signal,
   });
-  if (!response.ok || !response.body) {
-    throw new DevAgentClientError("Geliştirme çalışması başlatılamadı.", response.status);
+  const payload = await response.json().catch(() => ({})) as { id?: unknown; detail?: unknown };
+  if (!response.ok) {
+    throw new DevAgentClientError(
+      typeof payload.detail === "string" && payload.detail.trim()
+        ? payload.detail
+        : "Geliştirme çalışması başlatılamadı.",
+      response.status,
+    );
   }
+  return typeof payload.id === "string" ? payload.id : "";
+}
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    // A chunk boundary can fall mid-line, so the tail is held back until its
-    // newline arrives rather than parsed as a truncated object.
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const event = parseDevAgentEvent(line);
-      if (event) options.onEvent(event);
-    }
+/** Reads how the current or most recent run is going. */
+export async function fetchDevAgentRun(
+  csrfToken: string,
+  signal?: AbortSignal,
+): Promise<DevRunState> {
+  const response = await fetch("/api/dev-agent/v1/run", {
+    method: "GET",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { Accept: "application/json", "X-CSRF-Token": csrfToken },
+    signal,
+  });
+  if (!response.ok) {
+    throw new DevAgentClientError("Geliştirme durumu alınamadı.", response.status);
   }
-  const tail = parseDevAgentEvent(buffer.trim());
-  if (tail) options.onEvent(tail);
+  const payload = await response.json() as Record<string, unknown>;
+  const status = typeof payload.status === "string" && RUN_STATUSES.has(payload.status)
+    ? payload.status as DevRunStatus
+    : "idle";
+  // Unknown lines are dropped here for the same reason the stream dropped them:
+  // a malformed entry must not be able to render as a passing test.
+  const events = Array.isArray(payload.events)
+    ? payload.events
+        .map((event) => parseDevAgentEvent(JSON.stringify(event)))
+        .filter((event): event is DevAgentEvent => event !== null)
+    : [];
+  return {
+    id: typeof payload.id === "string" ? payload.id : "",
+    instruction: typeof payload.instruction === "string" ? payload.instruction : "",
+    status,
+    events,
+    error: typeof payload.error === "string" ? payload.error : "",
+  };
+}
+
+export async function cancelDevAgentRun(
+  csrfToken: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch("/api/dev-agent/v1/run/cancel", {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { Accept: "application/json", "X-CSRF-Token": csrfToken },
+    signal,
+  });
+  if (!response.ok) {
+    throw new DevAgentClientError("Çalışma durdurulamadı.", response.status);
+  }
 }
 
 /** Takes the reviewed commit into the branch the operator runs. */

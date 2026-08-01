@@ -420,6 +420,166 @@ def test_an_empty_instruction_is_rejected_before_any_spend(repository):
         asyncio.run(consume())
 
 
+# --- running in the background --------------------------------------------
+
+
+def test_a_run_outlives_the_request_that_started_it(repository, monkeypatch):
+    """The whole point: the operator starts a run and goes back to using the
+    application. If the run were tied to the request, closing the panel or
+    moving to another screen would cancel work already paid for and possibly
+    half-applied to files."""
+    from backend.devagent import runner
+
+    released = asyncio.Event()
+
+    async def slow_stream(instruction, settings=None):
+        yield {"type": "started", "worktree": "/x"}
+        await released.wait()
+        yield {"type": "finished", "summary": "", "files": [], "committed": "",
+               "cost_usd": 0.0, "applicable": False}
+
+    monkeypatch.setattr(runner, "stream_development", slow_stream)
+
+    async def scenario():
+        runner.reset_for_tests()
+        run = runner.start_run("bir şey yap", _settings(repository))
+        # The starting call has already returned while the run continues.
+        assert run.status == "running"
+        await asyncio.sleep(0)
+        assert runner.is_running() is True
+        assert runner.current_run()["events"][0]["type"] == "started"
+
+        released.set()
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if not runner.is_running():
+                break
+        snapshot = runner.current_run()
+        assert snapshot["status"] == "finished"
+        assert [event["type"] for event in snapshot["events"]] == ["started", "finished"]
+
+    asyncio.run(scenario())
+
+
+def test_a_second_run_is_refused_while_one_is_going(repository, monkeypatch):
+    """Two runs would share one worktree, and the second would reset the
+    first one's files out from under it mid-edit."""
+    from backend.devagent import runner
+
+    released = asyncio.Event()
+
+    async def slow_stream(instruction, settings=None):
+        yield {"type": "started", "worktree": "/x"}
+        await released.wait()
+
+    monkeypatch.setattr(runner, "stream_development", slow_stream)
+
+    async def scenario():
+        runner.reset_for_tests()
+        runner.start_run("ilk", _settings(repository))
+        await asyncio.sleep(0)
+        with pytest.raises(DevAgentError):
+            runner.start_run("ikinci", _settings(repository))
+        released.set()
+        await runner.cancel_run()
+
+    asyncio.run(scenario())
+
+
+def test_starting_without_an_event_loop_fails_without_wedging_the_slot(repository):
+    """FastAPI runs a `def` endpoint on a worker thread, where create_task has
+    no loop. Publishing the run before scheduling it left a run recorded as
+    in-flight that nothing would ever finish, so every later run was refused
+    with 409 until the process restarted -- an unrecoverable state produced by
+    a wiring mistake. Caught in a browser, not by the async tests, because
+    those always had a loop."""
+    from backend.devagent import runner
+
+    runner.reset_for_tests()
+
+    with pytest.raises(DevAgentError):
+        runner.start_run("bir şey yap", _settings(repository))
+
+    # The failure must leave nothing behind that blocks the next attempt.
+    assert runner.is_running() is False
+    assert runner.current_run() is None
+
+
+def test_a_run_whose_task_died_does_not_block_the_next_one(repository, monkeypatch):
+    """Defence in depth for the same failure mode: a status left at "running"
+    with no live task must not refuse every future run."""
+    from backend.devagent import runner
+
+    async def scenario():
+        runner.reset_for_tests()
+
+        async def instant(instruction, settings=None):
+            yield {"type": "started", "worktree": "/x"}
+
+        monkeypatch.setattr(runner, "stream_development", instant)
+        runner.start_run("ilk", _settings(repository))
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if runner._task.done():
+                break
+        # Simulate a task that ended without its own bookkeeping running.
+        runner._current.status = "running"
+
+        assert runner.is_running() is False
+        runner.start_run("ikinci", _settings(repository))
+        await runner.cancel_run()
+
+    asyncio.run(scenario())
+
+
+def test_a_failed_run_is_recorded_rather_than_lost(repository, monkeypatch):
+    """Nobody is awaiting the run, so a failure has to be readable afterwards."""
+    from backend.devagent import runner
+
+    async def failing_stream(instruction, settings=None):
+        yield {"type": "started", "worktree": "/x"}
+        raise DevAgentError("git başarısız")
+
+    monkeypatch.setattr(runner, "stream_development", failing_stream)
+
+    async def scenario():
+        runner.reset_for_tests()
+        runner.start_run("bozuk", _settings(repository))
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if not runner.is_running():
+                break
+        snapshot = runner.current_run()
+        assert snapshot["status"] == "error"
+        assert "git başarısız" in snapshot["error"]
+
+    asyncio.run(scenario())
+
+
+def test_cancelling_marks_the_run_and_frees_the_slot(repository, monkeypatch):
+    from backend.devagent import runner
+
+    async def endless_stream(instruction, settings=None):
+        yield {"type": "started", "worktree": "/x"}
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(runner, "stream_development", endless_stream)
+
+    async def scenario():
+        runner.reset_for_tests()
+        runner.start_run("uzun", _settings(repository))
+        await asyncio.sleep(0)
+        await runner.cancel_run()
+        assert runner.is_running() is False
+        assert runner.current_run()["status"] == "cancelled"
+        # The slot is free again.
+        runner.start_run("yeni", _settings(repository))
+        await asyncio.sleep(0)
+        await runner.cancel_run()
+
+    asyncio.run(scenario())
+
+
 # --- the endpoints --------------------------------------------------------
 
 

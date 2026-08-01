@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -9,7 +8,7 @@ from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from .config import (
     ALLOWED_IMPORT_EXTENSIONS,
@@ -103,12 +102,11 @@ from .auth import (
     authenticate,
 )
 from .devagent.schemas import DevAgentRequest
+from .devagent.runner import cancel_run, current_run, start_run
 from .devagent.service import (
     DevAgentError,
-    DevAgentUnavailableError,
     apply_run,
     dev_agent_state,
-    stream_development,
 )
 from . import services
 from .state import APP_VERSION
@@ -380,37 +378,51 @@ def dev_agent_status_endpoint(
     return {"state": state, "available": state == "ready"}
 
 
-@app.post("/api/dev-agent/v1/run")
+@app.post("/api/dev-agent/v1/run", status_code=status.HTTP_202_ACCEPTED)
 async def dev_agent_run(
     payload: DevAgentRequest,
-    request: Request,
-    actor: Actor = Depends(require_assistant_session),
-) -> StreamingResponse:
-    """Run one development request in the isolated worktree, streaming progress.
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    """Start a development run and return at once, leaving it running.
+
+    Deliberately not a streaming response: a run takes minutes, and holding it
+    open made the work the browser's to own -- closing the panel or moving to
+    another screen cancelled it. Progress is read separately, so the operator
+    can go and use the application while the agent works.
 
     Nothing here touches the code the live process is serving: the agent works
     in a separate checkout and the operator applies the result separately.
     """
-    request_id = str(getattr(request.state, "request_id", ""))
+    if dev_agent_state() != "ready":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Geliştirme ajanı kullanılabilir değil.",
+        )
+    try:
+        run = start_run(payload.instruction)
+    except DevAgentError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from None
+    return {"id": run.id, "status": run.status}
 
-    async def events():
-        try:
-            async for event in stream_development(payload.instruction):
-                yield json.dumps(event, ensure_ascii=False) + "\n"
-        except DevAgentUnavailableError as exc:
-            yield json.dumps({"type": "error", "state": str(exc)}, ensure_ascii=False) + "\n"
-        except DevAgentError as exc:
-            yield json.dumps({"type": "error", "detail": str(exc)}, ensure_ascii=False) + "\n"
-        except Exception:
-            logger.exception(
-                "dev agent run failed request_id=%s actor_id=%s", request_id, actor.id
-            )
-            yield json.dumps(
-                {"type": "error", "detail": "Geliştirme çalışması tamamlanamadı."},
-                ensure_ascii=False,
-            ) + "\n"
 
-    return StreamingResponse(events(), media_type="application/x-ndjson")
+@app.get("/api/dev-agent/v1/run")
+def dev_agent_run_state(
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    """Progress of the current or most recent run, for a panel that just opened."""
+    run = current_run()
+    return run or {"status": "idle", "events": []}
+
+
+@app.post("/api/dev-agent/v1/run/cancel")
+async def dev_agent_run_cancel(
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    """Stop the run in progress. Nothing was applied, so nothing is rolled back."""
+    await cancel_run()
+    return {"ok": True}
 
 
 @app.post("/api/dev-agent/v1/apply")

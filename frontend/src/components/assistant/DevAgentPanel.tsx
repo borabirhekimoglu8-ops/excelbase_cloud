@@ -5,9 +5,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type DevAgentEvent,
   type DevAgentState,
+  type DevRunState,
   applyDevAgentRun,
+  cancelDevAgentRun,
+  fetchDevAgentRun,
   fetchDevAgentStatus,
-  streamDevAgentRun,
+  startDevAgentRun,
 } from "@/lib/devAgent/client";
 
 type TestLine = { name: string; passed: boolean; detail: string };
@@ -65,7 +68,9 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
   const [error, setError] = useState("");
   const [applied, setApplied] = useState("");
   const [applying, setApplying] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const [follow, setFollow] = useState(0);
+  const seenRef = useRef(0);
+  const runIdRef = useRef("");
 
   useEffect(() => {
     if (!csrfToken) return;
@@ -90,8 +95,6 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
       });
     return () => controller.abort();
   }, [csrfToken]);
-
-  useEffect(() => () => abortRef.current?.abort(), []);
 
   const handleEvent = useCallback((event: DevAgentEvent) => {
     switch (event.type) {
@@ -128,34 +131,93 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
     }
   }, []);
 
-  const run = useCallback(async () => {
-    const cleaned = instruction.trim();
-    if (!cleaned || running) return;
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setRunning(true);
-    setError("");
-    setApplied("");
+  const clearRunView = useCallback(() => {
+    seenRef.current = 0;
     setLog([]);
     setFiles([]);
     setDiff("");
     setTests([]);
     setApplicable(false);
     setCost(0);
-    try {
-      await streamDevAgentRun(
-        { instruction: cleaned, csrfToken, onEvent: handleEvent },
-        controller.signal,
-      );
-    } catch (cause) {
-      if (!controller.signal.aborted) {
-        setError(cause instanceof Error ? cause.message : "Çalışma tamamlanamadı.");
-      }
-    } finally {
-      if (!controller.signal.aborted) setRunning(false);
+    setError("");
+  }, []);
+
+  /**
+   * Folds whatever the server has so far into the view.
+   *
+   * Only events past `seenRef` are applied, so repeated polls do not append the
+   * same log line or test result twice; a run that changed identity resets the
+   * view first.
+   */
+  const absorb = useCallback((snapshot: DevRunState) => {
+    if (snapshot.id !== runIdRef.current) {
+      runIdRef.current = snapshot.id;
+      clearRunView();
+      setApplied("");
     }
-  }, [csrfToken, handleEvent, instruction, running]);
+    const fresh = snapshot.events.slice(seenRef.current);
+    seenRef.current = snapshot.events.length;
+    fresh.forEach(handleEvent);
+    setRunning(snapshot.status === "running");
+    if (snapshot.error) setError(snapshot.error);
+  }, [clearRunView, handleEvent]);
+
+  // Follows the server's run: once on mount to pick up anything already in
+  // progress, then every couple of seconds for as long as it is going. This is
+  // what lets the operator start a run, go and use the application, and come
+  // back to it -- the run lives on the server, so the panel is only a view of
+  // it and unmounting costs nothing.
+  useEffect(() => {
+    if (!csrfToken || state !== "ready") return;
+    let cancelled = false;
+    let timer = 0;
+    const controller = new AbortController();
+
+    const poll = async () => {
+      try {
+        const snapshot = await fetchDevAgentRun(csrfToken, controller.signal);
+        if (cancelled) return;
+        absorb(snapshot);
+        if (snapshot.status === "running") timer = window.setTimeout(poll, 2000);
+      } catch {
+        // A dropped poll is not a failed run; retry rather than reporting an
+        // error for what is usually a momentary blip.
+        if (!cancelled) timer = window.setTimeout(poll, 4000);
+      }
+    };
+    void poll();
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [absorb, csrfToken, state, follow]);
+
+  const run = useCallback(async () => {
+    const cleaned = instruction.trim();
+    if (!cleaned || running) return;
+    setApplied("");
+    clearRunView();
+    try {
+      runIdRef.current = await startDevAgentRun(cleaned, csrfToken);
+      seenRef.current = 0;
+      setRunning(true);
+      // Re-arms the polling effect, which then follows this run to completion.
+      setFollow((n) => n + 1);
+    } catch (cause) {
+      setRunning(false);
+      setError(cause instanceof Error ? cause.message : "Çalışma başlatılamadı.");
+    }
+  }, [clearRunView, csrfToken, instruction, running]);
+
+  const stop = useCallback(async () => {
+    try {
+      await cancelDevAgentRun(csrfToken);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Çalışma durdurulamadı.");
+    }
+  }, [csrfToken]);
 
   const apply = useCallback(async () => {
     if (!applicable || applying) return;
@@ -242,13 +304,7 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
           {running ? "ÇALIŞIYOR…" : "GELİŞTİR"}
         </button>
         {running && (
-          <button
-            type="button"
-            onClick={() => {
-              abortRef.current?.abort();
-              setRunning(false);
-            }}
-          >
+          <button type="button" onClick={() => void stop()}>
             DURDUR
           </button>
         )}
