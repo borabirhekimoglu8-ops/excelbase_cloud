@@ -220,30 +220,87 @@ def _run_suite(worktree: Path, name: str, command: list[str], cwd: Path) -> Test
     )
 
 
+def _python_executable() -> str:
+    """The interpreter running this server, not whatever "python" resolves to.
+
+    The server runs inside the project's virtualenv, which is where pytest is
+    installed; a bare "python" picks up the system interpreter, which is not.
+    On Windows that produced "No module named pytest" -- a gate failure that
+    said nothing about the code under test.
+    """
+    return sys.executable or "python"
+
+
+def _npm_executable() -> str | None:
+    """npm's real path, because "npm" alone does not resolve on Windows.
+
+    There it is npm.cmd, and subprocess without a shell will not find it: the
+    suites came back "Çalıştırıcı bulunamadı" on a machine with npm installed
+    and working.
+    """
+    return shutil.which("npm")
+
+
 def run_test_gate(worktree: Path) -> list[TestOutcome]:
     """Everything that must be green before a run may be applied."""
     outcomes = [
-        _run_suite(worktree, "pytest", ["python", "-m", "pytest", "tests", "-q"], worktree),
+        _run_suite(
+            worktree,
+            "pytest",
+            [_python_executable(), "-m", "pytest", "tests", "-q"],
+            worktree,
+        ),
     ]
     frontend = worktree / "frontend"
-    # The frontend suites need an installed node_modules; skipping them
-    # honestly beats reporting a pass that never ran.
-    if (frontend / "node_modules").exists():
-        outcomes.append(
-            _run_suite(worktree, "tsc", ["npm", "run", "lint"], frontend),
-        )
-        outcomes.append(
-            _run_suite(worktree, "vitest", ["npm", "test"], frontend),
-        )
-    else:
+    npm = _npm_executable()
+    if npm is None:
         outcomes.append(
             TestOutcome(
                 name="frontend",
                 passed=False,
-                detail="frontend/node_modules yok; `npm ci` çalıştırın.",
+                detail="npm bulunamadı; Node.js kurulu olmalı.",
             )
         )
+        return outcomes
+
+    # The frontend suites need an installed node_modules. The worktree is a
+    # fresh checkout and node_modules is untracked, so it is linked from the
+    # main checkout rather than reinstalled per run -- npm ci takes minutes and
+    # would dominate every gate.
+    if not _link_node_modules(worktree):
+        outcomes.append(
+            TestOutcome(
+                name="frontend",
+                passed=False,
+                detail="frontend/node_modules yok; ana dizinde `npm ci` çalıştırın.",
+            )
+        )
+        return outcomes
+
+    outcomes.append(_run_suite(worktree, "tsc", [npm, "run", "lint"], frontend))
+    outcomes.append(_run_suite(worktree, "vitest", [npm, "test"], frontend))
     return outcomes
+
+
+def _link_node_modules(worktree: Path) -> bool:
+    """Make the main checkout's node_modules usable from the worktree.
+
+    Returns whether the frontend suites can run. A symlink needs no privileges
+    on Unix; on Windows it may, so a failure falls back to reporting honestly
+    rather than pretending the suites passed.
+    """
+    target = worktree / "frontend" / "node_modules"
+    if target.exists():
+        return True
+    source = worktree.parent / "frontend" / "node_modules"
+    if not source.exists():
+        return False
+    try:
+        target.symlink_to(source, target_is_directory=True)
+    except OSError:
+        logger.info("node_modules bağlantısı kurulamadı: %s", target)
+        return False
+    return True
 
 
 def collect_changes(worktree: Path) -> tuple[list[str], str]:

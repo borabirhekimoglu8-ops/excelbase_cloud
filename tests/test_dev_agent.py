@@ -199,6 +199,89 @@ def test_a_suite_that_could_not_run_is_reported_as_failed_not_skipped(repository
     assert "node_modules" in outcomes["frontend"].detail
 
 
+def test_the_gate_uses_this_servers_interpreter_not_whatever_python_resolves_to(
+    repository, monkeypatch
+):
+    """The server runs in the project virtualenv, which is where pytest lives.
+    A bare "python" picked up the system interpreter on Windows and reported
+    "No module named pytest" -- a gate failure that said nothing about the code
+    it was supposed to be judging."""
+    worktree = prepare_worktree(_settings(repository))
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(
+        devagent,
+        "_run_suite",
+        lambda wt, name, command, cwd: (
+            commands.append(command),
+            TestOutcome(name=name, passed=True, detail=""),
+        )[1],
+    )
+    monkeypatch.setattr(devagent, "_npm_executable", lambda: "/usr/bin/npm")
+    monkeypatch.setattr(devagent, "_link_node_modules", lambda wt: True)
+
+    run_test_gate(worktree)
+
+    assert commands[0][0] == sys.executable
+    assert commands[0][1:] == ["-m", "pytest", "tests", "-q"]
+
+
+def test_the_gate_resolves_npm_rather_than_trusting_the_bare_name(
+    repository, monkeypatch
+):
+    """"npm" is npm.cmd on Windows and subprocess will not find it without a
+    shell: both frontend suites came back "Çalıştırıcı bulunamadı" on a machine
+    where npm was installed and working."""
+    worktree = prepare_worktree(_settings(repository))
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(
+        devagent,
+        "_run_suite",
+        lambda wt, name, command, cwd: (
+            commands.append(command),
+            TestOutcome(name=name, passed=True, detail=""),
+        )[1],
+    )
+    monkeypatch.setattr(devagent, "_npm_executable", lambda: "C:/npm/npm.cmd")
+    monkeypatch.setattr(devagent, "_link_node_modules", lambda wt: True)
+
+    run_test_gate(worktree)
+
+    assert commands[1] == ["C:/npm/npm.cmd", "run", "lint"]
+    assert commands[2] == ["C:/npm/npm.cmd", "test"]
+
+
+def test_the_gate_reports_a_missing_npm_rather_than_skipping_the_frontend(
+    repository, monkeypatch
+):
+    worktree = prepare_worktree(_settings(repository))
+    monkeypatch.setattr(devagent, "_npm_executable", lambda: None)
+    monkeypatch.setattr(
+        devagent,
+        "_run_suite",
+        lambda wt, name, command, cwd: TestOutcome(name=name, passed=True, detail=""),
+    )
+
+    outcomes = {outcome.name: outcome for outcome in run_test_gate(worktree)}
+
+    assert outcomes["frontend"].passed is False
+    assert "npm" in outcomes["frontend"].detail
+
+
+def test_the_worktree_borrows_node_modules_from_the_main_checkout(repository):
+    """A fresh worktree has no node_modules and reinstalling it per run would
+    dominate every gate, so it is linked from the checkout beside it."""
+    (repository / "frontend").mkdir(exist_ok=True)
+    (repository / "frontend" / "node_modules").mkdir(exist_ok=True)
+    (repository / "frontend" / "node_modules" / "marker.txt").write_text("x", encoding="utf-8")
+    worktree = prepare_worktree(_settings(repository))
+    (worktree / "frontend").mkdir(exist_ok=True)
+
+    assert devagent._link_node_modules(worktree) is True
+    assert (worktree / "frontend" / "node_modules" / "marker.txt").exists()
+
+
 def test_a_missing_runner_fails_the_suite_instead_of_raising(repository):
     worktree = prepare_worktree(_settings(repository))
 
