@@ -41,6 +41,7 @@ from backend.assistant.service import (
 from backend.auth import (
     ASSISTANT_SESSION_COOKIE,
     ASSISTANT_SESSION_PATH,
+    LEGACY_ASSISTANT_SESSION_PATHS,
     ASSISTANT_SESSION_SECONDS,
     Actor,
     assistant_csrf_token,
@@ -605,14 +606,55 @@ def test_assistant_login_sets_only_the_dedicated_short_lived_cookie(monkeypatch)
     assert response.json()["authenticated"] is True
     assert response.json()["bootstrap_required"] is False
     assert response.json()["csrf_token"]
-    cookie = response.headers["set-cookie"]
-    cookie_lower = cookie.lower()
-    assert cookie.startswith(f"{ASSISTANT_SESSION_COOKIE}=assistant-token")
+    # More than one Set-Cookie is expected: the session itself, plus the
+    # tombstones that clear any cookie left at a path an older build used.
+    headers = response.headers.get_list("set-cookie")
+    issued = [
+        header for header in headers
+        if header.startswith(f"{ASSISTANT_SESSION_COOKIE}=assistant-token")
+    ]
+    assert len(issued) == 1
+    cookie_lower = issued[0].lower()
     assert f"path={ASSISTANT_SESSION_PATH}".lower() in cookie_lower
     assert f"max-age={ASSISTANT_SESSION_SECONDS}" in cookie_lower
     assert "httponly" in cookie_lower
     assert "samesite=strict" in cookie_lower
-    assert "gatevisa_session=" not in cookie_lower
+    assert not any("gatevisa_session=" in header.lower() for header in headers)
+
+
+def test_login_and_logout_clear_a_session_cookie_left_at_an_older_path(monkeypatch):
+    """Cookies are keyed by name *and* path, so changing the path does not
+    replace the old cookie -- it adds a second one the browser keeps sending
+    and delete_cookie at the new path never matches. A user upgrading across
+    that change would keep sending a stale cookie forever, with two same-named
+    cookies racing to be the one the server reads, and could not recover by
+    logging out. Both responses must explicitly clear the legacy paths."""
+    from backend import main
+
+    actor = Actor(id="actor-1", name="Operasyon", role="admin")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setattr(main, "authenticate", lambda pin, client_key: actor)
+    monkeypatch.setattr(main, "issue_assistant_session", lambda current: "assistant-token")
+    monkeypatch.setattr(main.services, "record_audit_async", lambda *args: None)
+    monkeypatch.setattr(main, "require_assistant_session", lambda: actor)
+    app.dependency_overrides[require_assistant_session] = lambda: actor
+    try:
+        with TestClient(app) as client:
+            login = client.post("/api/assistant/v1/session/login", json={"pin": "123456"})
+            logout = client.post("/api/assistant/v1/session/logout")
+    finally:
+        app.dependency_overrides.pop(require_assistant_session, None)
+
+    for response, label in ((login, "login"), (logout, "logout")):
+        headers = response.headers.get_list("set-cookie")
+        for legacy_path in LEGACY_ASSISTANT_SESSION_PATHS:
+            expiring = [
+                header for header in headers
+                if f"path={legacy_path}".lower() in header.lower()
+                and f"{ASSISTANT_SESSION_COOKIE}=" in header
+                and ("max-age=0" in header.lower() or "expires=" in header.lower())
+            ]
+            assert expiring, f"{label} did not clear the cookie at {legacy_path}"
 
 
 def test_both_setup_endpoints_fail_closed_before_database_in_production(monkeypatch):

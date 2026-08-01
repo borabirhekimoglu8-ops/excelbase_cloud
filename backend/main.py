@@ -77,6 +77,7 @@ from .assistant.service import (
 from .auth import (
     ASSISTANT_SESSION_COOKIE,
     ASSISTANT_SESSION_PATH,
+    LEGACY_ASSISTANT_SESSION_PATHS,
     ASSISTANT_SESSION_SECONDS,
     Actor,
     assistant_csrf_token,
@@ -333,6 +334,9 @@ def assistant_session_logout(
         httponly=True,
         samesite="strict",
     )
+    # Otherwise logging out cannot clear a session an older build issued, and
+    # "log out and back in" -- the natural way to recover -- would not work.
+    _clear_legacy_assistant_session_cookies(response)
     return SimpleResult(ok=True, message="Sonnet oturumu kapatıldı.")
 
 
@@ -513,7 +517,26 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
+def _clear_legacy_assistant_session_cookies(response: Response) -> None:
+    """Remove session cookies left at paths this app no longer issues under.
+
+    Cookies are keyed by name *and* path, so a build that changes the path
+    leaves the old cookie in place: it keeps being sent, it is not overwritten
+    by the new one, and a delete at the new path does not match it. The result
+    is two same-named cookies whose order the server cannot control.
+    """
+    for legacy_path in LEGACY_ASSISTANT_SESSION_PATHS:
+        response.delete_cookie(
+            ASSISTANT_SESSION_COOKIE,
+            path=legacy_path,
+            secure=os.environ.get("APP_ENV", "development").lower() == "production",
+            httponly=True,
+            samesite="strict",
+        )
+
+
 def _set_assistant_session_cookie(response: Response, token: str) -> None:
+    _clear_legacy_assistant_session_cookies(response)
     response.set_cookie(
         key=ASSISTANT_SESSION_COOKIE,
         value=token,

@@ -67,6 +67,14 @@ ASSISTANT_SESSION_COOKIE = (
 # mismatch. Both routers require this cookie and no other /api/ route reads it
 # (they check a differently named cookie), so broadening it adds no exposure.
 ASSISTANT_SESSION_PATH = "/api/"
+
+# Paths this cookie was issued under before. A cookie is keyed by name *and*
+# path, so narrowing or widening the path does not replace the old one -- it
+# creates a second cookie the browser keeps sending, and a delete_cookie at the
+# new path silently fails to remove it. Without clearing these explicitly, a
+# session issued by an older build survives every login and logout, and two
+# cookies of the same name race to be the one the server reads.
+LEGACY_ASSISTANT_SESSION_PATHS: tuple[str, ...] = ("/api/assistant/",)
 ASSISTANT_SESSION_SECONDS = 12 * 60 * 60
 
 # Identity used when EXCELBASE_ASSISTANT_OPEN_ACCESS lets visitors reach Sonnet
