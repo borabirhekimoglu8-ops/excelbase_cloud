@@ -532,6 +532,36 @@ def test_a_run_whose_task_died_does_not_block_the_next_one(repository, monkeypat
     asyncio.run(scenario())
 
 
+def test_an_unexpected_failure_names_its_type_without_leaking_its_message(
+    repository, monkeypatch
+):
+    """The type tells the operator where to look; the message may quote the
+    instruction, a file or the model's output, so it stays in the log."""
+    from backend.devagent import runner
+
+    secret = "yolcu pasaport numarasi 12345"
+
+    async def exploding_stream(instruction, settings=None):
+        yield {"type": "started", "worktree": "/x"}
+        raise FileNotFoundError(secret)
+
+    monkeypatch.setattr(runner, "stream_development", exploding_stream)
+
+    async def scenario():
+        runner.reset_for_tests()
+        runner.start_run("bir şey yap", _settings(repository))
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if not runner.is_running():
+                break
+        snapshot = runner.current_run()
+        assert snapshot["status"] == "error"
+        assert "FileNotFoundError" in snapshot["error"]
+        assert secret not in snapshot["error"]
+
+    asyncio.run(scenario())
+
+
 def test_a_failed_run_is_recorded_rather_than_lost(repository, monkeypatch):
     """Nobody is awaiting the run, so a failure has to be readable afterwards."""
     from backend.devagent import runner

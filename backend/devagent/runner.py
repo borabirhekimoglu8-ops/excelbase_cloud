@@ -102,13 +102,19 @@ async def _drive(run: DevRun, settings: DevAgentSettings | None) -> None:
     except DevAgentError as exc:
         run.status = "error"
         run.error = str(exc)
-    except Exception:
-        # The instruction and the model's output are not safe to echo into an
-        # error string, so the detail goes to the log and the operator gets a
-        # stable message.
+    except Exception as exc:
+        # The exception *message* can carry the instruction, a file's contents
+        # or the model's output, so it stays in the log. The exception *type*
+        # carries none of those and is what actually distinguishes "Node is not
+        # installed" from "the API key was rejected" -- without it the panel
+        # says only that something went wrong, which is where the operator gets
+        # stuck with nowhere to look.
         logger.exception("dev agent run failed run_id=%s", run.id)
         run.status = "error"
-        run.error = "Geliştirme çalışması tamamlanamadı."
+        run.error = (
+            f"Geliştirme çalışması tamamlanamadı ({type(exc).__name__}). "
+            "Ayrıntı, sunucuyu çalıştırdığınız pencerenin kayıtlarında."
+        )
     finally:
         if not run.finished_at:
             run.finished_at = time.time()
