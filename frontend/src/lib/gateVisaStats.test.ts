@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RecordFolder } from "@/lib/api";
-import {
-  busiestOutstandingDays,
-  emptyGateVisaFilter,
-  filterGateVisaFolders,
-  gateVisaTotals,
-} from "@/lib/gateVisaStats";
+import { busiestOutstandingDays, gateVisaTotals } from "@/lib/gateVisaStats";
 
 function folder(overrides: Partial<RecordFolder> & { date_key: string }): RecordFolder {
   return {
@@ -45,48 +40,6 @@ describe("gateVisaTotals", () => {
     expect(totals.readinessPercent).toBe(0);
     expect(totals.photoPercent).toBe(0);
     expect(totals.outstanding).toBe(0);
-  });
-});
-
-describe("filterGateVisaFolders", () => {
-  it("narrows to a month by date prefix", () => {
-    const rows = filterGateVisaFolders(FOLDERS, { ...emptyGateVisaFilter(), query: "2026-07" });
-    expect(rows.map((entry) => entry.date_key)).toEqual(["2026-07-01", "2026-07-02"]);
-  });
-
-  it("keeps only days with work left", () => {
-    const rows = filterGateVisaFolders(FOLDERS, { ...emptyGateVisaFilter(), onlyIncomplete: true });
-    expect(rows.map((entry) => entry.date_key)).toEqual(["2026-07-02", "2026-08-01"]);
-  });
-
-  it("finds days where someone still has no photo", () => {
-    const rows = filterGateVisaFolders(FOLDERS, { ...emptyGateVisaFilter(), onlyMissingPhoto: true });
-    expect(rows.map((entry) => entry.date_key)).toEqual(["2026-07-02"]);
-  });
-
-  it("finds days with no documents attached at all", () => {
-    const rows = filterGateVisaFolders(FOLDERS, {
-      ...emptyGateVisaFilter(),
-      onlyMissingDocuments: true,
-    });
-    expect(rows.map((entry) => entry.date_key)).toEqual(["2026-07-02"]);
-  });
-
-  it("never flags an empty day as missing something", () => {
-    // A day with no passengers has nothing outstanding; listing it would send
-    // the operator to an empty folder.
-    const empty = [folder({ date_key: "2026-09-01" })];
-    expect(filterGateVisaFolders(empty, { ...emptyGateVisaFilter(), onlyMissingPhoto: true })).toEqual([]);
-    expect(filterGateVisaFolders(empty, { ...emptyGateVisaFilter(), onlyMissingDocuments: true })).toEqual([]);
-  });
-
-  it("combines filters rather than widening with each one", () => {
-    const rows = filterGateVisaFolders(FOLDERS, {
-      ...emptyGateVisaFilter(),
-      query: "2026-08",
-      onlyIncomplete: true,
-    });
-    expect(rows.map((entry) => entry.date_key)).toEqual(["2026-08-01"]);
   });
 });
 

@@ -4,20 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   type SalesSheet,
-  formatSalesNumber,
   parseSalesWorkbook,
   salesSheetLabel,
 } from "@/lib/sales";
-import {
-  type SalesFilter,
-  categoryBreakdown,
-  categoryColumnIndexes,
-  distinctValues,
-  emptySalesFilter,
-  filterSalesRows,
-  numericColumnIndexes,
-  numericStats,
-} from "@/lib/salesAnalysis";
+import { type SalesFilter, emptySalesFilter, filterSalesRows } from "@/lib/salesAnalysis";
+import { ColumnFilterBar, ColumnStatsView } from "@/components/ColumnAnalysis";
 import {
   listSalesSheets,
   removeSalesSheet,
@@ -30,13 +21,6 @@ const VISIBLE_ROWS = 200;
 
 type View = "list" | "stats";
 
-function numberOrUndefined(value: string): number | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  const parsed = Number(trimmed.replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 export function SalesTab() {
   const { notify } = useStore();
   const [sheets, setSheets] = useState<SalesSheet[]>([]);
@@ -46,8 +30,6 @@ export function SalesTab() {
   const [error, setError] = useState("");
   const [view, setView] = useState<View>("list");
   const [filter, setFilter] = useState<SalesFilter>(emptySalesFilter);
-  const [groupIndex, setGroupIndex] = useState<number | null>(null);
-  const [valueIndex, setValueIndex] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -99,44 +81,13 @@ export function SalesTab() {
   // stale column index would silently filter on the wrong column.
   useEffect(() => {
     setFilter(emptySalesFilter());
-    setGroupIndex(null);
-    setValueIndex(null);
   }, [open?.id]);
-
-  const categories = useMemo(() => (open ? categoryColumnIndexes(open) : []), [open]);
-  const numerics = useMemo(() => (open ? numericColumnIndexes(open) : []), [open]);
-
-  const activeGroup = groupIndex ?? categories[0] ?? null;
-  const activeValue = valueIndex ?? numerics[0] ?? null;
 
   const rows = useMemo(
     () => (open ? filterSalesRows(open, filter) : []),
     [open, filter],
   );
-  const stats = useMemo(() => (open ? numericStats(open, rows) : []), [open, rows]);
-  const breakdown = useMemo(
-    () => (open && activeGroup !== null ? categoryBreakdown(open, rows, activeGroup, activeValue) : null),
-    [open, rows, activeGroup, activeValue],
-  );
-
   const filtered = open ? rows.length !== open.rows.length : false;
-
-  function setColumnValue(index: number, value: string) {
-    setFilter((current) => ({
-      ...current,
-      columnValues: { ...current.columnValues, [index]: value },
-    }));
-  }
-
-  function setRange(index: number, bound: "min" | "max", value: string) {
-    setFilter((current) => ({
-      ...current,
-      numericRanges: {
-        ...current.numericRanges,
-        [index]: { ...current.numericRanges[index], [bound]: numberOrUndefined(value) },
-      },
-    }));
-  }
 
   return (
     <div className="ic-sales-page">
@@ -229,53 +180,13 @@ export function SalesTab() {
 
           {/* Shared by both views on purpose: statistics that ignored the
               filter would answer a different question than the list shows. */}
-          <div className="ic-filter-bar">
-            <input
-              type="search"
-              value={filter.query}
-              placeholder="Tüm sütunlarda ara…"
-              aria-label="Satış satırlarında ara"
-              onChange={(event) => setFilter((current) => ({ ...current, query: event.target.value }))}
-            />
-            {categories.slice(0, 3).map((index) => (
-              <label key={`cat-${index}`}>
-                <span>{open.headers[index]}</span>
-                <select
-                  value={filter.columnValues[index] ?? ""}
-                  onChange={(event) => setColumnValue(index, event.target.value)}
-                >
-                  <option value="">Tümü</option>
-                  {distinctValues(open, index).map((value) => (
-                    <option key={value} value={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
-            ))}
-            {numerics.slice(0, 1).map((index) => (
-              <label key={`num-${index}`} className="ic-filter-range">
-                <span>{open.headers[index]}</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  placeholder="en az"
-                  aria-label={`${open.headers[index]} en az`}
-                  onChange={(event) => setRange(index, "min", event.target.value)}
-                />
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  placeholder="en çok"
-                  aria-label={`${open.headers[index]} en çok`}
-                  onChange={(event) => setRange(index, "max", event.target.value)}
-                />
-              </label>
-            ))}
-            {filtered && (
-              <button type="button" className="ic-filter-reset" onClick={() => setFilter(emptySalesFilter())}>
-                FİLTREYİ TEMİZLE
-              </button>
-            )}
-          </div>
+          <ColumnFilterBar
+            table={open}
+            filter={filter}
+            onChange={setFilter}
+            onReset={() => setFilter(emptySalesFilter())}
+            narrowed={filtered}
+          />
 
           {view === "list" ? (
             <>
@@ -307,82 +218,7 @@ export function SalesTab() {
               )}
             </>
           ) : (
-            <div className="ic-stats">
-              <p className="ic-stats-scope">
-                {filtered
-                  ? `Filtreye uyan ${rows.length} satır üzerinden hesaplandı.`
-                  : `${rows.length} satırın tamamı üzerinden hesaplandı.`}
-              </p>
-
-              {stats.length === 0 && (
-                <p className="ic-sales-more">Bu dosyada sayısal sütun bulunamadı.</p>
-              )}
-
-              {stats.map((stat) => (
-                <div className="ic-stats-card" key={stat.index}>
-                  <h4>{stat.column}</h4>
-                  <div className="ic-stats-grid">
-                    <div><span>TOPLAM</span><strong>{formatSalesNumber(stat.sum)}</strong></div>
-                    <div><span>ORTALAMA</span><strong>{formatSalesNumber(stat.average)}</strong></div>
-                    <div><span>EN DÜŞÜK</span><strong>{formatSalesNumber(stat.min)}</strong></div>
-                    <div><span>EN YÜKSEK</span><strong>{formatSalesNumber(stat.max)}</strong></div>
-                    <div><span>DOLU SATIR</span><strong>{stat.count}</strong></div>
-                  </div>
-                </div>
-              ))}
-
-              {breakdown && categories.length > 0 && (
-                <div className="ic-stats-card">
-                  <div className="ic-stats-pickers">
-                    <label>
-                      <span>KIRILIM</span>
-                      <select
-                        value={activeGroup ?? ""}
-                        onChange={(event) => setGroupIndex(Number(event.target.value))}
-                      >
-                        {categories.map((index) => (
-                          <option key={index} value={index}>{open.headers[index]}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>ÖLÇÜ</span>
-                      <select
-                        value={activeValue === null ? "" : activeValue}
-                        onChange={(event) => setValueIndex(
-                          event.target.value === "" ? null : Number(event.target.value),
-                        )}
-                      >
-                        <option value="">Satır sayısı</option>
-                        {numerics.map((index) => (
-                          <option key={index} value={index}>{open.headers[index]}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <ul className="ic-stats-breakdown">
-                    {breakdown.entries.map((entry) => (
-                      <li key={entry.value}>
-                        <div>
-                          <strong>{entry.value}</strong>
-                          <span>
-                            {activeValue !== null
-                              ? `${formatSalesNumber(entry.sum)} · ${entry.count} satır`
-                              : `${entry.count} satır`}
-                          </span>
-                        </div>
-                        {/* The bar is the comparison; the percentage is the detail. */}
-                        <div className="ic-stats-bar" aria-hidden="true">
-                          <i style={{ width: `${Math.max(2, entry.share)}%` }} />
-                        </div>
-                        <b>%{entry.share.toLocaleString("tr-TR")}</b>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+            <ColumnStatsView table={open} rows={rows} narrowed={filtered} />
           )}
         </section>
       )}

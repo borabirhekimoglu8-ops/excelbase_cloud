@@ -1,11 +1,13 @@
 /**
- * Filtering and summarising the Gate Visa day folders.
+ * Summarising the Gate Visa day folders.
  *
  * Folders are what the Excel imports become: one per day, holding that day's
  * passengers with their PDFs and photos. The counts already exist per folder;
- * what was missing was any way to ask a question across them -- which days are
- * still incomplete, how much of the operation is photographed, where the
- * missing documents are concentrated.
+ * what was missing was any way to ask a question across them -- how much of the
+ * operation is photographed, and which days still carry work.
+ *
+ * Filtering lives in the column engine instead, over the passenger rows, so
+ * there is one definition of what a filter means across both pages.
  *
  * Pure over an array of folders, so the arithmetic is testable without the
  * vault or the network.
@@ -28,24 +30,6 @@ export type GateVisaTotals = {
   /** Passengers not yet ready: the work actually left to do. */
   outstanding: number;
 };
-
-export type GateVisaFilter = {
-  /** Matches the folder's date key, so "2026-07" narrows to a month. */
-  query: string;
-  /** Only folders with passengers still not ready. */
-  onlyIncomplete: boolean;
-  /** Only folders with at least one passenger missing a photo. */
-  onlyMissingPhoto: boolean;
-  /** Only folders with no documents attached at all. */
-  onlyMissingDocuments: boolean;
-};
-
-export const emptyGateVisaFilter = (): GateVisaFilter => ({
-  query: "",
-  onlyIncomplete: false,
-  onlyMissingPhoto: false,
-  onlyMissingDocuments: false,
-});
 
 function percent(part: number, whole: number): number {
   if (whole <= 0) return 0;
@@ -71,30 +55,6 @@ export function gateVisaTotals(folders: RecordFolder[]): GateVisaTotals {
     photoPercent: percent(withPhoto, passengers),
     outstanding: Math.max(0, passengers - ready),
   };
-}
-
-export function folderIsIncomplete(folder: RecordFolder): boolean {
-  return folder.review_count + folder.draft_count > 0;
-}
-
-export function filterGateVisaFolders(
-  folders: RecordFolder[],
-  filter: GateVisaFilter,
-): RecordFolder[] {
-  const query = filter.query.trim().toLocaleLowerCase("tr");
-  return folders.filter((folder) => {
-    if (query && !folder.date_key.toLocaleLowerCase("tr").includes(query)) return false;
-    if (filter.onlyIncomplete && !folderIsIncomplete(folder)) return false;
-    // A folder with no passengers has nothing missing; flagging it as "missing
-    // photos" would send the operator to an empty day.
-    if (filter.onlyMissingPhoto && (folder.count === 0 || folder.with_photo >= folder.count)) {
-      return false;
-    }
-    if (filter.onlyMissingDocuments && (folder.count === 0 || folder.document_count > 0)) {
-      return false;
-    }
-    return true;
-  });
 }
 
 export type GateVisaDayStat = {

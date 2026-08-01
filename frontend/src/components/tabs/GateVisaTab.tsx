@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { type RecordFolder, fetchRecordFolders } from "@/lib/api";
+import { type Passenger, type RecordFolder, fetchPassengers, fetchRecordFolders } from "@/lib/api";
 import { RecordsTab } from "@/components/tabs/RecordsTab";
+import { ColumnFilterBar, ColumnStatsView } from "@/components/ColumnAnalysis";
+import { passengerTable } from "@/lib/passengerTable";
+import { type SalesFilter, emptySalesFilter, filterSalesRows } from "@/lib/salesAnalysis";
 import {
-  type GateVisaFilter,
   busiestOutstandingDays,
-  emptyGateVisaFilter,
-  filterGateVisaFolders,
   gateVisaTotals,
 } from "@/lib/gateVisaStats";
 import { useStore } from "@/lib/store";
@@ -45,27 +45,41 @@ export function GateVisaTab({
   const { dateScope, version } = useStore();
   const [view, setView] = useState<View>("folders");
   const [folders, setFolders] = useState<RecordFolder[]>([]);
-  const [filter, setFilter] = useState<GateVisaFilter>(emptyGateVisaFilter);
+  const [passengers, setPassengers] = useState<Passenger[]>([]);
+  const [filter, setFilter] = useState<SalesFilter>(emptySalesFilter);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    fetchRecordFolders({ ...dateScope, field: "created" })
-      .then((response) => active && setFolders(response.groups))
-      .catch(() => active && setFolders([]))
+    Promise.all([
+      fetchRecordFolders({ ...dateScope, field: "created" }),
+      fetchPassengers({ scope: dateScope }),
+    ])
+      .then(([folderResponse, passengerRows]) => {
+        if (!active) return;
+        setFolders(folderResponse.groups);
+        setPassengers(passengerRows);
+      })
+      .catch(() => {
+        if (!active) return;
+        setFolders([]);
+        setPassengers([]);
+      })
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [dateScope, version]);
 
-  const visible = useMemo(() => filterGateVisaFolders(folders, filter), [folders, filter]);
-  const totals = useMemo(() => gateVisaTotals(visible), [visible]);
-  const outstanding = useMemo(() => busiestOutstandingDays(visible), [visible]);
-  const narrowed = visible.length !== folders.length;
+  // The passenger list is the Gate Visa Excel, projected back into columns, so
+  // the same filters and statistics work here as on the sales page.
+  const table = useMemo(() => passengerTable(passengers), [passengers]);
+  const rows = useMemo(() => filterSalesRows(table, filter), [table, filter]);
+  const narrowed = rows.length !== table.rows.length;
 
-  function toggle(key: keyof GateVisaFilter) {
-    setFilter((current) => ({ ...current, [key]: !current[key] }));
-  }
+  // Folder totals still come from the folders themselves; they count days,
+  // which the passenger rows cannot.
+  const totals = useMemo(() => gateVisaTotals(folders), [folders]);
+  const outstanding = useMemo(() => busiestOutstandingDays(folders), [folders]);
 
   return (
     <div className="ic-gatevisa-page">
@@ -105,57 +119,19 @@ export function GateVisaTab({
 
       {view === "stats" && (
         <div className="ic-stats">
-          <div className="ic-filter-bar">
-            <input
-              type="search"
-              value={filter.query}
-              placeholder="Tarih ara (örn. 2026-07)…"
-              aria-label="Klasör tarihinde ara"
-              onChange={(event) => setFilter((current) => ({ ...current, query: event.target.value }))}
-            />
-            <div className="ic-filter-chips">
-              <button
-                type="button"
-                className={filter.onlyIncomplete ? "active" : ""}
-                aria-pressed={filter.onlyIncomplete}
-                onClick={() => toggle("onlyIncomplete")}
-              >
-                EKSİĞİ OLAN GÜNLER
-              </button>
-              <button
-                type="button"
-                className={filter.onlyMissingPhoto ? "active" : ""}
-                aria-pressed={filter.onlyMissingPhoto}
-                onClick={() => toggle("onlyMissingPhoto")}
-              >
-                FOTOĞRAF EKSİK
-              </button>
-              <button
-                type="button"
-                className={filter.onlyMissingDocuments ? "active" : ""}
-                aria-pressed={filter.onlyMissingDocuments}
-                onClick={() => toggle("onlyMissingDocuments")}
-              >
-                EVRAKSIZ
-              </button>
-            </div>
-            {narrowed && (
-              <button
-                type="button"
-                className="ic-filter-reset"
-                onClick={() => setFilter(emptyGateVisaFilter())}
-              >
-                FİLTREYİ TEMİZLE
-              </button>
-            )}
-          </div>
+          <ColumnFilterBar
+            table={table}
+            filter={filter}
+            onChange={setFilter}
+            onReset={() => setFilter(emptySalesFilter())}
+            narrowed={narrowed}
+            searchLabel="Yolcu listesinde ara…"
+          />
 
           <p className="ic-stats-scope">
             {loading
-              ? "Klasörler hazırlanıyor…"
-              : narrowed
-                ? `${visible.length} / ${folders.length} klasör üzerinden hesaplandı.`
-                : `${folders.length} klasörün tamamı üzerinden hesaplandı.`}
+              ? "Liste hazırlanıyor…"
+              : `${folders.length} gün klasörü · ${table.rows.length} yolcu kaydı`}
           </p>
 
           <div className="ic-stats-card">
@@ -197,6 +173,9 @@ export function GateVisaTab({
               </ul>
             )}
           </div>
+
+          {/* Every Gate Visa column, filtered the same way the list is. */}
+          <ColumnStatsView table={table} rows={rows} narrowed={narrowed} />
         </div>
       )}
 

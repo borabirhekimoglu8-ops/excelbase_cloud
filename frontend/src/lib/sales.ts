@@ -56,8 +56,15 @@ function isEmptyRow(row: string[]): boolean {
  * rather than by locale assumption.
  */
 export function parseSalesNumber(value: string): number | null {
-  const text = value.trim().replace(/[\s ]/g, "").replace(/[^\d.,+-]/g, "");
-  if (!text || !/\d/.test(text)) return null;
+  // Currency decoration is dropped, but anything else non-numeric disqualifies
+  // the cell. Stripping every letter instead turned reference codes into
+  // numbers -- "F1000" became 1000 -- so an invoice-number column was detected
+  // as money and handed a meaningless total.
+  const text = value
+    .trim()
+    .replace(/₺|\$|€|£|¥|TL|TRY|USD|EUR|GBP/gi, "")
+    .replace(/[\s ]/g, "");
+  if (!text || !/\d/.test(text) || /[^\d.,+-]/.test(text)) return null;
 
   const lastComma = text.lastIndexOf(",");
   const lastDot = text.lastIndexOf(".");

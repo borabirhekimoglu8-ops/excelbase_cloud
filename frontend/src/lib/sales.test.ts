@@ -32,9 +32,18 @@ describe("parseSalesNumber", () => {
 
   it("ignores currency decoration but refuses text", () => {
     expect(parseSalesNumber("₺ 2.500,00")).toBeCloseTo(2500);
+    expect(parseSalesNumber("1.500,00 TL")).toBeCloseTo(1500);
     expect(parseSalesNumber("-450")).toBe(-450);
     expect(parseSalesNumber("iptal")).toBeNull();
     expect(parseSalesNumber("")).toBeNull();
+  });
+
+  it("refuses a reference code that merely contains digits", () => {
+    // Stripping letters turned "F1000" into 1000, which made an invoice-number
+    // column look like money and gave it a total nobody asked for.
+    expect(parseSalesNumber("F1000")).toBeNull();
+    expect(parseSalesNumber("2026-07-01")).toBeNull();
+    expect(parseSalesNumber("A-12")).toBeNull();
   });
 });
 

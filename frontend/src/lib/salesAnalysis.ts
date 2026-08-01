@@ -11,7 +11,16 @@
  * work once and then quietly stop finding the money.
  */
 
-import { parseSalesNumber, type SalesSheet } from "@/lib/sales";
+import { parseSalesNumber } from "@/lib/sales";
+
+/**
+ * Any table with named columns.
+ *
+ * Deliberately not `SalesSheet`: the Gate Visa passenger list is the same
+ * shape and asks the same questions, and one engine over both means a filter
+ * or a statistic cannot behave differently depending on which page it is on.
+ */
+export type ColumnTable = { headers: string[]; rows: string[][] };
 
 /** Above this many distinct values a column is an identifier, not a category. */
 export const MAX_CATEGORY_VALUES = 30;
@@ -21,6 +30,15 @@ export type SalesFilter = {
   query: string;
   /** Column index → exact value that must match. Absent or "" means any. */
   columnValues: Record<number, string>;
+  /**
+   * Column index → substring the cell must contain.
+   *
+   * Separate from `columnValues` because the two come from different controls
+   * and mean different things: a dropdown offers values that exist, so exact
+   * is right, while a free-text box over a hundred passport numbers is only
+   * usable as a partial match.
+   */
+  columnQueries: Record<number, string>;
   /** Column index → inclusive numeric bounds. */
   numericRanges: Record<number, { min?: number; max?: number }>;
 };
@@ -54,10 +72,11 @@ export type CategoryBreakdown = {
 export const emptySalesFilter = (): SalesFilter => ({
   query: "",
   columnValues: {},
+  columnQueries: {},
   numericRanges: {},
 });
 
-function columnCells(sheet: SalesSheet, index: number): string[] {
+function columnCells(sheet: ColumnTable, index: number): string[] {
   return sheet.rows.map((row) => row[index] ?? "");
 }
 
@@ -67,7 +86,7 @@ function columnCells(sheet: SalesSheet, index: number): string[] {
  * Same majority rule the totals use: one stray year in a notes column must not
  * turn it into a money column.
  */
-export function numericColumnIndexes(sheet: SalesSheet): number[] {
+export function numericColumnIndexes(sheet: ColumnTable): number[] {
   return sheet.headers.flatMap((_header, index) => {
     let filled = 0;
     let numeric = 0;
@@ -80,7 +99,7 @@ export function numericColumnIndexes(sheet: SalesSheet): number[] {
   });
 }
 
-export function distinctValues(sheet: SalesSheet, index: number): string[] {
+export function distinctValues(sheet: ColumnTable, index: number): string[] {
   const seen = new Set<string>();
   for (const cell of columnCells(sheet, index)) {
     if (cell) seen.add(cell);
@@ -95,7 +114,7 @@ export function distinctValues(sheet: SalesSheet, index: number): string[] {
  * A column where every row differs (an invoice number, a passenger name) makes
  * a breakdown with one row per row, which tells the operator nothing.
  */
-export function categoryColumnIndexes(sheet: SalesSheet): number[] {
+export function categoryColumnIndexes(sheet: ColumnTable): number[] {
   const numeric = new Set(numericColumnIndexes(sheet));
   return sheet.headers.flatMap((_header, index) => {
     if (numeric.has(index)) return [];
@@ -107,11 +126,72 @@ export function categoryColumnIndexes(sheet: SalesSheet): number[] {
   });
 }
 
-export function filterSalesRows(sheet: SalesSheet, filter: SalesFilter): string[][] {
+export type ColumnKind = "numeric" | "category" | "text";
+
+export type ColumnSummary = {
+  index: number;
+  column: string;
+  kind: ColumnKind;
+  filled: number;
+  empty: number;
+  distinct: number;
+  /** Present for numeric columns. */
+  numeric: NumericColumnStats | null;
+  /** Most frequent values, for anything that is not numeric. */
+  top: CategoryEntry[];
+};
+
+/**
+ * One summary per column, whatever the column holds.
+ *
+ * Every header in the file gets a line: showing statistics only for the money
+ * columns left most of a spreadsheet unaccounted for, and the operator with no
+ * way to tell an empty column from one that was simply not summarised.
+ */
+export function columnSummaries(
+  sheet: ColumnTable,
+  rows: string[][],
+  topValues = 5,
+): ColumnSummary[] {
+  const numericSet = new Set(numericColumnIndexes(sheet));
+  const categorySet = new Set(categoryColumnIndexes(sheet));
+  const stats = new Map(numericStats(sheet, rows).map((entry) => [entry.index, entry]));
+
+  return sheet.headers.map((header, index) => {
+    const cells = rows.map((row) => row[index] ?? "");
+    const filled = cells.filter((cell) => cell !== "").length;
+    const distinct = new Set(cells.filter((cell) => cell !== "")).size;
+    const kind: ColumnKind = numericSet.has(index)
+      ? "numeric"
+      : categorySet.has(index)
+        ? "category"
+        : "text";
+    const breakdown = kind === "numeric"
+      ? []
+      : categoryBreakdown(sheet, rows.filter((row) => (row[index] ?? "") !== ""), index, null)
+        .entries.slice(0, topValues);
+
+    return {
+      index,
+      column: header || `Sütun ${index + 1}`,
+      kind,
+      filled,
+      empty: rows.length - filled,
+      distinct,
+      numeric: stats.get(index) ?? null,
+      top: breakdown,
+    };
+  });
+}
+
+export function filterSalesRows(sheet: ColumnTable, filter: SalesFilter): string[][] {
   const query = filter.query.trim().toLocaleLowerCase("tr");
   const valueEntries = Object.entries(filter.columnValues)
     .filter(([, value]) => value !== "")
     .map(([index, value]) => [Number(index), value] as const);
+  const queryEntries = Object.entries(filter.columnQueries ?? {})
+    .filter(([, value]) => value.trim() !== "")
+    .map(([index, value]) => [Number(index), value.trim().toLocaleLowerCase("tr")] as const);
   const rangeEntries = Object.entries(filter.numericRanges)
     .map(([index, bounds]) => [Number(index), bounds] as const)
     .filter(([, bounds]) => bounds.min !== undefined || bounds.max !== undefined);
@@ -122,6 +202,9 @@ export function filterSalesRows(sheet: SalesSheet, filter: SalesFilter): string[
     }
     for (const [index, value] of valueEntries) {
       if ((row[index] ?? "") !== value) return false;
+    }
+    for (const [index, needle] of queryEntries) {
+      if (!(row[index] ?? "").toLocaleLowerCase("tr").includes(needle)) return false;
     }
     for (const [index, bounds] of rangeEntries) {
       const parsed = parseSalesNumber(row[index] ?? "");
@@ -134,7 +217,7 @@ export function filterSalesRows(sheet: SalesSheet, filter: SalesFilter): string[
   });
 }
 
-export function numericStats(sheet: SalesSheet, rows: string[][]): NumericColumnStats[] {
+export function numericStats(sheet: ColumnTable, rows: string[][]): NumericColumnStats[] {
   return numericColumnIndexes(sheet).flatMap((index) => {
     const values: number[] = [];
     for (const row of rows) {
@@ -163,7 +246,7 @@ export function numericStats(sheet: SalesSheet, rows: string[][]): NumericColumn
  * a breakdown of forty agencies in alphabetical order buries the answer.
  */
 export function categoryBreakdown(
-  sheet: SalesSheet,
+  sheet: ColumnTable,
   rows: string[][],
   groupIndex: number,
   valueIndex: number | null,

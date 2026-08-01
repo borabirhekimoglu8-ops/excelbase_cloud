@@ -4,6 +4,7 @@ import type { SalesSheet } from "@/lib/sales";
 import {
   categoryBreakdown,
   categoryColumnIndexes,
+  columnSummaries,
   distinctValues,
   emptySalesFilter,
   filterSalesRows,
@@ -86,6 +87,27 @@ describe("filterSalesRows", () => {
     expect(rows.map((row) => row[0])).toEqual(["Mavi Tur", "Ege Seyahat"]);
   });
 
+  it("matches a substring within one column, unlike the dropdown's exact value", () => {
+    // A free-text box over a hundred passport numbers is only usable as a
+    // partial match, while a dropdown offers values that exist.
+    const rows = filterSalesRows(SALES, {
+      ...emptySalesFilter(),
+      columnQueries: { 0: "seyahat" },
+    });
+    expect(rows.map((row) => row[0])).toEqual(["Ege Seyahat"]);
+  });
+
+  it("combines a column substring with the other filters", () => {
+    // "tur" matches Mavi Tur and Deniz Turizm; the Sefer filter then keeps
+    // only their Kos rows.
+    const rows = filterSalesRows(SALES, {
+      ...emptySalesFilter(),
+      columnQueries: { 0: "tur" },
+      columnValues: { 1: "Kos" },
+    });
+    expect(rows.map((row) => row[0])).toEqual(["Mavi Tur", "Deniz Turizm"]);
+  });
+
   it("excludes a row with nothing numeric where a bound was asked for", () => {
     const partial = sheet(["Acente", "Tutar"], [["A", "100"], ["B", ""], ["C", "yok"]]);
     const rows = filterSalesRows(partial, {
@@ -123,6 +145,60 @@ describe("numericStats", () => {
 
     expect(stats.count).toBe(2);
     expect(stats.average).toBeCloseTo(200);
+  });
+});
+
+describe("columnSummaries", () => {
+  it("gives every header a line, whatever the column holds", () => {
+    // Summarising only the money columns left most of a spreadsheet
+    // unaccounted for, with no way to tell an empty column from an
+    // unsummarised one.
+    const summaries = columnSummaries(SALES, SALES.rows);
+
+    expect(summaries.map((entry) => entry.column)).toEqual([
+      "Acente",
+      "Sefer",
+      "Tutar",
+      "Not",
+    ]);
+    // "Not" is text, not a category: both of its filled cells differ, so
+    // grouping by it would make one group per row.
+    expect(summaries.map((entry) => entry.kind)).toEqual([
+      "category",
+      "category",
+      "numeric",
+      "text",
+    ]);
+  });
+
+  it("carries the numeric statistics on the numeric column only", () => {
+    const summaries = columnSummaries(SALES, SALES.rows);
+    const tutar = summaries[2];
+    const acente = summaries[0];
+
+    expect(tutar.numeric?.sum).toBeCloseTo(5500.5);
+    expect(acente.numeric).toBeNull();
+    expect(acente.top[0].value).toBe("Mavi Tur");
+    expect(acente.top[0].count).toBe(2);
+  });
+
+  it("counts filled and empty cells so a sparse column is visible", () => {
+    const summaries = columnSummaries(SALES, SALES.rows);
+    const not = summaries[3];
+
+    expect(not.filled).toBe(2);
+    expect(not.empty).toBe(2);
+    expect(not.distinct).toBe(2);
+    // Blank cells were excluded before ranking, so "(boş)" is not a top value.
+    expect(not.top.map((entry) => entry.value)).not.toContain("(boş)");
+  });
+
+  it("follows the filter like every other statistic", () => {
+    const rows = filterSalesRows(SALES, { ...emptySalesFilter(), query: "mavi" });
+    const summaries = columnSummaries(SALES, rows);
+
+    expect(summaries[2].numeric?.count).toBe(2);
+    expect(summaries[0].filled).toBe(2);
   });
 });
 

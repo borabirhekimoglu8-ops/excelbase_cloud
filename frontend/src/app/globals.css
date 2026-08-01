@@ -1042,11 +1042,24 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   background: #fff;
 }
 .ic-stats-card h4 {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
   margin: 0;
   color: var(--ido-primary-deep);
   font-size: 11px;
   letter-spacing: .04em;
 }
+/* Sutunun hangi role gore ozetlendigi: sayisal mi, kategori mi, duz metin mi. */
+.ic-stats-card h4 em {
+  color: var(--ido-faint);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.ic-stats-breakdown.compact li { grid-template-columns: minmax(0, 1fr) minmax(50px, 26%) auto; }
 .ic-stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
