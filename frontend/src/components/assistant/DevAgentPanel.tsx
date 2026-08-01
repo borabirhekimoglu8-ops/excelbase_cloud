@@ -53,6 +53,7 @@ const UNAVAILABLE: Record<Exclude<DevAgentState, "ready">, { title: string; body
 export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
   const [state, setState] = useState<DevAgentState | null>(null);
   const [statusError, setStatusError] = useState("");
+  const [open, setOpen] = useState(false);
   const [instruction, setInstruction] = useState("");
   const [running, setRunning] = useState(false);
   const [log, setLog] = useState<string[]>([]);
@@ -201,14 +202,30 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
   const green = tests.length > 0 && tests.every((test) => test.passed);
 
   return (
-    <section className="assistant-dev-agent" aria-label="Uygulama içi geliştirme">
-      <header>
-        <h2>Uygulamayı geliştir</h2>
-        <small>
-          Değişiklik ayrı bir çalışma kopyasında yapılır; testler geçmeden ve siz
-          UYGULA demeden çalıştırdığınız sürüm değişmez.
-        </small>
-      </header>
+    <section
+      className={`assistant-dev-agent${open ? " open" : ""}`}
+      aria-label="Uygulama içi geliştirme"
+    >
+      {/* Collapsed by default: the workspace is a fixed-height column whose
+          transcript takes the remaining space, so a panel that always claimed
+          its full height would push itself past the viewport edge. */}
+      <button
+        type="button"
+        className="assistant-dev-agent-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>Uygulamayı geliştir</span>
+        {running && <small>çalışıyor…</small>}
+        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+      </button>
+
+      {!open ? null : (
+      <div className="assistant-dev-agent-body">
+      <p className="assistant-dev-agent-note">
+        Değişiklik ayrı bir çalışma kopyasında yapılır; testler geçmeden ve siz
+        UYGULA demeden çalıştırdığınız sürüm değişmez.
+      </p>
 
       <textarea
         value={instruction}
@@ -291,6 +308,8 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
         >
           {applying ? "UYGULANIYOR…" : "UYGULA"}
         </button>
+      )}
+      </div>
       )}
     </section>
   );

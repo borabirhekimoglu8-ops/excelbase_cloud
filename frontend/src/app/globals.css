@@ -2017,17 +2017,73 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 }
 .assistant-inline-error.transcript-error { align-self: stretch; }
 
-/* Uygulama ici gelistirme konsolu. Yalnizca kapali kurulumda gorunur. */
+/* Uygulama ici gelistirme konsolu. Yalnizca kapali kurulumda gorunur.
+   Calisma alani sabit yukseklikte bir sutun ve .ready durumunda tasma
+   gizleniyor; bu yuzden panel varsayilan olarak kapali durur ve acildiginda
+   kendi icinde kayar. Aksi halde ekranin altindan tasip kirpilirdi. */
 .assistant-dev-agent {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
-  padding: 16px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border: 1px solid var(--ido-border);
   border-top: 3px solid var(--ido-primary-deep);
   background: #fff;
 }
-.assistant-dev-agent header { display: grid; gap: 4px; }
+/* Acikken sabit bir yukseklik yerine sutunda kalan yeri paylasir. Sabit bir
+   vh degeri, ustteki seritler ve yazma alani cikarildiktan sonra kalandan
+   buyuk olabiliyor ve panel ekranin altindan tasip kirpiliyordu.
+   flex-basis 0: pay, icerigin kendi boyundan degil kalan alandan hesaplanir,
+   boylece toplam hicbir zaman kabi asmaz. Agirlik 2, panelin sohbetten daha
+   genis pay almasini saglar - panel acildiysa is orada yapiliyordur. */
+.assistant-dev-agent.open { flex: 1 1 auto; }
+/* Panel acikken sohbet gizlenir: bu bir kip degisimi, gelistirme yapiliyor.
+   Kucuk bir dizustu ekraninda ust seritler ve yazma alani birlikte ~300px
+   yiyor, geriye panele okunabilir bir yer kalmiyordu. Tek tikla geri gelir.
+   :has() desteklemeyen bir tarayicida kural dusu, panel yine tasmaz -- yalnizca
+   alani sohbetle paylasir. */
+.assistant-workspace.ready:has(.assistant-dev-agent.open) .assistant-transcript,
+.assistant-workspace.ready:has(.assistant-dev-agent.open) .assistant-composer-shell {
+  display: none;
+}
+.assistant-dev-agent-toggle {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  color: var(--ido-primary-deep);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: .06em;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.assistant-dev-agent-toggle small {
+  color: var(--ido-primary);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .04em;
+  text-transform: none;
+}
+.assistant-dev-agent-body {
+  flex: 1 1 auto;
+  /* min-height:0 olmadan flex ogesi icerigi kadar buyur ve overflow-y hicbir
+     zaman devreye girmez; alt kenar disari tasar. */
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 0 14px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.assistant-dev-agent-note { margin: 0; color: var(--ido-muted); font-size: 10px; line-height: 1.5; }
 .assistant-dev-agent h2 { margin: 0; color: var(--ido-primary-deep); font-size: 15px; }
 .assistant-dev-agent h3 {
   margin: 0 0 4px;
@@ -2037,7 +2093,6 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   letter-spacing: .13em;
   text-transform: uppercase;
 }
-.assistant-dev-agent header small { color: var(--ido-muted); font-size: 10px; line-height: 1.5; }
 .assistant-dev-agent textarea {
   width: 100%;
   padding: 10px 11px;
