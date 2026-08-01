@@ -472,6 +472,14 @@ def assistant_network_allowed(request: Request) -> bool:
 def _assistant_origin_allowed(request: Request) -> bool:
     origin = request.headers.get("origin", "").strip()
     if not origin:
+        # The Fetch standard only attaches an Origin header to requests whose
+        # method is not GET/HEAD (or that are cross-origin); a same-origin GET
+        # legitimately arrives with none at all. Treating that as suspicious
+        # would reject every real GET in production while a forged one is
+        # already stopped by SameSite=strict on the session cookie -- a
+        # cross-site request, forged or not, never carries it.
+        if request.method in {"GET", "HEAD"}:
+            return True
         return os.environ.get("APP_ENV", "development").lower() != "production"
     try:
         parsed = urlsplit(origin)

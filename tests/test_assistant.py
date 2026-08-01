@@ -387,6 +387,90 @@ def test_assistant_session_dependency_checks_origin_and_csrf(monkeypatch):
     assert global_cookie.value.status_code == 401
 
 
+def test_assistant_session_dependency_accepts_a_get_with_no_origin_header(monkeypatch):
+    """A same-origin GET (e.g. the dev-agent status poll) never carries an
+    Origin header under the Fetch standard -- only non-GET/HEAD requests do.
+    Requiring one here would reject every legitimate GET in production; the
+    session cookie's SameSite=strict already stops a cross-site request from
+    presenting it at all, forged Origin or not."""
+    from backend import auth
+
+    actor = Actor(id="actor-1", name="Operasyon", role="admin")
+    monkeypatch.setattr(
+        auth,
+        "optional_assistant_actor",
+        lambda request: (
+            actor
+            if request.cookies.get(ASSISTANT_SESSION_COOKIE) == "signed-assistant-token"
+            else None
+        ),
+    )
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "https",
+        "path": "/api/dev-agent/v1/status",
+        "raw_path": b"/api/dev-agent/v1/status",
+        "query_string": b"",
+        "headers": [
+            (b"host", b"excelbase.onrender.com"),
+            (
+                b"cookie",
+                f"{ASSISTANT_SESSION_COOKIE}=signed-assistant-token".encode("ascii"),
+            ),
+        ],
+        "client": ("127.0.0.1", 1000),
+        "server": ("excelbase.onrender.com", 443),
+    }
+    request = Request(scope)
+    csrf = assistant_csrf_token(request)
+
+    assert require_assistant_session(request, csrf) == actor
+
+
+def test_assistant_session_dependency_still_checks_origin_for_a_post_with_none(monkeypatch):
+    """The GET exemption must not widen to state-changing methods: a POST
+    with a missing or forged Origin is still rejected in production."""
+    from backend import auth
+
+    actor = Actor(id="actor-1", name="Operasyon", role="admin")
+    monkeypatch.setattr(
+        auth,
+        "optional_assistant_actor",
+        lambda request: (
+            actor
+            if request.cookies.get(ASSISTANT_SESSION_COOKIE) == "signed-assistant-token"
+            else None
+        ),
+    )
+    monkeypatch.setenv("APP_ENV", "production")
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "https",
+        "path": "/api/assistant/v1/chat",
+        "raw_path": b"/api/assistant/v1/chat",
+        "query_string": b"",
+        "headers": [
+            (b"host", b"excelbase.onrender.com"),
+            (
+                b"cookie",
+                f"{ASSISTANT_SESSION_COOKIE}=signed-assistant-token".encode("ascii"),
+            ),
+        ],
+        "client": ("127.0.0.1", 1000),
+        "server": ("excelbase.onrender.com", 443),
+    }
+    request = Request(scope)
+    csrf = assistant_csrf_token(request)
+
+    with pytest.raises(HTTPException) as missing_origin:
+        require_assistant_session(request, csrf)
+    assert missing_origin.value.status_code == 403
+
+
 def test_authenticated_chat_returns_provider_response_without_content_logging(monkeypatch):
     async def fake_generate(payload, *, actor_id, request_id):
         assert payload.message == "Durumu özetle"
