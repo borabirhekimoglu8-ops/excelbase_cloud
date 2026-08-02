@@ -1031,6 +1031,99 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   cursor: pointer;
 }
 
+/* Holografik grafikler. Kutu koyu zeminli, cizgiler parlak: sayilarin yaninda
+   sekli de okunabilsin. Tumu satir ici SVG -- uygulama cevrimdisi calisiyor,
+   disaridan grafik kutuphanesi cekemez. */
+.ic-holo-donut {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 6px;
+  background:
+    radial-gradient(120% 120% at 12% 0%, rgba(79,140,255,.16), transparent 55%),
+    linear-gradient(160deg, #0d2436, #0a1a28);
+}
+.ic-holo-donut svg { width: 150px; height: 150px; }
+.ic-holo-centre-value {
+  fill: #eaf6ff;
+  font-size: 19px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+.ic-holo-centre-label {
+  fill: rgba(190,220,240,.66);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-anchor: middle;
+}
+.ic-holo-legend { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.ic-holo-legend li {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+.ic-holo-legend i { width: 9px; height: 9px; border-radius: 2px; }
+.ic-holo-legend span {
+  color: rgba(224,240,250,.86);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ic-holo-legend b { color: #eaf6ff; font-size: 10px; font-variant-numeric: tabular-nums; }
+
+.ic-holo-bars { display: grid; gap: 6px; }
+.ic-holo-bars > div {
+  display: grid;
+  grid-template-columns: minmax(0, 30%) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.ic-holo-bars span {
+  color: var(--ido-muted);
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ic-holo-track { height: 8px; border-radius: 4px; background: #eef3f6; overflow: hidden; }
+.ic-holo-track i { display: block; height: 100%; border-radius: 4px; }
+.ic-holo-bars b {
+  color: var(--ido-primary-deep);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ic-holo-trend {
+  padding: 10px 10px 6px;
+  border-radius: 6px;
+  background:
+    radial-gradient(120% 120% at 80% 0%, rgba(176,108,255,.16), transparent 55%),
+    linear-gradient(160deg, #0d2436, #0a1a28);
+}
+.ic-holo-trend svg { display: block; width: 100%; height: auto; }
+.ic-holo-axis { display: flex; justify-content: space-between; }
+.ic-holo-axis span { color: rgba(190,220,240,.6); font-size: 9px; }
+.ic-holo-caption {
+  margin: 0 0 6px;
+  color: var(--ido-faint);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.ic-holo-empty { margin: 0; color: var(--ido-muted); font-size: 10px; }
+/* Iki grafik yan yana; dar ekranda alt alta. minmax(0,...) sart, yoksa SVG
+   kendi genisligini dayatip sayfayi yana tasirir. */
+.ic-holo-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+@media (min-width: 720px) {
+  .ic-holo-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
 .ic-stats { display: grid; gap: 10px; min-width: 0; }
 .ic-stats-scope { margin: 0; color: var(--ido-muted); font-size: 10px; }
 .ic-stats-card {

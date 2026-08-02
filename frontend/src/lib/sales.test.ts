@@ -2,7 +2,6 @@ import * as XLSX from "@e965/xlsx";
 import { describe, expect, it } from "vitest";
 
 import {
-  SALES_MAX_ROWS,
   parseSalesNumber,
   parseSalesWorkbook,
   salesColumnTotals,
@@ -79,14 +78,16 @@ describe("parseSalesWorkbook", () => {
     expect(sheet.headers).toEqual(["Acente", "Sütun 2", "Tutar", "Tutar (2)"]);
   });
 
-  it("truncates rather than swallowing a spreadsheet whole, and says how much", () => {
+  it("keeps every row of a large sheet rather than sampling it", () => {
+    // The old 5.000 cap meant totals were computed over a slice the operator
+    // never chose, then shown as the total.
     const rows: unknown[][] = [["Acente", "Tutar"]];
-    for (let i = 0; i < SALES_MAX_ROWS + 25; i += 1) rows.push([`A${i}`, i]);
+    for (let i = 0; i < 12_000; i += 1) rows.push([`A${i}`, i]);
 
     const sheet = parseSalesWorkbook(workbookBytes(rows), "buyuk.xlsx");
 
-    expect(sheet.rows).toHaveLength(SALES_MAX_ROWS);
-    expect(sheet.truncated).toBe(25);
+    expect(sheet.rows).toHaveLength(12_000);
+    expect(sheet.truncated).toBe(0);
   });
 
   it("refuses a file with nothing in it instead of storing an empty sheet", () => {

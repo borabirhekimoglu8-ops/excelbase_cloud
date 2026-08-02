@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { type Passenger, type RecordFolder, fetchPassengers, fetchRecordFolders } from "@/lib/api";
 import { RecordsTab } from "@/components/tabs/RecordsTab";
 import { ColumnFilterBar, ColumnStatsView } from "@/components/ColumnAnalysis";
+import { HoloDonut, HoloTrend } from "@/components/charts/Holo";
 import { passengerTable } from "@/lib/passengerTable";
 import { type SalesFilter, emptySalesFilter, filterSalesRows } from "@/lib/salesAnalysis";
 import {
@@ -80,6 +81,22 @@ export function GateVisaTab({
   // which the passenger rows cannot.
   const totals = useMemo(() => gateVisaTotals(folders), [folders]);
   const outstanding = useMemo(() => busiestOutstandingDays(folders), [folders]);
+
+  // Oldest first, so the line reads left to right as time passing. The folder
+  // list arrives newest-first, which would draw the trend backwards.
+  const trendPoints = useMemo(
+    () => [...folders]
+      .filter((entry) => entry.date_key && entry.date_key !== "Tarihsiz")
+      .sort((a, b) => a.date_key.localeCompare(b.date_key))
+      .map((entry) => ({ label: dayLabel(entry.date_key), value: entry.count })),
+    [folders],
+  );
+
+  const readinessSlices = useMemo(() => [
+    { label: "Hazır", value: totals.ready },
+    { label: "Kontrol", value: totals.review },
+    { label: "Taslak", value: totals.draft },
+  ].filter((slice) => slice.value > 0), [totals]);
 
   return (
     <div className="ic-gatevisa-page">
@@ -172,6 +189,25 @@ export function GateVisaTab({
                 ))}
               </ul>
             )}
+          </div>
+
+          <div className="ic-stats-card">
+            <h4>Günlük eğilim</h4>
+            <div className="ic-holo-split">
+              <div>
+                <p className="ic-holo-caption">Yolcu / gün</p>
+                <HoloTrend points={trendPoints} formatValue={(value) => `${value} yolcu`} />
+              </div>
+              <div>
+                <p className="ic-holo-caption">Hazırlık dağılımı</p>
+                <HoloDonut
+                  slices={readinessSlices}
+                  total={totals.passengers}
+                  centreLabel="HAZIRLIK"
+                  centreValue={`%${totals.readinessPercent.toLocaleString("tr-TR")}`}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Every Gate Visa column, filtered the same way the list is. */}

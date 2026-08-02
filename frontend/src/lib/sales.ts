@@ -14,8 +14,17 @@
 
 import * as XLSX from "@e965/xlsx";
 
-/** Beyond this a sheet is truncated rather than refused: partial data still answers questions. */
-export const SALES_MAX_ROWS = 5_000;
+/**
+ * Rows are no longer capped.
+ *
+ * A 5.000-row ceiling silently truncated real exports, and every statistic
+ * below it was then computed over a sample the operator had not chosen while
+ * being presented as the total -- a wrong number is worse than a slow one.
+ * The whole sheet is kept and every figure is computed over all of it.
+ *
+ * What still bounds the work: the table draws a page at a time rather than
+ * every row, and the sheet count below limits how much a device accumulates.
+ */
 export const SALES_MAX_COLUMNS = 40;
 export const SALES_MAX_CELL_CHARS = 200;
 /** A vault holding passport scans should not also hold a year of spreadsheets. */
@@ -27,7 +36,7 @@ export type SalesSheet = {
   imported_at: string;
   headers: string[];
   rows: string[][];
-  /** Rows the file had beyond SALES_MAX_ROWS, so the UI can say so rather than quietly lie. */
+  /** Always 0 now that nothing is dropped; kept so stored sheets still load. */
   truncated: number;
 };
 
@@ -141,8 +150,8 @@ export function parseSalesWorkbook(bytes: Uint8Array, filename: string): SalesSh
     filename: filename.slice(0, 160),
     imported_at: new Date().toISOString(),
     headers,
-    rows: body.slice(0, SALES_MAX_ROWS),
-    truncated: Math.max(0, body.length - SALES_MAX_ROWS),
+    rows: body,
+    truncated: 0,
   };
 }
 

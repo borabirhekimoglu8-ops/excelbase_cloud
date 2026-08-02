@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { formatSalesNumber } from "@/lib/sales";
+import { HoloBars, HoloDonut } from "@/components/charts/Holo";
 import {
   type ColumnTable,
   type SalesFilter,
@@ -182,6 +183,24 @@ export function ColumnStatsView({
     [table, rows, activeGroup, activeValue],
   );
 
+  // A ring with forty hairline slices cannot be read or pointed at, so the
+  // long tail is folded into one labelled slice instead of being drawn.
+  const donutSlices = useMemo(() => {
+    if (!breakdown) return [];
+    const value = (entry: { sum: number; count: number }) =>
+      activeValue !== null ? entry.sum : entry.count;
+    const top = breakdown.entries.slice(0, 6).map((entry) => ({
+      label: entry.value,
+      value: value(entry),
+    }));
+    const rest = breakdown.entries.slice(6).reduce((total, entry) => total + value(entry), 0);
+    return rest > 0 ? [...top, { label: "Diğer", value: rest }] : top;
+  }, [breakdown, activeValue]);
+  const donutTotal = useMemo(
+    () => donutSlices.reduce((total, slice) => total + slice.value, 0),
+    [donutSlices],
+  );
+
   return (
     <div className="ic-stats">
       <p className="ic-stats-scope">
@@ -220,6 +239,13 @@ export function ColumnStatsView({
             </label>
           </div>
 
+          <HoloDonut
+            slices={donutSlices}
+            total={donutTotal}
+            centreLabel={activeValue !== null ? table.headers[activeValue] ?? "Toplam" : "Satır"}
+            centreValue={formatSalesNumber(donutTotal)}
+          />
+
           <ul className="ic-stats-breakdown">
             {breakdown.entries.map((entry) => (
               <li key={entry.value}>
@@ -251,14 +277,31 @@ export function ColumnStatsView({
           </h4>
 
           {summary.numeric ? (
-            <div className="ic-stats-grid">
-              <div><span>TOPLAM</span><strong>{formatSalesNumber(summary.numeric.sum)}</strong></div>
-              <div><span>ORTALAMA</span><strong>{formatSalesNumber(summary.numeric.average)}</strong></div>
-              <div><span>EN DÜŞÜK</span><strong>{formatSalesNumber(summary.numeric.min)}</strong></div>
-              <div><span>EN YÜKSEK</span><strong>{formatSalesNumber(summary.numeric.max)}</strong></div>
-              <div><span>DOLU</span><strong>{summary.filled}</strong></div>
-              <div><span>BOŞ</span><strong>{summary.empty}</strong></div>
-            </div>
+            <>
+              <div className="ic-stats-grid">
+                <div><span>TOPLAM</span><strong>{formatSalesNumber(summary.numeric.sum)}</strong></div>
+                <div><span>ORTALAMA</span><strong>{formatSalesNumber(summary.numeric.average)}</strong></div>
+                <div><span>ORTANCA</span><strong>{formatSalesNumber(summary.numeric.median)}</strong></div>
+                <div><span>EN DÜŞÜK</span><strong>{formatSalesNumber(summary.numeric.min)}</strong></div>
+                <div><span>EN YÜKSEK</span><strong>{formatSalesNumber(summary.numeric.max)}</strong></div>
+                <div><span>ALT ÇEYREK</span><strong>{formatSalesNumber(summary.numeric.p25)}</strong></div>
+                <div><span>ÜST ÇEYREK</span><strong>{formatSalesNumber(summary.numeric.p75)}</strong></div>
+                <div><span>SAPMA</span><strong>{formatSalesNumber(summary.numeric.stdDev)}</strong></div>
+                <div><span>DOLU</span><strong>{summary.filled}</strong></div>
+                <div><span>BOŞ</span><strong>{summary.empty}</strong></div>
+              </div>
+              {/* Where the rows actually fall. The five-number summary above is
+                  exact; this says whether the column is bunched or spread. */}
+              {summary.histogram.length > 0 && (
+                <HoloBars
+                  entries={summary.histogram.map((bucket) => ({
+                    label: bucket.label,
+                    value: bucket.count,
+                  }))}
+                  formatValue={(value) => `${value}`}
+                />
+              )}
+            </>
           ) : (
             <>
               <div className="ic-stats-grid">

@@ -52,7 +52,30 @@ export type NumericColumnStats = {
   average: number;
   min: number;
   max: number;
+  /**
+   * The middle value. Worth showing next to the average because they disagree
+   * exactly when it matters: one large sale drags the average away from what a
+   * typical row looks like, and only the median says so.
+   */
+  median: number;
+  /** Quartiles, so the bulk of the rows can be separated from the tails. */
+  p25: number;
+  p75: number;
+  /** Population standard deviation: how spread out the column is. */
+  stdDev: number;
 };
+
+function quantile(sorted: number[], fraction: number): number {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0];
+  // Linear interpolation between the two neighbouring samples, so a quartile
+  // of an even-length column is not silently rounded to one side.
+  const position = (sorted.length - 1) * fraction;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
 
 export type CategoryEntry = {
   value: string;
@@ -169,6 +192,8 @@ export function sortRows(
 
 export type ColumnKind = "numeric" | "category" | "text";
 
+export type HistogramBucket = { label: string; from: number; to: number; count: number };
+
 export type ColumnSummary = {
   index: number;
   column: string;
@@ -180,7 +205,50 @@ export type ColumnSummary = {
   numeric: NumericColumnStats | null;
   /** Most frequent values, for anything that is not numeric. */
   top: CategoryEntry[];
+  /** Where the values fall, for numeric columns; empty otherwise. */
+  histogram: HistogramBucket[];
 };
+
+function shortNumber(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  if (Math.abs(rounded) >= 1_000_000) return `${Math.round(rounded / 100_000) / 10}M`;
+  if (Math.abs(rounded) >= 1_000) return `${Math.round(rounded / 100) / 10}B`;
+  return `${rounded}`;
+}
+
+/**
+ * Buckets numeric values into equal-width ranges.
+ *
+ * The five-number summary is exact but says nothing about shape: two columns
+ * with the same min, median and max can be bunched at one end or split in two,
+ * and only the distribution shows which.
+ */
+export function numericHistogram(values: number[], buckets = 8): HistogramBucket[] {
+  if (values.length === 0) return [];
+  let low = values[0];
+  let high = values[0];
+  for (const value of values) {
+    if (value < low) low = value;
+    if (value > high) high = value;
+  }
+  // Every row identical: one bucket is the honest answer, not eight empty ones.
+  if (low === high) {
+    return [{ label: shortNumber(low), from: low, to: high, count: values.length }];
+  }
+
+  const width = (high - low) / buckets;
+  const counts = new Array<number>(buckets).fill(0);
+  for (const value of values) {
+    // The top value belongs to the last bucket rather than to a ninth one.
+    const slot = Math.min(buckets - 1, Math.floor((value - low) / width));
+    counts[slot] += 1;
+  }
+  return counts.map((count, index) => {
+    const from = low + width * index;
+    const to = index === buckets - 1 ? high : low + width * (index + 1);
+    return { label: `${shortNumber(from)}–${shortNumber(to)}`, from, to, count };
+  });
+}
 
 /**
  * One summary per column, whatever the column holds.
@@ -212,6 +280,11 @@ export function columnSummaries(
       : categoryBreakdown(sheet, rows.filter((row) => (row[index] ?? "") !== ""), index, null)
         .entries.slice(0, topValues);
 
+    const numericValues = kind !== "numeric" ? [] : cells.flatMap((cell) => {
+      const parsed = parseSalesNumber(cell);
+      return parsed === null ? [] : [parsed];
+    });
+
     return {
       index,
       column: header || `Sütun ${index + 1}`,
@@ -221,6 +294,7 @@ export function columnSummaries(
       distinct,
       numeric: stats.get(index) ?? null,
       top: breakdown,
+      histogram: numericHistogram(numericValues),
     };
   });
 }
@@ -267,15 +341,28 @@ export function numericStats(sheet: ColumnTable, rows: string[][]): NumericColum
     }
     if (values.length === 0) return [];
     const sum = values.reduce((total, value) => total + value, 0);
+    const average = sum / values.length;
     const round = (value: number) => Math.round(value * 100) / 100;
+    // Sorted once and reused: Math.min/max spread a large column across the
+    // argument list, which throws on a big enough sheet now that rows are
+    // uncapped.
+    const sorted = [...values].sort((a, b) => a - b);
+    const variance = values.reduce(
+      (total, value) => total + (value - average) ** 2,
+      0,
+    ) / values.length;
     return [{
       index,
       column: sheet.headers[index] ?? `Sütun ${index + 1}`,
       count: values.length,
       sum: round(sum),
-      average: round(sum / values.length),
-      min: round(Math.min(...values)),
-      max: round(Math.max(...values)),
+      average: round(average),
+      min: round(sorted[0]),
+      max: round(sorted[sorted.length - 1]),
+      median: round(quantile(sorted, 0.5)),
+      p25: round(quantile(sorted, 0.25)),
+      p75: round(quantile(sorted, 0.75)),
+      stdDev: round(Math.sqrt(variance)),
     }];
   });
 }

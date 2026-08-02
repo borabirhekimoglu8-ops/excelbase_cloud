@@ -9,6 +9,7 @@ import {
   emptySalesFilter,
   filterSalesRows,
   numericColumnIndexes,
+  numericHistogram,
   numericStats,
   sortRows,
 } from "@/lib/salesAnalysis";
@@ -139,6 +140,49 @@ describe("numericStats", () => {
     expect(stats.sum).toBeCloseTo(4000);
   });
 
+  it("reports the middle and the spread, not just the average", () => {
+    // The average and the median disagree exactly when it matters: one large
+    // sale drags the average away from what a typical row looks like.
+    const skewed = sheet(["Tutar"], [["10"], ["20"], ["30"], ["40"], ["900"]]);
+    const [stats] = numericStats(skewed, skewed.rows);
+
+    expect(stats.average).toBeCloseTo(200);
+    expect(stats.median).toBeCloseTo(30);
+    expect(stats.p25).toBeCloseTo(20);
+    expect(stats.p75).toBeCloseTo(40);
+    // sqrt(613000 / 5)
+    expect(stats.stdDev).toBeCloseTo(350.14, 1);
+  });
+
+  it("interpolates a quartile rather than rounding to one side", () => {
+    const even = sheet(["Tutar"], [["10"], ["20"], ["30"], ["40"]]);
+    const [stats] = numericStats(even, even.rows);
+
+    expect(stats.median).toBeCloseTo(25);
+    expect(stats.p25).toBeCloseTo(17.5);
+    expect(stats.p75).toBeCloseTo(32.5);
+  });
+
+  it("handles a column of one value without dividing by nothing", () => {
+    const single = sheet(["Tutar"], [["42"]]);
+    const [stats] = numericStats(single, single.rows);
+
+    expect(stats.median).toBeCloseTo(42);
+    expect(stats.stdDev).toBe(0);
+  });
+
+  it("survives a column too large to spread across Math.min", () => {
+    // Math.min(...values) throws once the column outgrows the argument limit,
+    // which it now can: rows are no longer capped.
+    const rows = Array.from({ length: 200_000 }, (_unused, i) => [String(i)]);
+    const huge = sheet(["Tutar"], rows);
+    const [stats] = numericStats(huge, huge.rows);
+
+    expect(stats.min).toBe(0);
+    expect(stats.max).toBe(199_999);
+    expect(stats.count).toBe(200_000);
+  });
+
   it("ignores unparseable cells instead of counting them as zero", () => {
     // Averaging "iptal" as 0 would silently halve the average.
     const partial = sheet(["Tutar"], [["100"], ["iptal"], ["300"]]);
@@ -249,6 +293,41 @@ describe("columnSummaries", () => {
 
     expect(summaries[2].numeric?.count).toBe(2);
     expect(summaries[0].filled).toBe(2);
+  });
+});
+
+describe("numericHistogram", () => {
+  it("spreads values across equal-width buckets", () => {
+    const buckets = numericHistogram([0, 1, 2, 3, 4, 5, 6, 7], 4);
+
+    expect(buckets).toHaveLength(4);
+    expect(buckets.map((bucket) => bucket.count)).toEqual([2, 2, 2, 2]);
+  });
+
+  it("puts the highest value in the last bucket, not one past the end", () => {
+    // floor((max - low) / width) lands on `buckets`, which would be a ninth
+    // bucket that does not exist.
+    const buckets = numericHistogram([0, 10], 4);
+    expect(buckets[buckets.length - 1].count).toBe(1);
+    expect(buckets.reduce((total, bucket) => total + bucket.count, 0)).toBe(2);
+  });
+
+  it("gives an all-identical column one bucket rather than eight empty ones", () => {
+    const buckets = numericHistogram([5, 5, 5]);
+    expect(buckets).toHaveLength(1);
+    expect(buckets[0].count).toBe(3);
+  });
+
+  it("shows shape the five-number summary hides", () => {
+    // Both halves bunched at the ends; min/median/max alone cannot say so.
+    const split = numericHistogram([1, 1, 1, 1, 100, 100, 100, 100], 4);
+    expect(split[0].count).toBe(4);
+    expect(split[split.length - 1].count).toBe(4);
+    expect(split[1].count).toBe(0);
+  });
+
+  it("returns nothing for an empty column", () => {
+    expect(numericHistogram([])).toEqual([]);
   });
 });
 
