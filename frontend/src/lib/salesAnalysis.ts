@@ -11,7 +11,9 @@
  * work once and then quietly stop finding the money.
  */
 
-import { parseSalesNumber } from "@/lib/sales";
+import { parseSalesDate, parseSalesNumber } from "@/lib/sales";
+
+export { parseSalesDate };
 
 /**
  * Any table with named columns.
@@ -147,6 +149,99 @@ export function categoryColumnIndexes(sheet: ColumnTable): number[] {
     const filled = columnCells(sheet, index).filter(Boolean).length;
     return values.length < filled ? [index] : [];
   });
+}
+
+/** Columns whose filled cells mostly read as dates. */
+export function dateColumnIndexes(sheet: ColumnTable): number[] {
+  return sheet.headers.flatMap((_header, index) => {
+    let filled = 0;
+    let dated = 0;
+    for (const cell of columnCells(sheet, index)) {
+      if (!cell) continue;
+      filled += 1;
+      if (parseSalesDate(cell) !== null) dated += 1;
+    }
+    return filled > 0 && dated * 2 > filled ? [index] : [];
+  });
+}
+
+export type TimeGrain = "day" | "month";
+
+export type TimeSeries = {
+  /** Ordered day or month keys shared by every series, so lines align. */
+  keys: string[];
+  series: Array<{ label: string; values: number[]; total: number }>;
+};
+
+/**
+ * Sales over time, optionally split into one line per route or per person.
+ *
+ * Every series is given a value for every key, zero-filled. Without that the
+ * lines would each have their own x-axis and two routes could not be compared
+ * at a glance, which is the entire reason for drawing them together.
+ */
+export function timeSeries(
+  sheet: ColumnTable,
+  rows: string[][],
+  options: {
+    dateIndex: number;
+    valueIndex: number | null;
+    seriesIndex: number | null;
+    grain?: TimeGrain;
+    maxSeries?: number;
+  },
+): TimeSeries {
+  const { dateIndex, valueIndex, seriesIndex, grain = "day", maxSeries = 6 } = options;
+  const totals = new Map<string, Map<string, number>>();
+  const keys = new Set<string>();
+
+  for (const row of rows) {
+    const day = parseSalesDate(row[dateIndex] ?? "");
+    if (!day) continue;
+    const key = grain === "month" ? day.slice(0, 7) : day;
+    keys.add(key);
+
+    const label = seriesIndex === null
+      ? "Tümü"
+      : (row[seriesIndex] ?? "").trim() || "(boş)";
+    const amount = valueIndex === null
+      ? 1
+      : parseSalesNumber(row[valueIndex] ?? "") ?? 0;
+
+    const bucket = totals.get(label) ?? new Map<string, number>();
+    bucket.set(key, (bucket.get(key) ?? 0) + amount);
+    totals.set(label, bucket);
+  }
+
+  const orderedKeys = [...keys].sort();
+  const ranked = [...totals.entries()]
+    .map(([label, bucket]) => ({
+      label,
+      bucket,
+      total: [...bucket.values()].reduce((sum, value) => sum + value, 0),
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  // Beyond a handful of lines the chart is a thicket; the rest are summed into
+  // one line rather than dropped, so the totals still add up.
+  const head = ranked.slice(0, maxSeries);
+  const tail = ranked.slice(maxSeries);
+  const series = head.map((entry) => ({
+    label: entry.label,
+    values: orderedKeys.map((key) => Math.round((entry.bucket.get(key) ?? 0) * 100) / 100),
+    total: Math.round(entry.total * 100) / 100,
+  }));
+  if (tail.length > 0) {
+    series.push({
+      label: `Diğer (${tail.length})`,
+      values: orderedKeys.map((key) => Math.round(
+        tail.reduce((sum, entry) => sum + (entry.bucket.get(key) ?? 0), 0) * 100,
+      ) / 100),
+      total: Math.round(tail.reduce((sum, entry) => sum + entry.total, 0) * 100) / 100,
+    });
+  }
+
+  return { keys: orderedKeys, series };
 }
 
 export type SortDirection = "asc" | "desc";

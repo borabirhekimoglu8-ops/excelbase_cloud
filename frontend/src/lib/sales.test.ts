@@ -37,6 +37,19 @@ describe("parseSalesNumber", () => {
     expect(parseSalesNumber("")).toBeNull();
   });
 
+  it("refuses a date, which is all digits and dots", () => {
+    // "01.07.2026" passed the character check and the thousands rule turned it
+    // into 1.072.026, so the date column read as money and a chart summed
+    // dates together.
+    expect(parseSalesNumber("01.07.2026")).toBeNull();
+    expect(parseSalesNumber("1/7/2026")).toBeNull();
+    expect(parseSalesNumber("2026-07-01")).toBeNull();
+    // Real thousands must still parse: three dotted groups only read as a date
+    // when the parts are day/month/year sized.
+    expect(parseSalesNumber("1.234.567")).toBe(1234567);
+    expect(parseSalesNumber("12,05")).toBeCloseTo(12.05);
+  });
+
   it("refuses a reference code that merely contains digits", () => {
     // Stripping letters turned "F1000" into 1000, which made an invoice-number
     // column look like money and gave it a total nobody asked for.

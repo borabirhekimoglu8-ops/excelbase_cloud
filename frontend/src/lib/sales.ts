@@ -64,6 +64,33 @@ function isEmptyRow(row: string[]): boolean {
  * wrong turns 1.234 into 1234, so the separators are resolved by position
  * rather than by locale assumption.
  */
+/**
+ * Reads a cell as a calendar day, or null.
+ *
+ * Turkish exports write 01.07.2026, ISO ones 2026-07-01, and the reader hands
+ * back a Date for real date cells. Returning a sortable yyyy-mm-dd key means
+ * the series orders correctly by string compare, which Turkish d.m.y does not.
+ */
+export function parseSalesDate(value: string): string | null {
+  const text = value.trim();
+  if (!text) return null;
+
+  const iso = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(text);
+  if (iso) return isoKey(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+
+  const dmy = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/.exec(text);
+  if (dmy) return isoKey(Number(dmy[3]), Number(dmy[2]), Number(dmy[1]));
+
+  return null;
+}
+
+function isoKey(year: number, month: number, day: number): string | null {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  if (year < 1900 || year > 2200) return null;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+
 export function parseSalesNumber(value: string): number | null {
   // Currency decoration is dropped, but anything else non-numeric disqualifies
   // the cell. Stripping every letter instead turned reference codes into
@@ -74,6 +101,10 @@ export function parseSalesNumber(value: string): number | null {
     .replace(/₺|\$|€|£|¥|TL|TRY|USD|EUR|GBP/gi, "")
     .replace(/[\s ]/g, "");
   if (!text || !/\d/.test(text) || /[^\d.,+-]/.test(text)) return null;
+  // A Turkish date is all digits and dots, so it survives the check above and
+  // "01.07.2026" was read as 1.072.026 -- which made the date column look
+  // numeric and let a chart sum dates together.
+  if (parseSalesDate(value) !== null) return null;
 
   const lastComma = text.lastIndexOf(",");
   const lastDot = text.lastIndexOf(".");

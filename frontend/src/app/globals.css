@@ -1105,7 +1105,7 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
     radial-gradient(120% 120% at 80% 0%, rgba(176,108,255,.16), transparent 55%),
     linear-gradient(160deg, #0d2436, #0a1a28);
 }
-.ic-holo-trend svg { display: block; width: 100%; height: auto; }
+.ic-holo-trend svg { display: block; width: 100%; height: auto; max-height: 240px; }
 .ic-holo-axis { display: flex; justify-content: space-between; }
 .ic-holo-axis span { color: rgba(190,220,240,.6); font-size: 9px; }
 .ic-holo-caption {

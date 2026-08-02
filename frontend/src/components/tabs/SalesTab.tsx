@@ -181,7 +181,6 @@ export function SalesTab() {
               <span>
                 {filtered ? `${rows.length} / ${open.rows.length}` : `${open.rows.length}`} satır
                 {" · "}{open.headers.length} sütun
-                {open.truncated > 0 ? ` · ${open.truncated} satır sığmadı` : ""}
               </span>
             </div>
             <div className="ic-sales-sheet-actions">
@@ -196,6 +195,17 @@ export function SalesTab() {
               <button type="button" className="danger" onClick={() => void onRemove(open)}>SİL</button>
             </div>
           </header>
+
+          {/* Sheets imported before the row cap was removed are stored already
+              truncated. The original file is not kept, so nothing here can
+              recover the missing rows -- only a re-import can. */}
+          {open.truncated > 0 && (
+            <p className="ic-sales-stale" role="alert">
+              {`Bu dosya eski sürümde yüklendiği için ${open.truncated} satırı kırpılmış ve kasada `
+                + `${open.rows.length} satır olarak duruyor. Satır sınırı kaldırıldı: aynı Excel'i `
+                + "yeniden yükleyin, tamamı alınır."}
+            </p>
+          )}
 
           <div className="ic-subtabs" role="tablist" aria-label="Görünüm">
             <button

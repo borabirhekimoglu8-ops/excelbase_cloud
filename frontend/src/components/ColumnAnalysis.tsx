@@ -3,20 +3,42 @@
 import { useMemo, useState } from "react";
 
 import { formatSalesNumber } from "@/lib/sales";
-import { HoloBars, HoloDonut } from "@/components/charts/Holo";
+import { HoloBars, HoloDonut, HoloMultiTrend } from "@/components/charts/Holo";
 import {
   type ColumnTable,
   type SalesFilter,
+  type TimeGrain,
   categoryBreakdown,
   categoryColumnIndexes,
   columnSummaries,
+  dateColumnIndexes,
   distinctValues,
   emptySalesFilter,
   numericColumnIndexes,
+  timeSeries,
 } from "@/lib/salesAnalysis";
 
 /** Beyond this the filter bar is collapsed behind a toggle by default. */
 const ALWAYS_VISIBLE_FILTERS = 4;
+
+/**
+ * "No column" as an explicit choice.
+ *
+ * `null` alone cannot express it: the pickers fall back to a sensible default
+ * when nothing has been chosen, so a null from the "Satır sayısı" option was
+ * immediately replaced by that default and the option did nothing.
+ */
+const NONE = -1;
+
+/** "2026-07-01" and "2026-07" both read better as Turkish dates. */
+function formatTimeKey(key: string): string {
+  const parts = key.split("-").map(Number);
+  const date = new Date(parts[0], (parts[1] || 1) - 1, parts[2] || 1);
+  if (Number.isNaN(date.getTime())) return key;
+  return new Intl.DateTimeFormat("tr-TR", parts.length > 2
+    ? { day: "2-digit", month: "short" }
+    : { month: "short", year: "numeric" }).format(date);
+}
 
 function numberOrUndefined(value: string): number | undefined {
   const trimmed = value.trim();
@@ -171,13 +193,35 @@ export function ColumnStatsView({
 }) {
   const [groupIndex, setGroupIndex] = useState<number | null>(null);
   const [valueIndex, setValueIndex] = useState<number | null>(null);
+  const [dateIndex, setDateIndex] = useState<number | null>(null);
+  const [seriesIndex, setSeriesIndex] = useState<number | null>(null);
+  const [trendValue, setTrendValue] = useState<number | null>(null);
+  const [grain, setGrain] = useState<TimeGrain>("day");
 
   const categories = useMemo(() => categoryColumnIndexes(table), [table]);
   const numerics = useMemo(() => numericColumnIndexes(table), [table]);
   const summaries = useMemo(() => columnSummaries(table, rows), [table, rows]);
+  const dates = useMemo(() => dateColumnIndexes(table), [table]);
+
+  const activeDate = dateIndex ?? dates[0] ?? null;
+  // Defaults to the first grouping column so the chart opens on something
+  // worth seeing -- one line per route -- rather than a single flat total.
+  const activeSeries = seriesIndex === NONE ? null : seriesIndex ?? categories[0] ?? null;
+  const activeTrendValue = trendValue === NONE ? null : trendValue ?? numerics[0] ?? null;
+  const trend = useMemo(
+    () => (activeDate === null
+      ? { keys: [], series: [] }
+      : timeSeries(table, rows, {
+        dateIndex: activeDate,
+        valueIndex: activeTrendValue,
+        seriesIndex: activeSeries,
+        grain,
+      })),
+    [table, rows, activeDate, activeTrendValue, activeSeries, grain],
+  );
 
   const activeGroup = groupIndex ?? categories[0] ?? null;
-  const activeValue = valueIndex ?? numerics[0] ?? null;
+  const activeValue = valueIndex === NONE ? null : valueIndex ?? numerics[0] ?? null;
   const breakdown = useMemo(
     () => (activeGroup !== null ? categoryBreakdown(table, rows, activeGroup, activeValue) : null),
     [table, rows, activeGroup, activeValue],
@@ -209,6 +253,67 @@ export function ColumnStatsView({
           : `${rows.length} satırın tamamı üzerinden hesaplandı.`}
       </p>
 
+      {dates.length > 0 && (
+        <div className="ic-stats-card">
+          <h4>Zaman içinde<em>{grain === "day" ? "günlük" : "aylık"}</em></h4>
+          <div className="ic-stats-pickers">
+            <label>
+              <span>TARİH</span>
+              <select
+                value={activeDate ?? ""}
+                onChange={(event) => setDateIndex(Number(event.target.value))}
+              >
+                {dates.map((index) => (
+                  <option key={index} value={index}>{table.headers[index]}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>KIRILIM</span>
+              <select
+                value={activeSeries === null ? "" : activeSeries}
+                onChange={(event) => setSeriesIndex(
+                  event.target.value === "" ? NONE : Number(event.target.value),
+                )}
+              >
+                <option value="">Tümü tek çizgi</option>
+                {categories.map((index) => (
+                  <option key={index} value={index}>{table.headers[index]}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>ÖLÇÜ</span>
+              <select
+                value={activeTrendValue === null ? "" : activeTrendValue}
+                onChange={(event) => setTrendValue(
+                  event.target.value === "" ? NONE : Number(event.target.value),
+                )}
+              >
+                <option value="">Satış adedi</option>
+                {numerics.map((index) => (
+                  <option key={index} value={index}>{table.headers[index]}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>ARALIK</span>
+              <select value={grain} onChange={(event) => setGrain(event.target.value as TimeGrain)}>
+                <option value="day">Gün</option>
+                <option value="month">Ay</option>
+              </select>
+            </label>
+          </div>
+
+          <HoloMultiTrend
+            keys={trend.keys}
+            series={trend.series}
+            formatValue={formatSalesNumber}
+            formatKey={formatTimeKey}
+          />
+        </div>
+      )}
+
       {breakdown && categories.length > 0 && (
         <div className="ic-stats-card">
           <div className="ic-stats-pickers">
@@ -228,7 +333,7 @@ export function ColumnStatsView({
               <select
                 value={activeValue === null ? "" : activeValue}
                 onChange={(event) => setValueIndex(
-                  event.target.value === "" ? null : Number(event.target.value),
+                  event.target.value === "" ? NONE : Number(event.target.value),
                 )}
               >
                 <option value="">Satır sayısı</option>

@@ -192,6 +192,113 @@ export function HoloBars({
   );
 }
 
+export type HoloSeries = { label: string; values: number[]; total: number };
+
+/**
+ * Several lines over one shared axis.
+ *
+ * One line per route or per person, so they can be compared against each other
+ * rather than one at a time. The axis is shared because the series are
+ * zero-filled upstream; drawing each on its own scale would make a small route
+ * look like a large one.
+ */
+export function HoloMultiTrend({
+  keys,
+  series,
+  formatValue,
+  formatKey,
+}: {
+  keys: string[];
+  series: HoloSeries[];
+  formatValue: (value: number) => string;
+  formatKey: (key: string) => string;
+}) {
+  const id = useId().replace(/:/g, "");
+  // Wide and short on purpose: at 340x150 the chart scaled to roughly 400px
+  // tall on a desktop column and pushed everything below it off the screen.
+  const width = 640;
+  const height = 170;
+  const padding = { top: 14, right: 10, bottom: 10, left: 10 };
+
+  if (keys.length === 0 || series.length === 0) {
+    return <p className="ic-holo-empty">Tarih sütunu okunabilen satır yok.</p>;
+  }
+  if (keys.length === 1) {
+    // One point is not a curve; the legend below still carries the totals.
+    return (
+      <div className="ic-holo-trend">
+        <p className="ic-holo-empty">
+          {`Tek bir tarih var (${formatKey(keys[0])}); eğri için en az iki gün gerekiyor.`}
+        </p>
+        <ul className="ic-holo-legend">
+          {series.map((entry, index) => (
+            <li key={entry.label}>
+              <i style={{ background: holoColor(index) }} aria-hidden="true" />
+              <span>{entry.label}</span>
+              <b>{formatValue(entry.total)}</b>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  const peak = series.reduce(
+    (highest, entry) => Math.max(highest, ...entry.values),
+    0,
+  );
+  const innerWidth = width - padding.left - padding.right;
+  const innerHeight = height - padding.top - padding.bottom;
+  const x = (index: number) => padding.left + (index / (keys.length - 1)) * innerWidth;
+  const y = (value: number) => padding.top + innerHeight - (peak > 0 ? (value / peak) * innerHeight : 0);
+
+  return (
+    <div className="ic-holo-trend">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Zaman içinde satış">
+        <Defs id={id} />
+        {[0.25, 0.5, 0.75].map((fraction) => (
+          <line
+            key={fraction}
+            x1={padding.left}
+            x2={width - padding.right}
+            y1={padding.top + innerHeight * fraction}
+            y2={padding.top + innerHeight * fraction}
+            stroke="rgba(150,190,220,.14)"
+            strokeWidth="1"
+          />
+        ))}
+        {series.map((entry, index) => (
+          <path
+            key={entry.label}
+            d={entry.values.map((value, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(value)}`).join(" ")}
+            fill="none"
+            stroke={holoColor(index)}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            filter={`url(#${id}-glow)`}
+          >
+            <title>{`${entry.label}: ${formatValue(entry.total)}`}</title>
+          </path>
+        ))}
+      </svg>
+      <div className="ic-holo-axis">
+        <span>{formatKey(keys[0])}</span>
+        <span>{formatKey(keys[keys.length - 1])}</span>
+      </div>
+      <ul className="ic-holo-legend">
+        {series.map((entry, index) => (
+          <li key={entry.label}>
+            <i style={{ background: holoColor(index) }} aria-hidden="true" />
+            <span>{entry.label}</span>
+            <b>{formatValue(entry.total)}</b>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export type HoloPoint = { label: string; value: number };
 
 /** A movement over ordered points, as a glowing line over a soft area. */

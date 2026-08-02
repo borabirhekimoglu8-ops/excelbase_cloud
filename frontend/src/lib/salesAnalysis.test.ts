@@ -5,13 +5,16 @@ import {
   categoryBreakdown,
   categoryColumnIndexes,
   columnSummaries,
+  dateColumnIndexes,
   distinctValues,
   emptySalesFilter,
   filterSalesRows,
   numericColumnIndexes,
   numericHistogram,
   numericStats,
+  parseSalesDate,
   sortRows,
+  timeSeries,
 } from "@/lib/salesAnalysis";
 
 function sheet(headers: string[], rows: string[][]): SalesSheet {
@@ -190,6 +193,120 @@ describe("numericStats", () => {
 
     expect(stats.count).toBe(2);
     expect(stats.average).toBeCloseTo(200);
+  });
+});
+
+const HAT = sheet(
+  ["Hat", "Temsilci", "Tarih", "Tutar"],
+  [
+    ["Bodrum-Kos", "Ali", "01.07.2026", "100"],
+    ["Bodrum-Kos", "Ayşe", "01.07.2026", "200"],
+    ["Bodrum-Kos", "Ali", "03.07.2026", "300"],
+    ["Çeşme-Sakız", "Ayşe", "02.07.2026", "400"],
+    ["Çeşme-Sakız", "Ali", "03.07.2026", "500"],
+    ["Datça-Simi", "Mehmet", "", "600"],
+  ],
+);
+
+describe("parseSalesDate", () => {
+  it("reads Turkish and ISO dates into one sortable key", () => {
+    // d.m.y does not sort as text; the shared yyyy-mm-dd key does.
+    expect(parseSalesDate("01.07.2026")).toBe("2026-07-01");
+    expect(parseSalesDate("2026-07-01")).toBe("2026-07-01");
+    expect(parseSalesDate("1/7/2026")).toBe("2026-07-01");
+  });
+
+  it("refuses something that is not a date", () => {
+    expect(parseSalesDate("Bodrum")).toBeNull();
+    expect(parseSalesDate("")).toBeNull();
+    expect(parseSalesDate("45.13.2026")).toBeNull();
+  });
+
+  it("finds the date column without being told its name", () => {
+    expect(dateColumnIndexes(HAT)).toEqual([2]);
+  });
+});
+
+describe("timeSeries", () => {
+  it("counts sales per day for each route", () => {
+    const result = timeSeries(HAT, HAT.rows, {
+      dateIndex: 2,
+      valueIndex: null,
+      seriesIndex: 0,
+    });
+
+    expect(result.keys).toEqual(["2026-07-01", "2026-07-02", "2026-07-03"]);
+    const bodrum = result.series.find((entry) => entry.label === "Bodrum-Kos");
+    expect(bodrum?.values).toEqual([2, 0, 1]);
+    expect(bodrum?.total).toBe(3);
+  });
+
+  it("zero-fills every series so the lines share one axis", () => {
+    // Without this each line has its own x-axis and two routes cannot be
+    // compared at a glance, which is the whole point of drawing them together.
+    const result = timeSeries(HAT, HAT.rows, { dateIndex: 2, valueIndex: null, seriesIndex: 0 });
+    for (const entry of result.series) {
+      expect(entry.values).toHaveLength(result.keys.length);
+    }
+    expect(result.series.find((e) => e.label === "Çeşme-Sakız")?.values).toEqual([0, 1, 1]);
+  });
+
+  it("sums a money column instead of counting when asked", () => {
+    const result = timeSeries(HAT, HAT.rows, { dateIndex: 2, valueIndex: 3, seriesIndex: 0 });
+    expect(result.series.find((e) => e.label === "Bodrum-Kos")?.values).toEqual([300, 0, 300]);
+  });
+
+  it("splits by person just as readily as by route", () => {
+    const result = timeSeries(HAT, HAT.rows, { dateIndex: 2, valueIndex: null, seriesIndex: 1 });
+    expect(result.series.map((entry) => entry.label).sort()).toEqual(["Ali", "Ayşe"]);
+    expect(result.series.find((e) => e.label === "Ali")?.values).toEqual([1, 0, 2]);
+  });
+
+  it("drops rows with no usable date rather than bunching them at one end", () => {
+    // The Datça row has no date; inventing one would put a sale on a day it
+    // did not happen.
+    const result = timeSeries(HAT, HAT.rows, { dateIndex: 2, valueIndex: null, seriesIndex: 0 });
+    expect(result.series.some((entry) => entry.label === "Datça-Simi")).toBe(false);
+  });
+
+  it("groups by month when asked", () => {
+    const result = timeSeries(HAT, HAT.rows, {
+      dateIndex: 2,
+      valueIndex: null,
+      seriesIndex: null,
+      grain: "month",
+    });
+    expect(result.keys).toEqual(["2026-07"]);
+    expect(result.series[0].values).toEqual([5]);
+  });
+
+  it("folds the long tail into one line rather than dropping it", () => {
+    const many = sheet(
+      ["Hat", "Tarih"],
+      Array.from({ length: 10 }, (_unused, i) => [`Hat ${i}`, "01.07.2026"]),
+    );
+    const result = timeSeries(many, many.rows, {
+      dateIndex: 1,
+      valueIndex: null,
+      seriesIndex: 0,
+      maxSeries: 3,
+    });
+
+    expect(result.series).toHaveLength(4);
+    const other = result.series[result.series.length - 1];
+    expect(other.label).toBe("Diğer (7)");
+    expect(other.total).toBe(7);
+  });
+
+  it("returns nothing usable when no row has a date", () => {
+    const undated = sheet(["Hat", "Tarih"], [["A", ""], ["B", "yok"]]);
+    const result = timeSeries(undated, undated.rows, {
+      dateIndex: 1,
+      valueIndex: null,
+      seriesIndex: 0,
+    });
+    expect(result.keys).toEqual([]);
+    expect(result.series).toEqual([]);
   });
 });
 
