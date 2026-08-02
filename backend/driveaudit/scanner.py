@@ -27,6 +27,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .concepts import EntityProposal, Signature, propose_entities
+
 logger = logging.getLogger(__name__)
 
 SPREADSHEET_SUFFIXES = {".xlsx", ".xlsm", ".xls", ".csv", ".ods"}
@@ -51,7 +53,7 @@ _DATE_IN_NAME = re.compile(r"20\d{2}[-_.]?(?:0[1-9]|1[0-2])[-_.]?(?:0[1-9]|[12]\
 # Columns the application already understands. Anything outside this is a gap
 # between what the operator records and what the app can hold.
 KNOWN_COLUMNS: frozenset[str] = frozenset({
-    "no", "ad", "adi", "soyad", "soyadi", "ad soyad", "adsoyad",
+    "no", "sira", "sira no", "ad", "adi", "soyad", "soyadi", "ad soyad", "adsoyad",
     "pasaport", "pasaport no", "pasaportno", "passport", "passport no",
     "voucher", "rezervasyon", "rezervasyon no",
     "gidis", "gidis tarihi", "donus", "donus tarihi", "varis", "varis tarihi",
@@ -106,6 +108,7 @@ class ScanReport:
     templates: list[TemplateGroup]
     unknown_columns: list[tuple[str, int]]
     dated_folders: int
+    entities: list[EntityProposal]
     findings: list[Finding]
 
     def as_dict(self) -> dict:
@@ -120,6 +123,7 @@ class ScanReport:
             ],
             "unknown_columns": [{"column": name, "files": count} for name, count in self.unknown_columns],
             "dated_folders": self.dated_folders,
+            "entities": [entity.as_dict() for entity in self.entities],
             "findings": [finding.as_dict() for finding in self.findings],
         }
 
@@ -247,7 +251,7 @@ def scan_folder(root: str | Path) -> ScanReport:
 
     grouped: dict[tuple[str, ...], list[str]] = {}
     column_files: Counter[str] = Counter()
-    original_case: dict[str, str] = {}
+    spellings: dict[str, Counter[str]] = {}
     for path in spreadsheets[:MAX_SPREADSHEETS_READ]:
         headers = [cell for cell in read_headers(path) if cell]
         if len(headers) < 2:
@@ -258,7 +262,15 @@ def scan_folder(root: str | Path) -> ScanReport:
             if not key:
                 continue
             column_files[key] += 1
-            original_case.setdefault(key, raw)
+            spellings.setdefault(key, Counter())[raw] += 1
+
+    # One column is written several ways across a folder; the report should use
+    # the spelling the operator actually uses most, not whichever file the walk
+    # happened to reach first.
+    original_case = {
+        key: counts.most_common(1)[0][0]
+        for key, counts in spellings.items()
+    }
 
     templates = sorted(
         (TemplateGroup(headers=keys, files=tuple(paths)) for keys, paths in grouped.items()),
@@ -272,6 +284,20 @@ def scan_folder(root: str | Path) -> ScanReport:
         reverse=True,
     )
 
+    # The concept analysis works over distinct header rows, which is why it
+    # stays cheap: a folder of ten thousand files still has a few dozen
+    # templates, and the lattice is built over those.
+    signatures = [
+        Signature(columns=frozenset(key for key in group.headers if key), files=group.count)
+        for group in templates
+    ]
+    entities = propose_entities(
+        signatures,
+        known_columns=KNOWN_COLUMNS,
+        original_case=original_case,
+        min_support=max(2, min(3, len(spreadsheets))),
+    )
+
     return ScanReport(
         root=str(base),
         files_seen=len(files),
@@ -280,6 +306,7 @@ def scan_folder(root: str | Path) -> ScanReport:
         templates=templates,
         unknown_columns=unknown,
         dated_folders=dated_folders,
+        entities=entities,
         findings=build_findings(templates, unknown, by_kind, dated_folders),
     )
 
