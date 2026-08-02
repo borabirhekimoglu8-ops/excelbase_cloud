@@ -10,6 +10,7 @@ import {
   filterSalesRows,
   numericColumnIndexes,
   numericStats,
+  sortRows,
 } from "@/lib/salesAnalysis";
 
 function sheet(headers: string[], rows: string[][]): SalesSheet {
@@ -145,6 +146,55 @@ describe("numericStats", () => {
 
     expect(stats.count).toBe(2);
     expect(stats.average).toBeCloseTo(200);
+  });
+});
+
+describe("sortRows", () => {
+  it("sorts a money column by value, not by how it is written", () => {
+    // "1.500,00" sorts before "900,00" as text, which is the kind of wrong
+    // that looks plausible enough to act on.
+    const rows = sortRows(SALES, SALES.rows, { index: 2, direction: "asc" });
+    expect(rows.map((row) => row[2])).toEqual([
+      "500,50",
+      "1.000,00",
+      "1.500,00",
+      "2.500,00",
+    ]);
+  });
+
+  it("reverses on the other direction", () => {
+    const rows = sortRows(SALES, SALES.rows, { index: 2, direction: "desc" });
+    expect(rows[0][2]).toBe("2.500,00");
+  });
+
+  it("sorts text with Turkish collation", () => {
+    const rows = sortRows(SALES, SALES.rows, { index: 0, direction: "asc" });
+    expect(rows.map((row) => row[0])).toEqual([
+      "Deniz Turizm",
+      "Ege Seyahat",
+      "Mavi Tur",
+      "Mavi Tur",
+    ]);
+  });
+
+  it("keeps blanks at the end in both directions", () => {
+    // An empty cell is not the smallest amount; putting it first in a
+    // descending sort would read as a real value.
+    const sparse = sheet(["Tutar"], [["100"], [""], ["300"]]);
+    expect(sortRows(sparse, sparse.rows, { index: 0, direction: "asc" }).map((r) => r[0]))
+      .toEqual(["100", "300", ""]);
+    expect(sortRows(sparse, sparse.rows, { index: 0, direction: "desc" }).map((r) => r[0]))
+      .toEqual(["300", "100", ""]);
+  });
+
+  it("returns the rows untouched when nothing is sorted", () => {
+    expect(sortRows(SALES, SALES.rows, null)).toBe(SALES.rows);
+  });
+
+  it("does not mutate the rows it was given", () => {
+    const original = [...SALES.rows];
+    sortRows(SALES, SALES.rows, { index: 2, direction: "desc" });
+    expect(SALES.rows).toEqual(original);
   });
 });
 

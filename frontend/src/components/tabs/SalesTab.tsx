@@ -7,7 +7,15 @@ import {
   parseSalesWorkbook,
   salesSheetLabel,
 } from "@/lib/sales";
-import { type SalesFilter, emptySalesFilter, filterSalesRows } from "@/lib/salesAnalysis";
+import {
+  type SalesFilter,
+  type SortState,
+  emptySalesFilter,
+  filterSalesRows,
+  sortRows,
+} from "@/lib/salesAnalysis";
+import { createColumnTableXlsxBlob, filteredExportName } from "@/lib/salesExport";
+import { saveBlob } from "@/lib/offline/exporter";
 import { ColumnFilterBar, ColumnStatsView } from "@/components/ColumnAnalysis";
 import {
   listSalesSheets,
@@ -30,6 +38,7 @@ export function SalesTab() {
   const [error, setError] = useState("");
   const [view, setView] = useState<View>("list");
   const [filter, setFilter] = useState<SalesFilter>(emptySalesFilter);
+  const [sort, setSort] = useState<SortState>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -81,13 +90,34 @@ export function SalesTab() {
   // stale column index would silently filter on the wrong column.
   useEffect(() => {
     setFilter(emptySalesFilter());
+    setSort(null);
   }, [open?.id]);
 
   const rows = useMemo(
-    () => (open ? filterSalesRows(open, filter) : []),
-    [open, filter],
+    () => (open ? sortRows(open, filterSalesRows(open, filter), sort) : []),
+    [open, filter, sort],
   );
   const filtered = open ? rows.length !== open.rows.length : false;
+
+  // Clicking a header cycles ascending, descending, then back to file order --
+  // there is no other way back to the order the operator's file was in.
+  function toggleSort(index: number) {
+    setSort((current) => {
+      if (!current || current.index !== index) return { index, direction: "asc" };
+      if (current.direction === "asc") return { index, direction: "desc" };
+      return null;
+    });
+  }
+
+  const exportRows = useCallback(async () => {
+    if (!open) return;
+    try {
+      const blob = createColumnTableXlsxBlob(open, rows, "Filtreli");
+      await saveBlob(blob, filteredExportName(open.filename));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Dosya indirilemedi.");
+    }
+  }, [open, rows]);
 
   return (
     <div className="ic-sales-page">
@@ -154,7 +184,17 @@ export function SalesTab() {
                 {open.truncated > 0 ? ` · ${open.truncated} satır sığmadı` : ""}
               </span>
             </div>
-            <button type="button" onClick={() => void onRemove(open)}>SİL</button>
+            <div className="ic-sales-sheet-actions">
+              <button
+                type="button"
+                onClick={() => void exportRows()}
+                disabled={rows.length === 0}
+                title="Ekranda görünen satırları Excel olarak indir"
+              >
+                {filtered ? "FİLTRELİYİ İNDİR" : "EXCEL İNDİR"}
+              </button>
+              <button type="button" className="danger" onClick={() => void onRemove(open)}>SİL</button>
+            </div>
           </header>
 
           <div className="ic-subtabs" role="tablist" aria-label="Görünüm">
@@ -194,7 +234,21 @@ export function SalesTab() {
                 <table className="ic-sales-table">
                   <thead>
                     <tr>
-                      {open.headers.map((header) => <th key={header}>{header}</th>)}
+                      {open.headers.map((header, index) => (
+                        <th key={header}>
+                          <button
+                            type="button"
+                            className="ic-sales-sort"
+                            onClick={() => toggleSort(index)}
+                            aria-label={`${header} sütununa göre sırala`}
+                          >
+                            {header}
+                            <i aria-hidden="true">
+                              {sort?.index === index ? (sort.direction === "asc" ? "▲" : "▼") : "↕"}
+                            </i>
+                          </button>
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>

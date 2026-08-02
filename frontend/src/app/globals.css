@@ -1176,7 +1176,9 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   align-items: center;
   gap: 10px;
 }
-.ic-sales-sheet header > div { display: grid; gap: 2px; min-width: 0; }
+/* Yalnizca baslik blogu; :first-child olmadan bu kural eylem dugmelerini de
+   grid yapip alt alta diziyordu. */
+.ic-sales-sheet header > div:first-child { display: grid; gap: 2px; min-width: 0; }
 .ic-sales-sheet header strong {
   color: var(--ido-primary-deep);
   font-size: 12px;
@@ -1185,16 +1187,36 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   white-space: nowrap;
 }
 .ic-sales-sheet header span { color: var(--ido-muted); font-size: 10px; }
+.ic-sales-sheet-actions { display: flex; gap: 6px; }
 .ic-sales-sheet header button {
   min-height: 34px;
   padding: 0 12px;
   border: 1px solid var(--ido-border);
   background: #fff;
-  color: var(--ido-red);
+  color: var(--ido-primary-deep);
   font-size: 9px;
   font-weight: 850;
+  white-space: nowrap;
   cursor: pointer;
 }
+.ic-sales-sheet header button.danger { color: var(--ido-red); }
+.ic-sales-sheet header button:disabled { opacity: .45; cursor: not-allowed; }
+/* Basliklar siralama dugmesidir; gorunum degismesin diye hucreyi doldurur. */
+.ic-sales-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ic-sales-sort i { color: var(--ido-faint); font-size: 8px; font-style: normal; }
 .ic-sales-totals {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

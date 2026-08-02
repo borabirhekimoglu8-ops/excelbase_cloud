@@ -126,6 +126,47 @@ export function categoryColumnIndexes(sheet: ColumnTable): number[] {
   });
 }
 
+export type SortDirection = "asc" | "desc";
+
+export type SortState = { index: number; direction: SortDirection } | null;
+
+/**
+ * Sorts rows by one column, comparing numbers as numbers.
+ *
+ * Sorting "1.500,00" as text puts it before "900,00", which is the kind of
+ * wrong that looks plausible enough to act on. Cells that do not parse fall to
+ * the end in both directions: an empty cell is not the smallest amount, it is
+ * the absence of one, and burying it at the top of a descending sort would be
+ * just as misleading.
+ */
+export function sortRows(
+  sheet: ColumnTable,
+  rows: string[][],
+  sort: SortState,
+): string[][] {
+  if (!sort) return rows;
+  const { index, direction } = sort;
+  const numeric = numericColumnIndexes(sheet).includes(index);
+  const sign = direction === "asc" ? 1 : -1;
+
+  return [...rows].sort((left, right) => {
+    const a = left[index] ?? "";
+    const b = right[index] ?? "";
+    if (a === "" && b === "") return 0;
+    if (a === "") return 1;
+    if (b === "") return -1;
+    if (numeric) {
+      const x = parseSalesNumber(a);
+      const y = parseSalesNumber(b);
+      if (x === null && y === null) return 0;
+      if (x === null) return 1;
+      if (y === null) return -1;
+      return (x - y) * sign;
+    }
+    return a.localeCompare(b, "tr", { numeric: true }) * sign;
+  });
+}
+
 export type ColumnKind = "numeric" | "category" | "text";
 
 export type ColumnSummary = {
