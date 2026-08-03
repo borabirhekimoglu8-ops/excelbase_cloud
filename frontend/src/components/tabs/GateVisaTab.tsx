@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { type Passenger, type RecordFolder, fetchPassengers, fetchRecordFolders } from "@/lib/api";
 import { RecordsTab } from "@/components/tabs/RecordsTab";
+import { PassengersTab } from "@/components/tabs/PassengersTab";
 import { ColumnFilterBar, ColumnStatsView } from "@/components/ColumnAnalysis";
 import { HoloDonut, HoloTrend } from "@/components/charts/Holo";
 import { passengerTable } from "@/lib/passengerTable";
@@ -14,7 +15,7 @@ import {
 } from "@/lib/gateVisaStats";
 import { useStore } from "@/lib/store";
 
-type View = "folders" | "stats";
+type View = "folders" | "list" | "stats";
 
 function dayLabel(dateKey: string): string {
   if (!dateKey || dateKey === "Tarihsiz") return "Tarihsiz";
@@ -38,13 +39,24 @@ export function GateVisaTab({
   onImport,
   onCreate,
   canCreate,
+  initialView = "folders",
+  initialStatus = "",
 }: {
   onImport: () => void;
   onCreate: () => void;
   canCreate: boolean;
+  initialView?: View;
+  initialStatus?: string;
 }) {
   const { dateScope, version } = useStore();
-  const [view, setView] = useState<View>("folders");
+  const [view, setView] = useState<View>(initialView);
+
+  // A deep link ("eksik evrak" from Home, or the result screen after an
+  // import) names a view and a status filter together; switching either one
+  // without the other would land the operator on the wrong screen.
+  useEffect(() => {
+    setView(initialView);
+  }, [initialView]);
   const [folders, setFolders] = useState<RecordFolder[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [filter, setFilter] = useState<SalesFilter>(emptySalesFilter);
@@ -126,6 +138,15 @@ export function GateVisaTab({
         <button
           type="button"
           role="tab"
+          aria-selected={view === "list"}
+          className={view === "list" ? "active" : ""}
+          onClick={() => setView("list")}
+        >
+          YOLCULAR
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={view === "stats"}
           className={view === "stats" ? "active" : ""}
           onClick={() => setView("stats")}
@@ -133,6 +154,8 @@ export function GateVisaTab({
           İSTATİSTİK
         </button>
       </div>
+
+      {view === "list" && <PassengersTab initialStatus={initialStatus} />}
 
       {view === "stats" && (
         <div className="ic-stats">

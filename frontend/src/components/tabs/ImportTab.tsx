@@ -771,11 +771,11 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             <p className="ic-section-title">Fotoğrafları Eşleştirin</p>
           </div>
           <label className="ic-btn-outline" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", position: "relative" }}>
-            JPG / ZIP Seç
+            FOTOĞRAF / ZIP SEÇ
             <input
               type="file"
-              accept=".jpg,.jpeg,image/jpeg,.zip,application/zip"
-              aria-label="JPG biyometrik fotoğraf veya ZIP seç"
+              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp,.zip,application/zip"
+              aria-label="JPG, PNG veya WEBP biyometrik fotoğraf ya da ZIP seç"
               multiple
               onChange={handlePhotos}
               disabled={summary.passenger_count === 0 || photoBusy}
@@ -874,8 +874,8 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
           </button>
         )}
         {step === "result" && (
-          <button className="ic-btn-primary" onClick={() => onNavigate("passengers")} type="button">
-            YOLCULAR LİSTESİNE GİT
+          <button className="ic-btn-primary" onClick={() => onNavigate("gate-visa-list")} type="button">
+            KAPI LİSTESİNE GİT
           </button>
         )}
       </div>

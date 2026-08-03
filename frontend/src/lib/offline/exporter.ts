@@ -11,6 +11,7 @@ import {
   passengerDocumentFilename,
   passengerFileBase,
   passengerPhotoFilename,
+  photoExtension,
 } from "@/lib/passengerFileNaming";
 import {
   COMPLETE_DOCUMENT_CATEGORY,
@@ -591,7 +592,7 @@ async function addPhotos<Output>(
             last_name: photo.lastName,
             full_name: photo.passengerName,
             passport_no: photo.passportNo,
-          })
+          }, photoExtension(photo.filename))
         : photo.filename,
       used,
     );
@@ -698,7 +699,7 @@ export async function createRecordFolderZipBlob(
     await writer.add(prefix, undefined, { directory: true });
 
     for (const photo of rowPhotos(row, photos)) {
-      const filename = uniqueFilename(passengerPhotoFilename(row), used);
+      const filename = uniqueFilename(passengerPhotoFilename(row, photoExtension(photo.filename)), used);
       await writer.add(`${prefix}${filename}`, new BlobReader(photo.blob), {
         useWebWorkers: false,
         level: 0,

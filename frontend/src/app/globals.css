@@ -1211,57 +1211,90 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 
 /* Satis verileri */
 .ic-sales-page { display: grid; gap: 12px; min-width: 0; }
+/* A flat white card with a hairline border read as a bare admin form. The
+   gradient, the orange accent bar and the soft shadow are what "Satış
+   Verileri" and "Yolcu Listelerim" share with the branded hero elsewhere in
+   the app -- this screen is not a lesser one. */
 .ic-sales-hero {
+  position: relative;
   display: grid;
-  gap: 10px;
-  padding: 16px;
-  border: 1px solid var(--ido-border);
-  border-top: 3px solid var(--ido-primary);
-  background: #fff;
+  gap: 11px;
+  padding: 18px 16px;
+  overflow: hidden;
+  border-radius: var(--ido-radius-lg);
+  background: linear-gradient(155deg, var(--ido-primary-deep) 0%, #0a4b68 62%, var(--ido-primary) 130%);
+  box-shadow: 0 10px 28px rgba(5, 59, 82, .18);
 }
-.ic-sales-hero > div { display: grid; gap: 4px; }
+.ic-sales-hero::after {
+  content: "";
+  position: absolute;
+  inset: -40% -30% auto auto;
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(circle, var(--ido-orange) 0%, transparent 70%);
+  opacity: .28;
+  pointer-events: none;
+}
+.ic-sales-hero > div { position: relative; display: grid; gap: 5px; }
 .ic-sales-hero p {
   margin: 0;
-  color: var(--ido-primary);
+  color: #ffd8b8;
   font-size: 8px;
   font-weight: 850;
-  letter-spacing: .14em;
+  letter-spacing: .16em;
 }
-.ic-sales-hero h2 { margin: 0; color: var(--ido-primary-deep); font-size: 17px; line-height: 1.25; }
-.ic-sales-hero span { color: var(--ido-muted); font-size: 10px; line-height: 1.55; }
+.ic-sales-hero h2 { margin: 0; color: #fff; font-size: 18px; line-height: 1.28; letter-spacing: -.01em; }
+.ic-sales-hero span { color: rgba(255, 255, 255, .78); font-size: 10.5px; line-height: 1.6; }
+.ic-sales-hero span strong { color: #fff; }
 .ic-sales-upload {
-  display: block;
-  min-height: 46px;
-  line-height: 46px;
-  text-align: center;
-  background: var(--ido-primary-deep);
-  color: #fff;
-  font-size: 9px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  border-radius: var(--ido-radius);
+  background: #fff;
+  color: var(--ido-primary-deep);
+  font-size: 10px;
   font-weight: 850;
-  letter-spacing: .08em;
+  letter-spacing: .06em;
   cursor: pointer;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .16);
+  transition: transform .12s ease, box-shadow .12s ease;
 }
-.ic-sales-upload.busy { opacity: .6; cursor: wait; }
+.ic-sales-upload:active { transform: scale(.98); box-shadow: 0 3px 10px rgba(0, 0, 0, .16); }
+.ic-sales-upload.busy { opacity: .7; cursor: wait; }
 /* Dosya girdisi gizlenir ama erisilebilir kalir: label tiklamayi tasir. */
 .ic-sales-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .ic-sales-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .ic-sales-tabs button {
-  min-height: 34px;
-  padding: 0 11px;
+  min-height: 36px;
+  padding: 0 13px;
   border: 1px solid var(--ido-border);
+  border-radius: 999px;
   background: #fff;
   color: var(--ido-muted);
   font-size: 10px;
+  font-weight: 650;
   cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
 }
-.ic-sales-tabs button.active { border-color: var(--ido-primary); color: var(--ido-primary-deep); font-weight: 700; }
+.ic-sales-tabs button.active {
+  border-color: var(--ido-primary-deep);
+  background: var(--ido-primary-deep);
+  color: #fff;
+  font-weight: 800;
+}
 .ic-sales-sheet {
   display: grid;
   min-width: 0;
-  gap: 10px;
-  padding: 14px;
+  gap: 12px;
+  padding: 16px;
   border: 1px solid var(--ido-border);
+  border-radius: var(--ido-radius-lg);
   background: #fff;
+  box-shadow: 0 4px 16px rgba(15, 39, 66, .05);
 }
 .ic-sales-sheet header {
   display: grid;
@@ -1274,7 +1307,8 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ic-sales-sheet header > div:first-child { display: grid; gap: 2px; min-width: 0; }
 .ic-sales-sheet header strong {
   color: var(--ido-primary-deep);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 800;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1282,17 +1316,21 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ic-sales-sheet header span { color: var(--ido-muted); font-size: 10px; }
 .ic-sales-sheet-actions { display: flex; gap: 6px; }
 .ic-sales-sheet header button {
-  min-height: 34px;
-  padding: 0 12px;
+  min-height: 36px;
+  padding: 0 13px;
   border: 1px solid var(--ido-border);
+  border-radius: var(--ido-radius);
   background: #fff;
   color: var(--ido-primary-deep);
   font-size: 9px;
   font-weight: 850;
   white-space: nowrap;
   cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
 }
+.ic-sales-sheet header button:not(:disabled):hover { background: var(--ido-blue-tint); border-color: var(--ido-primary); }
 .ic-sales-sheet header button.danger { color: var(--ido-red); }
+.ic-sales-sheet header button.danger:not(:disabled):hover { background: var(--ido-red-tint); border-color: var(--ido-red); }
 .ic-sales-sheet header button:disabled { opacity: .45; cursor: not-allowed; }
 /* Basliklar siralama dugmesidir; gorunum degismesin diye hucreyi doldurur. */
 .ic-sales-sort {
@@ -1309,15 +1347,17 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   text-align: left;
   cursor: pointer;
 }
-.ic-sales-sort i { color: var(--ido-faint); font-size: 8px; font-style: normal; }
+.ic-sales-sort i { color: rgba(255, 255, 255, .55); font-size: 8px; font-style: normal; }
 .ic-sales-totals {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 1px;
+  border-radius: var(--ido-radius);
+  overflow: hidden;
   background: var(--ido-border);
   border: 1px solid var(--ido-border);
 }
-.ic-sales-totals > div { display: grid; gap: 2px; padding: 8px 10px; background: #fff; }
+.ic-sales-totals > div { display: grid; gap: 2px; padding: 9px 11px; background: #fff; }
 .ic-sales-totals span {
   color: var(--ido-faint);
   font-size: 9px;
@@ -1331,11 +1371,17 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 /* Genis tablo sayfayi degil kendi kabini kaydirir. min-width:0 sart: bir grid
    ogesinin varsayilan min-width degeri auto, yani icerigi kadar buyur ve
    overflow-x hic devreye girmez -- tablo tum sayfayi yana tasiriyordu. */
-.ic-sales-table-wrap { min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.ic-sales-table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 11px; }
+.ic-sales-table-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--ido-border);
+  border-radius: var(--ido-radius);
+}
+.ic-sales-table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .ic-sales-table th,
 .ic-sales-table td {
-  padding: 6px 9px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--ido-border);
   text-align: left;
   white-space: nowrap;
@@ -1343,14 +1389,61 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ic-sales-table th {
   position: sticky;
   top: 0;
-  background: #f4f7f9;
-  color: var(--ido-primary-deep);
+  z-index: 1;
+  background: var(--ido-primary-deep);
+  color: #fff;
   font-size: 9px;
   font-weight: 850;
-  letter-spacing: .05em;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .12);
 }
 .ic-sales-table td { color: var(--ido-ink); }
+/* Zebra ile bir satirin ust uste okunmasi kolaylasir; secili satir bunun
+   uzerine binen ayri, daha belirgin bir renk alir. */
+.ic-sales-table tbody tr:nth-child(even) td { background: #f7fafb; }
+.ic-sales-table tbody tr:hover td { background: var(--ido-blue-tint); }
+.ic-sales-table tbody tr.selected td { background: #dcf0f8; }
+.ic-sales-table tbody tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--ido-primary); }
 .ic-sales-more { margin: 0; color: var(--ido-muted); font-size: 10px; }
+
+/* Yolcu listelerim -- secim ve kapiya aktarma seridi. */
+.ic-roster-select-col { width: 34px; padding-left: 12px !important; padding-right: 4px !important; }
+.ic-roster-select-col input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--ido-primary-deep); cursor: pointer; }
+.ic-roster-transfer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--ido-blue-tint-2);
+  border-radius: var(--ido-radius);
+  background: var(--ido-blue-tint);
+}
+.ic-roster-transfer-copy { display: grid; gap: 2px; min-width: 0; }
+.ic-roster-transfer-copy strong { color: var(--ido-primary-deep); font-size: 12px; }
+.ic-roster-transfer-copy span { color: var(--ido-muted); font-size: 9.5px; }
+.ic-roster-transfer-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.ic-roster-transfer-actions button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--ido-border);
+  border-radius: var(--ido-radius);
+  background: #fff;
+  color: var(--ido-primary-deep);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ic-roster-transfer-actions button.primary {
+  border-color: var(--ido-primary-deep);
+  background: var(--ido-primary-deep);
+  color: #fff;
+}
+.ic-roster-transfer-actions button:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Kayıt / sefer tarihi ayrımı */
 .ic-scope-control {
@@ -2198,9 +2291,83 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .operations-work-next small { color: var(--ido-faint); font-size: 7px; font-weight: 850; letter-spacing: .08em; }
 .operations-work-next strong { color: var(--ido-primary-deep); font-size: 10px; }
 
-.ops-home-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 4px 0 2px; }
-.ops-home-hero h1 { margin: 0; color: var(--ido-primary-deep); font-size: 22px; line-height: 1.2; letter-spacing: -.025em; }
-.ops-home-hero p:not(.ops-eyebrow) { margin: 5px 0 0; color: var(--ido-muted); font-size: 10px; line-height: 1.4; }
+.ops-home-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 18px 16px 20px;
+  overflow: hidden;
+  border-radius: var(--ido-radius-lg);
+  isolation: isolate;
+  box-shadow: 0 12px 30px rgba(5, 59, 82, .22);
+}
+.ops-home-hero h1 { margin: 0; color: #fff; font-size: 22px; line-height: 1.2; letter-spacing: -.025em; }
+.ops-home-hero .ops-eyebrow { color: #ffd8b8; }
+.ops-home-hero p:not(.ops-eyebrow) { margin: 5px 0 0; color: rgba(255, 255, 255, .82); font-size: 10px; line-height: 1.4; }
+.ops-home-hero .ops-status-mark {
+  position: relative;
+  background: rgba(255, 255, 255, .14);
+  border-color: rgba(255, 255, 255, .4);
+  color: #fff;
+}
+.ops-home-hero > * { position: relative; z-index: 1; }
+
+/* The scene sitting behind the greeting: sky, a ferry that bobs, waves that
+   drift. Absolutely positioned and z-indexed under the text (see `> *`
+   above), so it reads as a backdrop rather than competing with it. */
+.ido-hero-scene { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+.ido-hero-sky { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ido-hero-glint { animation: ido-hero-glint-drift 14s ease-in-out infinite; transform-origin: center; }
+.ido-hero-ferry {
+  position: absolute;
+  right: 8%;
+  bottom: 18px;
+  width: 132px;
+  height: auto;
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .28));
+  animation: ido-hero-ferry-bob 5.5s ease-in-out infinite;
+}
+.ido-hero-waves { position: absolute; left: 0; right: 0; bottom: -2px; width: 100%; height: 44px; }
+.ido-hero-wave-back { animation: ido-hero-wave-drift 11s linear infinite; }
+.ido-hero-wave-front { animation: ido-hero-wave-drift 7s linear infinite reverse; }
+/* Stacked above the ferry on the right edge, not the bottom-left: the
+   greeting text sits top-left and its length is the user's own name plus a
+   date string, so it can run to three lines. A badge anywhere in that column
+   would eventually sit under real text instead of the backdrop. */
+.ido-hero-badge {
+  position: absolute;
+  right: 8%;
+  top: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 30px;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, .22);
+  overflow: hidden;
+}
+.ido-hero-badge img { width: 100%; height: 100%; object-fit: cover; }
+
+@keyframes ido-hero-ferry-bob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(-.6deg); }
+}
+@keyframes ido-hero-wave-drift {
+  from { transform: translateX(0); }
+  to { transform: translateX(-400px); }
+}
+@keyframes ido-hero-glint-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: .07; }
+  50% { transform: translate(-18px, 8px) scale(1.08); opacity: .12; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ido-hero-glint, .ido-hero-ferry, .ido-hero-wave-track { animation: none; }
+}
 .ops-module-copy { margin: 4px 0 0; color: var(--ido-muted); font-size: 10px; line-height: 1.4; }
 .ops-gate-progress { display: grid; grid-template-columns: repeat(3,1fr); border: 1px solid var(--ido-border); }
 .ops-gate-progress div { display: grid; justify-items: center; gap: 1px; padding: 9px 4px; border-right: 1px solid var(--ido-border); }

@@ -5,6 +5,7 @@ import {
   passengerDocumentFilename,
   passengerFileBase,
   passengerPhotoFilename,
+  photoExtension,
 } from "./passengerFileNaming";
 
 describe("passenger file naming", () => {
@@ -36,6 +37,23 @@ describe("passenger file naming", () => {
       full_name: "../",
       passport_no: "C:\\temp\\AUX",
     })).toBe("UNDATED_UNKNOWN_UNKNOWN_CTEMPAUX");
+  });
+
+  it("names an exported photo after the format it was actually stored in", () => {
+    // Photos are no longer JPG-only; renaming a PNG's bytes to .jpg would hand
+    // the operator a file their photo viewer refuses to open.
+    expect(passengerPhotoFilename(passenger, "png")).toBe("2026-07-21_ECE_DENIS_OZTURK_TR7654321.png");
+    expect(passengerPhotoFilename(passenger, "webp")).toBe("2026-07-21_ECE_DENIS_OZTURK_TR7654321.webp");
+    // An unrecognised or missing extension falls back to jpg rather than
+    // producing a file with no extension at all.
+    expect(passengerPhotoFilename(passenger, "exe")).toBe("2026-07-21_ECE_DENIS_OZTURK_TR7654321.jpg");
+  });
+
+  it("reads the extension off a stored photo's own filename", () => {
+    expect(photoExtension("BULK1234.PNG")).toBe("png");
+    expect(photoExtension("BULK1234.jpeg")).toBe("jpg");
+    expect(photoExtension("BULK1234.webp")).toBe("webp");
+    expect(photoExtension("no-extension")).toBe("jpg");
   });
 
   it("keeps source names while regenerating visible names from edited passenger data", () => {

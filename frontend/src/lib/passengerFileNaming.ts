@@ -92,8 +92,19 @@ export function passengerFileBase(passenger: PassengerFileIdentity): string {
   ].join("_");
 }
 
-export function passengerPhotoFilename(passenger: PassengerFileIdentity): string {
-  return `${passengerFileBase(passenger)}.jpg`;
+/**
+ * The photo format is no longer JPG-only, so the export name has to carry
+ * whatever the stored file actually is -- renaming a PNG's bytes to `.jpg`
+ * would hand the operator a file their photo viewer refuses to open.
+ */
+export function photoExtension(sourceFilename: string, fallback = "jpg"): string {
+  const extension = sourceFilename.split(".").pop()?.toLocaleLowerCase("en-US") ?? "";
+  return /^(jpe?g|png|webp)$/.test(extension) ? (extension === "jpeg" ? "jpg" : extension) : fallback;
+}
+
+export function passengerPhotoFilename(passenger: PassengerFileIdentity, extension = "jpg"): string {
+  const safeExtension = /^(jpg|png|webp)$/.test(extension) ? extension : "jpg";
+  return `${passengerFileBase(passenger)}.${safeExtension}`;
 }
 
 export function passengerDocumentFilename(

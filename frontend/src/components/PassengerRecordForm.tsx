@@ -128,8 +128,8 @@ export function PassengerRecordForm({
     const file = input.files?.[0] ?? null;
     input.value = "";
     if (!file) return;
-    if (!/\.jpe?g$/i.test(file.name) || (file.type && !/^image\/jpe?g$/i.test(file.type))) {
-      setFormError("Biyometrik fotoğraf yalnızca JPG/JPEG formatında olabilir.");
+    if (!/\.(jpe?g|png|webp)$/i.test(file.name) || (file.type && !/^image\/(jpe?g|png|webp)$/i.test(file.type))) {
+      setFormError("Biyometrik fotoğraf JPG, PNG veya WEBP formatında olmalıdır.");
       return;
     }
     if (file.size > MAX_PHOTO_BYTES) {
@@ -320,20 +320,20 @@ export function PassengerRecordForm({
       <section className="ic-form-section">
         <div className="ic-form-section-head">
           <span>04</span>
-          <div><h3>Biyometrik fotoğraf</h3><p>Tek bir gerçek JPG/JPEG dosyası, en fazla 25 MB.</p></div>
+          <div><h3>Biyometrik fotoğraf</h3><p>Tek bir gerçek JPG, PNG veya WEBP dosyası, en fazla 25 MB.</p></div>
         </div>
         <div className="ic-record-photo">
           <div className="ic-record-photo-preview">
             {photoPreview ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={photoPreview} alt="Seçilen biyometrik fotoğraf" />
-            ) : <span>JPG</span>}
+            ) : <span>FOTO</span>}
           </div>
           <div className="ic-record-photo-copy">
             <strong>{photo?.name ?? "Fotoğraf seçilmedi"}</strong>
             <small>{photo ? formatSize(photo.size) : "Yolcunun biyometrik fotoğrafını ekleyin"}</small>
             <div className="ic-record-file-actions">
-              <label className="ic-record-file-button primary">{photo ? "JPG DEĞİŞTİR" : "JPG SEÇ"}<input type="file" accept=".jpg,.jpeg,image/jpeg" onChange={handlePhoto} /></label>
+              <label className="ic-record-file-button primary">{photo ? "FOTOĞRAF DEĞİŞTİR" : "FOTOĞRAF SEÇ"}<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handlePhoto} /></label>
               {photo && <button type="button" onClick={() => setPhoto(null)}>Kaldır</button>}
             </div>
           </div>

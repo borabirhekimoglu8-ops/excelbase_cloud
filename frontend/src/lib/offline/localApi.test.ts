@@ -449,12 +449,12 @@ describe("local offline API", () => {
     expect(passenger.photo_url).toMatch(/^blob:/);
   });
 
-  it("yolcu biyometrik alanına yalnız gerçek JPG/JPEG kabul eder", async () => {
+  it("yolcu biyometrik alanına yalnız gerçek JPG, PNG veya WEBP kabul eder", async () => {
     await localQueueImportFile(workbookFile("bio.xlsx", "Bio Yolcu", "BIO12345"), false, "skip", "bio", "bio-job");
     const passengerId = (await localPassengers())[0].id;
 
     const spoofedJpeg = new File(["JPG değil"], "biyometrik.jpg", { type: "image/jpeg" });
-    await expect(localSetPassengerPhoto(passengerId, spoofedJpeg)).rejects.toThrow(/geçerli bir JPG\/JPEG/i);
+    await expect(localSetPassengerPhoto(passengerId, spoofedJpeg)).rejects.toThrow(/bozuk görünüyor/i);
     expect((await localPassengers())[0].photo).toBe("");
     expect((await listBinaryIds()).filter((id) => id.startsWith("photo:"))).toHaveLength(0);
 
@@ -463,14 +463,40 @@ describe("local offline API", () => {
     expect((await listBinaryIds()).filter((id) => id.startsWith("photo:"))).toHaveLength(1);
   });
 
-  it("toplu biyometrik eşleştirmede sahte JPG ve farklı görsel türlerini reddeder", async () => {
+  it("yolcu biyometrik alanı gerçek bir PNG'yi de kabul eder", async () => {
+    // PNG was rejected outright until the format restriction was widened
+    // beyond JPEG; this pins that a real PNG signature now passes.
+    await localQueueImportFile(workbookFile("png.xlsx", "Png Yolcu", "PNG12345"), false, "skip", "png", "png-job");
+    const passengerId = (await localPassengers())[0].id;
+    const realPng = new File(
+      [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+      "biyometrik.png",
+      { type: "image/png" },
+    );
+    await localSetPassengerPhoto(passengerId, realPng);
+    expect((await localPassengers())[0].photo).toMatch(/^photo:/);
+  });
+
+  it("toplu biyometrik eşleştirmede sahte içeriği ve desteklenmeyen biçimleri reddeder", async () => {
     await localQueueImportFile(workbookFile("bio.xlsx", "Toplu Bio", "BULK1234"), false, "skip", "bulk", "bulk-job");
     const spoofedJpeg = new File(["sahte"], "BULK1234.jpg", { type: "image/jpeg" });
-    const png = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "BULK1234.png", { type: "image/png" });
+    const gif = new File(["GIF89a"], "BULK1234.gif", { type: "image/gif" });
 
-    await expect(localMatchPhotos([spoofedJpeg])).rejects.toThrow(/geçerli bir JPG\/JPEG/i);
-    await expect(localMatchPhotos([png])).rejects.toThrow(/JPG\/JPEG/i);
+    await expect(localMatchPhotos([spoofedJpeg])).rejects.toThrow(/bozuk görünüyor/i);
+    await expect(localMatchPhotos([gif])).rejects.toThrow(/JPG, JPEG veya PNG/i);
     expect((await localPassengers())[0].photo).toBe("");
+  });
+
+  it("toplu biyometrik eşleştirme gerçek bir PNG'yi eşleştirir", async () => {
+    await localQueueImportFile(workbookFile("bio.xlsx", "Toplu Bio Png", "PNGBULK9"), false, "skip", "bulkpng", "bulkpng-job");
+    const realPng = new File(
+      [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+      "PNGBULK9.png",
+      { type: "image/png" },
+    );
+    const result = await localMatchPhotos([realPng]);
+    expect(result).toMatchObject({ matched: 1, unmatched: [] });
+    expect((await localPassengers())[0].photo).toMatch(/^photo:/);
   });
 
   it("tekrarlı yolcular birleşirken PDF evrakları korur ve yolcu silinince ikilileri temizler", async () => {

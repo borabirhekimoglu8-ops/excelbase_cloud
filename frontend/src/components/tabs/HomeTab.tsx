@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { WorkFileCard } from "@/components/WorkFileCard";
+import { IdoHeroBanner } from "@/components/ido/HeroBanner";
 import {
   fetchOfficeDocuments,
   fetchWorkFiles,
@@ -80,6 +81,7 @@ export function HomeTab({ onNavigate, onOpenWorkFile, onAssistant }: HomeTabProp
   return (
     <div className="ops-page">
       <section className="ops-home-hero">
+        <IdoHeroBanner />
         <div>
           <p className="ops-eyebrow">ÇALIŞMA ALANI</p>
           <h1>Günaydın, {user.name.split(" ")[0] || "Operasyon"}</h1>
@@ -138,7 +140,7 @@ export function HomeTab({ onNavigate, onOpenWorkFile, onAssistant }: HomeTabProp
           </div>
         </div>
         <div className="ops-home-actions">
-          <button className="ops-primary" type="button" onClick={() => onNavigate("passengers")}>
+          <button className="ops-primary" type="button" onClick={() => onNavigate("gate-visa-list")}>
             YOLCULARI AÇ
           </button>
           <button className="ops-secondary" type="button" onClick={() => onNavigate("import")}>

@@ -15,7 +15,7 @@ import { HomeTab } from "@/components/tabs/HomeTab";
 import { WorkFilesTab } from "@/components/tabs/WorkFilesTab";
 import { DocumentsTab } from "@/components/tabs/DocumentsTab";
 import { ReportsTab, ReportDestination } from "@/components/tabs/ReportsTab";
-import { PassengersTab } from "@/components/tabs/PassengersTab";
+import { PassengerRosterTab } from "@/components/tabs/PassengerRosterTab";
 import { ImportTab } from "@/components/tabs/ImportTab";
 import { SettingsTab, SettingsSub } from "@/components/tabs/SettingsTab";
 import { IssuesTab } from "@/components/tabs/IssuesTab";
@@ -39,6 +39,8 @@ import {
 type RootScreen = {
   kind: "root";
   tab: PrimaryNavKey;
+  /** Deep-links into the Kapı tab's embedded Yolcular subview. */
+  gateView?: "folders" | "list" | "stats";
   passengerStatus?: string;
   openDocumentUpload?: boolean;
 };
@@ -57,7 +59,7 @@ type Screen =
 const ROOT_TITLES: Record<Exclude<PrimaryNavKey, "home">, string> = {
   "gate-visa": "Kapı Vizesi",
   "work-files": "İş Dosyaları",
-  passengers: "Gate Visa · Yolcular",
+  passengers: "Yolcu Listelerim",
   documents: "Evrak Merkezi",
   sales: "Satış Verileri",
   reports: "Raporlar",
@@ -109,12 +111,19 @@ function Shell() {
   }
 
   function navigate(target: string) {
+    // "Fotosuz" and "Eksik" name a Gate Visa passenger's document status, which
+    // only exists for the kapı vizeli çalışma listesi -- the Yolcular tab is
+    // now the master roster and has no such status to filter on.
     if (target === "passengers-fotosuz") {
-      goRoot("passengers", { passengerStatus: "Fotosuz" });
+      goRoot("gate-visa", { gateView: "list", passengerStatus: "Fotosuz" });
       return;
     }
     if (target === "passengers-eksik") {
-      goRoot("passengers", { passengerStatus: "Eksik" });
+      goRoot("gate-visa", { gateView: "list", passengerStatus: "Eksik" });
+      return;
+    }
+    if (target === "gate-visa-list") {
+      goRoot("gate-visa", { gateView: "list" });
       return;
     }
     if (isPrimaryNavKey(target)) {
@@ -158,7 +167,7 @@ function Shell() {
         ? "reports"
         : null;
   const showDateScope = (
-    (screen.kind === "root" && (screen.tab === "passengers" || screen.tab === "reports"))
+    (screen.kind === "root" && (screen.tab === "gate-visa" || screen.tab === "reports"))
     || screen.kind === "records"
   );
   const stickyContent = screen.kind === "import" || screen.kind === "new-passenger" || screen.kind === "new-work-file";
@@ -175,7 +184,7 @@ function Shell() {
         {screen.kind === "root" && screen.tab !== "home" && (
           <AppHeaderScreen
             title={ROOT_TITLES[screen.tab]}
-            brand={screen.tab === "passengers" ? "ido" : "operations"}
+            brand={screen.tab === "gate-visa" ? "ido" : "operations"}
             onAssistant={openAssistant}
             onSettings={() => setScreen({ kind: "settings" })}
           />
@@ -206,13 +215,17 @@ function Shell() {
             brand="ido"
             onBack={() => {
               if (window.confirm("Yeni kayıt ekranından çıkılsın mı? Kaydedilmemiş bilgiler silinir.")) {
-                goRoot("passengers");
+                goRoot("gate-visa", { gateView: "list" });
               }
             }}
           />
         )}
         {screen.kind === "import" && (
-          <AppHeaderScreen title="Toplu Yolcu Yükleme" brand="ido" onBack={() => goRoot("passengers")} />
+          <AppHeaderScreen
+            title="Toplu Yolcu Yükleme"
+            brand="ido"
+            onBack={() => goRoot("gate-visa", { gateView: "list" })}
+          />
         )}
         {screen.kind === "assistant" && (
           <AppHeaderScreen
@@ -258,9 +271,7 @@ function Shell() {
               onOpen={(id) => setScreen({ kind: "work-file", id })}
             />
           )}
-          {screen.kind === "root" && screen.tab === "passengers" && (
-            <PassengersTab initialStatus={screen.passengerStatus ?? ""} />
-          )}
+          {screen.kind === "root" && screen.tab === "passengers" && <PassengerRosterTab />}
           {screen.kind === "root" && screen.tab === "documents" && (
             <DocumentsTab
               autoOpenUpload={Boolean(screen.openDocumentUpload)}
@@ -272,6 +283,8 @@ function Shell() {
               canCreate={user.role !== "viewer"}
               onImport={() => setScreen({ kind: "import" })}
               onCreate={() => setScreen({ kind: "new-passenger" })}
+              initialView={screen.gateView ?? "folders"}
+              initialStatus={screen.passengerStatus ?? ""}
             />
           )}
           {screen.kind === "root" && screen.tab === "sales" && <SalesTab />}
@@ -288,8 +301,8 @@ function Shell() {
           )}
           {screen.kind === "new-passenger" && (
             <PassengerRecordForm
-              onCancel={() => goRoot("passengers")}
-              onSaved={() => goRoot("passengers")}
+              onCancel={() => goRoot("gate-visa", { gateView: "list" })}
+              onSaved={() => goRoot("gate-visa", { gateView: "list" })}
             />
           )}
           {screen.kind === "import" && <ImportTab onNavigate={navigate} />}

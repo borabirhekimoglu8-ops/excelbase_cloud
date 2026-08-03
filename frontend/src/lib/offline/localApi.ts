@@ -35,6 +35,7 @@ import { newId } from "@/lib/id";
 import {
   autoNamedPassengerDocuments,
   passengerPhotoFilename,
+  photoExtension,
 } from "@/lib/passengerFileNaming";
 import {
   codeRecordSearchText,
@@ -1440,22 +1441,50 @@ function leafFilename(filename: string, fallback: string): string {
   return leaf || fallback;
 }
 
-async function assertJpegBlob(blob: Blob, filename: string, declaredMime = blob.type): Promise<void> {
-  const extension = filename.split(".").pop()?.toLocaleLowerCase("en-US");
-  const signature = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
-  const hasJpegSignature = signature.length === 3
-    && signature[0] === 0xff
-    && signature[1] === 0xd8
-    && signature[2] === 0xff;
+/** Extensions accepted for a passenger photo. HEIC is left out: its signature
+ * lives in an ISO base-media box rather than a fixed byte prefix, which the
+ * cheap check below cannot verify. */
+const PHOTO_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
+
+async function photoSignatureMatches(blob: Blob, extension: string): Promise<boolean> {
+  if (extension === "jpg" || extension === "jpeg") {
+    const head = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
+    return head.length === 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+  }
+  if (extension === "png") {
+    const head = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+    const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    return head.length === 8 && signature.every((byte, index) => head[index] === byte);
+  }
+  if (extension === "webp") {
+    const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+    return head.length === 12
+      && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46
+      && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50;
+  }
+  return false;
+}
+
+async function assertPhotoBlob(blob: Blob, filename: string, declaredMime = blob.type): Promise<void> {
+  const extension = filename.split(".").pop()?.toLocaleLowerCase("en-US") ?? "";
+  if (!PHOTO_EXTENSIONS.has(extension)) {
+    throw new Error(`${filename || "Fotoğraf"}: JPG, JPEG veya PNG olmalıdır.`);
+  }
+  const expectedMime = imageMime(filename);
   const mime = declaredMime.toLocaleLowerCase("en-US");
-  const acceptedMime = !mime || mime === "image/jpeg" || mime === "image/jpg" || mime === "application/octet-stream";
-  if (!hasJpegSignature || !acceptedMime || (extension !== "jpg" && extension !== "jpeg")) {
-    throw new Error("Biyometrik fotoğraf geçerli bir JPG/JPEG dosyası olmalıdır.");
+  const acceptedMime = (
+    !mime
+    || mime === expectedMime
+    || mime === "application/octet-stream"
+    || (expectedMime === "image/jpeg" && mime === "image/jpg")
+  );
+  if (!acceptedMime || !(await photoSignatureMatches(blob, extension))) {
+    throw new Error(`${filename || "Fotoğraf"}: dosya bozuk görünüyor veya uzantısıyla eşleşmiyor.`);
   }
 }
 
-async function assertJpegFile(file: File): Promise<void> {
-  await assertJpegBlob(file, file.name, file.type);
+async function assertPhotoFile(file: File): Promise<void> {
+  await assertPhotoBlob(file, file.name, file.type);
 }
 
 async function assertPdfFile(file: File): Promise<void> {
@@ -1614,7 +1643,7 @@ async function selectedPhotoFiles(files: File[]): Promise<Array<{ filename: stri
     const signature = new Uint8Array(await file.slice(0, 4).arrayBuffer());
     const isZip = signature[0] === 0x50 && signature[1] === 0x4b;
     if (!isZip) {
-      await assertJpegFile(file);
+      await assertPhotoFile(file);
       if (file.size > MAX_PHOTO_BYTES || total + file.size > MAX_PHOTO_BATCH_BYTES) {
         throw new Error("Fotoğraf seçimi güvenli cihaz boyutu sınırını aşıyor.");
       }
@@ -1626,10 +1655,11 @@ async function selectedPhotoFiles(files: File[]): Promise<Array<{ filename: stri
     try {
       for await (const entry of reader.getEntriesGenerator()) {
         if (entry.directory || !safeArchivePath(entry.filename) || entry.encrypted || isArchiveSymlink(entry)) continue;
+        const extension = entry.filename.split(".").pop()?.toLocaleLowerCase("en-US") ?? "";
         const mime = imageMime(entry.filename);
         if (!mime.startsWith("image/")) continue;
-        if (mime !== "image/jpeg") {
-          throw new Error(`${entry.filename}: biyometrik fotoğraf JPG/JPEG olmalıdır.`);
+        if (!PHOTO_EXTENSIONS.has(extension)) {
+          throw new Error(`${entry.filename}: desteklenmeyen görüntü biçimi. JPG, JPEG veya PNG kullanın.`);
         }
         if (entry.uncompressedSize > MAX_PHOTO_BYTES || total + entry.uncompressedSize > MAX_PHOTO_BATCH_BYTES) {
           throw new Error("Fotoğraf ZIP'i güvenli açılmış boyut sınırını aşıyor.");
@@ -1637,7 +1667,7 @@ async function selectedPhotoFiles(files: File[]): Promise<Array<{ filename: stri
         const ratio = entry.uncompressedSize / Math.max(entry.compressedSize, 1);
         if (entry.uncompressedSize > 1024 * 1024 && ratio > 200) continue;
         const blob = await entry.getData(new BlobWriter(mime), { checkSignature: true, useWebWorkers: false });
-        await assertJpegBlob(blob, entry.filename, mime);
+        await assertPhotoBlob(blob, entry.filename, mime);
         if (blob.size > MAX_PHOTO_BYTES || total + blob.size > MAX_PHOTO_BATCH_BYTES) {
           throw new Error("Fotoğraf ZIP'i güvenli açılmış boyut sınırını aşıyor.");
         }
@@ -1728,7 +1758,7 @@ export async function localSetPassengerPhoto(id: number, file: File): Promise<Si
   const row = await getPassenger<StoredPassenger>(id);
   if (!row) throw new Error("Yolcu bulunamadı.");
   if (file.size > MAX_PHOTO_BYTES) throw new Error("Fotoğraf 25 MB sınırını aşıyor.");
-  await assertJpegFile(file);
+  await assertPhotoFile(file);
   const previousPhoto = row.photo;
   const nextPhoto = await storePhoto(file.name, file);
   try {
@@ -1877,7 +1907,7 @@ export async function localExportPhotos(rows: StoredPassenger[]): Promise<Export
     const binary = await getBinary(row.photo);
     if (!binary) continue;
     output.push({
-      filename: passengerPhotoFilename(row),
+      filename: passengerPhotoFilename(row, photoExtension(binary.name)),
       blob: binary.data,
       passengerId: row.id,
       passengerName: row.full_name,

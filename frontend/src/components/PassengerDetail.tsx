@@ -20,7 +20,6 @@ import {
 } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
-import { passengerPhotoFilename } from "@/lib/passengerFileNaming";
 import { PassengerPhoto, passengerStatusTone } from "@/components/PassengerCard";
 import { AppHeaderScreen } from "@/components/ido/AppHeader";
 
@@ -154,17 +153,17 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
   async function handlePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    const extensionIsJpeg = /\.jpe?g$/i.test(file.name);
-    const mimeIsJpeg = !file.type || file.type === "image/jpeg" || file.type === "image/jpg";
-    if (!extensionIsJpeg || !mimeIsJpeg) {
-      notify("Biyometrik fotoğraf yalnızca JPG/JPEG formatında yüklenebilir.", "error");
+    const extensionOk = /\.(jpe?g|png|webp)$/i.test(file.name);
+    const mimeOk = !file.type || /^image\/(jpe?g|png|webp)$/i.test(file.type);
+    if (!extensionOk || !mimeOk) {
+      notify("Biyometrik fotoğraf JPG, PNG veya WEBP formatında olmalıdır.", "error");
       event.target.value = "";
       return;
     }
     setBusy(true);
     try {
       await setPassengerPhoto(id, file);
-      notify("JPG biyometrik fotoğraf güncellendi");
+      notify("Biyometrik fotoğraf güncellendi");
       bump();
       await refreshPassenger();
     } catch (err) {
@@ -388,7 +387,7 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
           </div>
 
           <div className="ic-section-head">
-            <p className="ic-section-title">JPG Biyometrik Fotoğraf</p>
+            <p className="ic-section-title">Biyometrik Fotoğraf</p>
             <span className={passenger.photo ? "ic-pill ic-pill-ok" : "ic-pill ic-pill-bad"}>
               {passenger.photo ? "1 / 1 MEVCUT" : "0 / 1 EKSİK"}
             </span>
@@ -398,19 +397,22 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
               <span className="ic-filetype pdf">FOTO</span>
               <div className="ic-row-copy">
                 <p className="ic-row-title">
-                  {passenger.photo ? passengerPhotoFilename(passenger) : "JPG fotoğraf yüklenmedi"}
+                  {/* The stored format (jpg/png/webp) is not known without opening
+                      the binary, so the label states the fact rather than
+                      guessing a filename whose extension could be wrong. */}
+                  {passenger.photo ? "Fotoğraf yüklendi" : "Fotoğraf yüklenmedi"}
                 </p>
-                <p className="ic-row-meta">{passenger.photo ? "Yolcu profilinde kullanılıyor" : "Yalnızca .jpg veya .jpeg kabul edilir"}</p>
+                <p className="ic-row-meta">{passenger.photo ? "Yolcu profilinde kullanılıyor" : "JPG, PNG veya WEBP kabul edilir"}</p>
               </div>
             </div>
             {canWrite && (
               <div style={{ display: "flex", gap: 8, flex: "0 0 auto" }}>
                 <label className="ic-pill ic-pill-info" style={{ cursor: "pointer" }}>
-                  {passenger.photo ? "JPG DEĞİŞTİR" : "JPG EKLE"}
+                  {passenger.photo ? "FOTOĞRAF DEĞİŞTİR" : "FOTOĞRAF EKLE"}
                   <input
                     type="file"
-                    accept=".jpg,.jpeg,image/jpeg"
-                    aria-label="JPG biyometrik fotoğraf seç"
+                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                    aria-label="Biyometrik fotoğraf seç"
                     onChange={handlePhoto}
                     disabled={busy}
                     style={{ display: "none" }}
