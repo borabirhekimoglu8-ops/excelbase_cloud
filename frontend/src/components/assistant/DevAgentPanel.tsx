@@ -53,7 +53,14 @@ const UNAVAILABLE: Record<Exclude<DevAgentState, "ready">, { title: string; body
  * click because everything up to that point happened in a worktree the running
  * application never reads.
  */
-export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
+export function DevAgentPanel({
+  csrfToken,
+  handedInstruction,
+}: {
+  csrfToken: string;
+  /** Filled in from elsewhere -- the folder analysis hands a sentence over. */
+  handedInstruction?: string;
+}) {
   const [state, setState] = useState<DevAgentState | null>(null);
   const [statusError, setStatusError] = useState("");
   const [open, setOpen] = useState(false);
@@ -73,6 +80,15 @@ export function DevAgentPanel({ csrfToken }: { csrfToken: string }) {
   const [follow, setFollow] = useState(0);
   const seenRef = useRef(0);
   const runIdRef = useRef("");
+
+  // Opens the panel with the sentence already in the box. Deliberately not
+  // started automatically: the operator reads what is about to be built, and
+  // a run costs money.
+  useEffect(() => {
+    if (!handedInstruction) return;
+    setInstruction(handedInstruction);
+    setOpen(true);
+  }, [handedInstruction]);
 
   useEffect(() => {
     if (!csrfToken) return;

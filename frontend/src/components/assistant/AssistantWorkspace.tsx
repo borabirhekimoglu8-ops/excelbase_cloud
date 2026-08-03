@@ -28,6 +28,7 @@ import type {
   AssistantToolResultPayload,
 } from "@/lib/assistant/client";
 import { DevAgentPanel } from "@/components/assistant/DevAgentPanel";
+import { DriveAuditPanel } from "@/components/assistant/DriveAuditPanel";
 import { describeToolCall, executeAssistantTool } from "@/lib/assistant/toolExecutor";
 import { memoryDigest } from "@/lib/assistant/memory";
 import { buildAssistantContext } from "@/lib/assistant/context";
@@ -155,6 +156,7 @@ export function AssistantWorkspace({
   const [disconnecting, setDisconnecting] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [handedInstruction, setHandedInstruction] = useState("");
   const [diagnostics, setDiagnostics] = useState<AssistantDiagnostics | null>(null);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [diagnosticsError, setDiagnosticsError] = useState("");
@@ -455,13 +457,14 @@ export function AssistantWorkspace({
     }
   }
 
+  /** The server accepted us: enough to use the local panels. */
+  const signedIn = Boolean(session?.authenticated && session.csrf_token);
   const ready = Boolean(
     online
     && !checking
     && !connectionError
     && status?.available
-    && session?.authenticated
-    && session.csrf_token,
+    && signedIn,
   );
   const scopeLabel = RANGE_LABELS[safeContext.scope.range] ?? "Tüm kayıtlar";
   const verifiedSonnet = status?.model_family === "sonnet";
@@ -767,9 +770,27 @@ export function AssistantWorkspace({
             <small>Sonnet hata yapabilir. Önemli operasyon kararlarını kaynaktan doğrulayın.</small>
           </section>
 
-          {/* Renders nothing unless the server reports a state; a deployment
-              that never opened this door shows no development console at all. */}
-          <DevAgentPanel csrfToken={session?.csrf_token ?? ""} />
+        </>
+      )}
+
+      {/* Outside the `ready` gate on purpose. `ready` means Sonnet answers,
+          and neither panel needs Sonnet: the folder scan runs locally with no
+          model at all, and the development agent has its own key and its own
+          state. Requiring a working Anthropic key to read a folder on this
+          machine would be a lock with nothing behind it. An open session is
+          enough, because that is what the endpoints check.
+          Each renders nothing unless the server reports a state, so a
+          deployment that never opened these doors shows neither. */}
+      {signedIn && (
+        <>
+          <DriveAuditPanel
+            csrfToken={session?.csrf_token ?? ""}
+            onDevelop={setHandedInstruction}
+          />
+          <DevAgentPanel
+            csrfToken={session?.csrf_token ?? ""}
+            handedInstruction={handedInstruction}
+          />
         </>
       )}
 

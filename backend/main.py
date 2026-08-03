@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -23,6 +24,7 @@ from .config import (
     allowed_origins,
     api_key,
     assistant_settings,
+    drive_audit_settings,
 )
 from .models import (
     ArchiveResponse,
@@ -107,6 +109,13 @@ from .devagent.service import (
     DevAgentError,
     apply_run,
     dev_agent_state,
+)
+from .driveaudit.schemas import DriveScanRequest
+from .driveaudit.service import (
+    DriveAuditError,
+    DriveAuditUnavailableError,
+    drive_audit_state,
+    run_scan,
 )
 from . import services
 from .state import APP_VERSION
@@ -423,6 +432,45 @@ async def dev_agent_run_cancel(
     """Stop the run in progress. Nothing was applied, so nothing is rolled back."""
     await cancel_run()
     return {"ok": True}
+
+
+@app.get("/api/drive-audit/v1/status")
+def drive_audit_status_endpoint(
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    """Whether folder scanning is available, and the folder to start from."""
+    state = drive_audit_state()
+    return {
+        "state": state,
+        "available": state == "ready",
+        "default_root": drive_audit_settings().default_root,
+    }
+
+
+@app.post("/api/drive-audit/v1/scan")
+async def drive_audit_scan(
+    payload: DriveScanRequest,
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    """Inventory a work folder and report what the application is missing.
+
+    No model is involved and nothing leaves the machine: only header names and
+    counts are read, never a cell or a document's contents.
+    """
+    try:
+        # Walking a large tree and opening spreadsheets is blocking work; off
+        # the event loop so the rest of the app keeps answering during a scan.
+        report = await asyncio.to_thread(run_scan, payload.root)
+    except DriveAuditUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Klasör taraması kullanılabilir değil: {exc}",
+        ) from None
+    except DriveAuditError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from None
+    return report.as_dict()
 
 
 @app.post("/api/dev-agent/v1/apply")

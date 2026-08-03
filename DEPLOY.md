@@ -212,6 +212,35 @@ Uyguladıktan sonra sunucuyu yeniden başlatın (frontend değiştiyse `run.ps1`
 `run.sh` yeniden derler). Beğenmediğiniz bir uygulamayı geri almak için
 `git revert HEAD`.
 
+## 3c. Çalışma klasörünü okuyup ne eksik olduğunu söyleyen tarama
+
+Drive'ınızı (ya da herhangi bir iş klasörünü) tarar ve **uygulamanın yeri
+olmayan** şeyleri listeler: hangi Excel şablonu kaç kez tekrarlıyor, hangi
+sütun başlıkları uygulamada karşılıksız, kaç tarihli klasör var. Her bulgunun
+yanında **BUNU GELİŞTİR** düğmesi vardır; oradaki cümleyi yukarıdaki geliştirme
+paneline yollar.
+
+```
+EXCELBASE_DRIVE_AUDIT=1
+EXCELBASE_DRIVE_AUDIT_ROOT=G:\Drive'ım\Operasyon    # isteğe bağlı başlangıç yolu
+```
+
+**Yapay zekâ kullanılmaz.** Tekrar eden sütun düzenleri, biçimsel kavram
+analiziyle (FCA) bulunur: bir kayıt tipi, "şu 6 sütun tam olarak şu 34
+dosyanın ortak sözlüğüdür" gibi sayılarak doğrulanabilir bir iddiadır, bir
+modelin tahmini değil.
+
+İki kural gömülüdür:
+
+1. **Yalnızca başlık satırı okunur.** Hücre içeriği, PDF ve fotoğraflar hiç
+   açılmaz; rapora yolcu adı ya da pasaport numarası giremez. Bu, testlerle
+   sabitlenmiştir.
+2. **Açık sunucuda hiç açılmaz.** Geliştirme ajanıyla aynı sebeple: sunucudaki
+   herhangi bir klasörü okuyabilen bir uç nokta, oraya başkası da
+   ulaşabiliyorsa dosya sızdırma aracıdır.
+
+Anthropic anahtarı gerekmez — tarama tamamen bu makinede çalışır.
+
 ## 4. Render'daki hesapları taşımak (isteğe bağlı)
 
 Yalnızca mevcut erişim hesaplarını korumak istiyorsanız gerekir; sıfırdan

@@ -153,6 +153,32 @@ def dev_agent_settings() -> DevAgentSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DriveAuditSettings:
+    """Configuration for scanning a work folder on this machine.
+
+    Off by default and refused on a deployment anyone can reach, for the same
+    reason the development agent is: an endpoint that reads arbitrary folders
+    is a file-disclosure feature on a public server, whatever it is called.
+    """
+
+    enabled: bool
+    closed_deployment: bool
+    #: Optional starting folder, so the operator does not retype it each time.
+    default_root: str
+
+
+def drive_audit_settings() -> DriveAuditSettings:
+    assistant = assistant_settings()
+    return DriveAuditSettings(
+        enabled=_env_bool("EXCELBASE_DRIVE_AUDIT", default=False),
+        closed_deployment=(
+            not assistant.open_access or bool(assistant_allowed_networks())
+        ),
+        default_root=os.environ.get("EXCELBASE_DRIVE_AUDIT_ROOT", "").strip()[:400],
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class AssistantSettings:
     enabled: bool
     provider: str

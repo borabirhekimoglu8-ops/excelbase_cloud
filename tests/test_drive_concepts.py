@@ -144,3 +144,49 @@ def test_a_wide_folder_stays_bounded(monkeypatch):
     found = concepts(signatures, min_support=1)
 
     assert len(found) <= 50
+
+
+def test_a_record_type_is_named_after_the_folder_the_operator_filed_it_in():
+    """"Satış" is what the operator calls these records; "Adet · Hat · Tutar"
+    is what a machine calls them. The folder name also travels into the
+    instruction handed to the development agent, so it is the one to use."""
+    proposals = propose_entities(
+        [
+            Signature(columns=frozenset({"tarih", "hat", "adet", "tutar"}), files=9, folder="Satış"),
+        ],
+        known_columns=frozenset({"tarih"}),
+        min_support=2,
+    )
+
+    assert proposals[0].name == "Satış"
+    assert "'Satış' adında" in proposals[0].suggestion
+
+
+def test_two_record_types_in_one_folder_do_not_end_up_with_one_name():
+    """Sharing a name would show two cards that look identical and produce two
+    instructions that read as one."""
+    proposals = propose_entities(
+        [
+            Signature(columns=frozenset({"tarih", "hat", "adet"}), files=5, folder="Arşiv"),
+            Signature(columns=frozenset({"firma", "vergi no", "kdv"}), files=4, folder="Arşiv"),
+        ],
+        known_columns=frozenset(),
+        min_support=2,
+    )
+
+    names = [proposal.name for proposal in proposals]
+    assert len(names) == len(set(names)), names
+    assert names[0] == "Arşiv"
+
+
+def test_a_template_scattered_across_folders_is_not_named_after_one_of_them():
+    """No folder accounts for the record type, so the columns have to."""
+    proposals = propose_entities(
+        [
+            Signature(columns=frozenset({"firma", "tutar", "vade"}), files=3, folder=""),
+        ],
+        known_columns=frozenset(),
+        min_support=2,
+    )
+
+    assert proposals[0].name == "Firma · Tutar · Vade"

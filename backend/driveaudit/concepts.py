@@ -32,6 +32,10 @@ class Signature:
 
     columns: frozenset[str]
     files: int
+    #: The folder these files sit in, if they share one. It is the operator's
+    #: own word for this kind of record, which beats any name derived from
+    #: column headers -- see ``name_for``.
+    folder: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +101,11 @@ def concepts(signatures: list[Signature], min_support: int = 2) -> list[Concept]
     )
 
     trimmed = [
-        Signature(columns=signature.columns & allowed, files=signature.files)
+        Signature(
+            columns=signature.columns & allowed,
+            files=signature.files,
+            folder=signature.folder,
+        )
         for signature in signatures
         if signature.columns & allowed
     ]
@@ -163,13 +171,37 @@ def distinctive_concepts(all_concepts: list[Concept], limit: int = 8) -> list[Co
     return kept
 
 
-def name_for(intent: frozenset[str], known: frozenset[str]) -> str:
-    """A human label for a record type, taken from its own columns.
+def folder_for(intent: frozenset[str], signatures: list[Signature]) -> str:
+    """The folder that best accounts for a record type.
 
-    Preference goes to a column the application does not already know: what
+    A concept can be shared by templates living in different folders, so the
+    one backed by the most files wins rather than whichever was seen first.
+    """
+    weights: dict[str, int] = {}
+    for signature in signatures:
+        if signature.folder and intent <= signature.columns:
+            weights[signature.folder] = weights.get(signature.folder, 0) + signature.files
+    if not weights:
+        return ""
+    return max(sorted(weights), key=lambda name: weights[name])
+
+
+def name_for(intent: frozenset[str], known: frozenset[str], folder: str = "") -> str:
+    """A human label for a record type.
+
+    The operator's folder name is used when there is one: they already named
+    this kind of record when they filed it, and "Satış" reads as a record type
+    where "Adet · Hat · Tutar" reads as a list of spare parts. That name also
+    travels into the instruction handed to the development agent, so it is
+    worth more than a mechanical one.
+
+    Without a folder -- files loose at the root -- the columns are all there
+    is, and preference goes to one the application does not already know: what
     makes this record type different from the passenger list is exactly the
     thing worth naming it after.
     """
+    if folder:
+        return folder
     novel = sorted(column for column in intent if column not in known)
     ordered = novel or sorted(intent)
     return " · ".join(part.title() for part in ordered[:3])
@@ -188,16 +220,24 @@ def propose_entities(
         return labels.get(column, column)
 
     proposals: list[EntityProposal] = []
+    taken: set[str] = set()
     for concept in distinctive_concepts(concepts(signatures, min_support=min_support)):
         columns = [display(column) for column in sorted(concept.intent)]
         missing = [display(column) for column in sorted(concept.intent - known_columns)]
+        name = name_for(concept.intent, known_columns, folder_for(concept.intent, signatures))
+        # Two record types can share a folder, and then they would share a
+        # name -- indistinguishable on screen, and two instructions that read
+        # as one. The columns break the tie, which is what they are for.
+        if name in taken:
+            name = f"{name} · {name_for(concept.intent, known_columns)}"
+        taken.add(name)
         proposals.append(EntityProposal(
-            name=name_for(concept.intent, known_columns),
+            name=name,
             columns=columns,
             files=concept.support,
             missing=missing,
             suggestion=(
-                f"Uygulamaya '{name_for(concept.intent, known_columns)}' adında bir kayıt tipi ekle. "
+                f"Uygulamaya '{name}' adında bir kayıt tipi ekle. "
                 f"Alanlar: {', '.join(columns)}. Liste, filtre, Excel içe/dışa aktarma olsun."
             ),
         ))

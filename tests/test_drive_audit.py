@@ -86,6 +86,38 @@ def test_a_finding_carries_an_instruction_that_names_no_file_contents(drive):
         assert "U1" not in finding.suggestion
 
 
+def test_a_record_type_takes_the_name_of_the_folder_not_of_the_day(tmp_path):
+    """The files sit in Operasyon/2026-07-01/. "2026-07-01" says when the work
+    happened; "Operasyon" says what kind of record it is."""
+    root = tmp_path / "Drive"
+    headers = ["Sıra", "Ad Soyad", "Pasaport No", "Acente"]
+    for day in ("2026-07-01", "2026-07-02", "2026-07-03"):
+        write_xlsx(root / "Operasyon" / day / "pax.xlsx", [headers, [1, "Ali", "U1", "Mavi"]])
+
+    report = scan_folder(root)
+
+    assert report.entities[0].name == "Operasyon"
+    assert "Operasyon" in report.entities[0].suggestion
+
+
+def test_a_suggestion_spells_the_columns_the_way_the_operator_does(tmp_path):
+    """Grouping folds case and Turkish letters so that "Satışı Yapan" and
+    "SATISI YAPAN" land in one template. The sentence handed to the
+    development panel must still say "Satışı Yapan" -- it becomes a field
+    label, and the folded key would ship a misspelt one."""
+    root = tmp_path / "Drive"
+    headers = ["Tarih", "Hat", "Satışı Yapan", "Tutar"]
+    for month in ("ocak", "subat", "mart"):
+        write_xlsx(root / f"{month}.xlsx", [headers, ["01.07.2026", "IST-AMS", "Bora", "10"]])
+
+    report = scan_folder(root)
+    template = next(finding for finding in report.findings if finding.kind == "template")
+
+    assert "Satışı Yapan" in template.suggestion
+    assert "satisi yapan" not in template.suggestion
+    assert any("Satışı Yapan" in line for line in template.evidence)
+
+
 def test_only_the_header_row_is_read(tmp_path):
     # A sheet whose rows hold passport numbers: none of them may appear in the
     # report, because only the first row is ever touched.

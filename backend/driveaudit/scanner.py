@@ -25,7 +25,7 @@ import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .concepts import EntityProposal, Signature, propose_entities
 
@@ -288,7 +288,11 @@ def scan_folder(root: str | Path) -> ScanReport:
     # stays cheap: a folder of ten thousand files still has a few dozen
     # templates, and the lattice is built over those.
     signatures = [
-        Signature(columns=frozenset(key for key in group.headers if key), files=group.count)
+        Signature(
+            columns=frozenset(key for key in group.headers if key),
+            files=group.count,
+            folder=_folder_label(group.files),
+        )
         for group in templates
     ]
     entities = propose_entities(
@@ -307,8 +311,29 @@ def scan_folder(root: str | Path) -> ScanReport:
         unknown_columns=unknown,
         dated_folders=dated_folders,
         entities=entities,
-        findings=build_findings(templates, unknown, by_kind, dated_folders),
+        findings=build_findings(templates, unknown, by_kind, dated_folders, original_case),
     )
+
+
+def _folder_label(relative_paths: tuple[str, ...]) -> str:
+    """The folder a template's files share, as a name worth showing.
+
+    Dated folders are skipped on the way up: "2026-07-01" says when the work
+    happened, not what kind of record it is, and the parent above it -- the
+    one the operator named -- does. A template spread across several folders
+    has no shared name, so nothing is returned rather than picking one.
+    """
+    labels: Counter[str] = Counter()
+    for relative in relative_paths[:200]:
+        parts = PurePosixPath(relative.replace("\\", "/")).parts[:-1]
+        named = [part for part in parts if not _DATE_IN_NAME.search(part)]
+        if named:
+            labels[named[-1]] += 1
+    if not labels:
+        return ""
+    label, count = labels.most_common(1)[0]
+    # A name only two of nine files agree on is not this record type's name.
+    return label[:60] if count * 2 >= sum(labels.values()) else ""
 
 
 def build_findings(
@@ -316,19 +341,27 @@ def build_findings(
     unknown_columns: list[tuple[str, int]],
     by_kind: dict[str, int],
     dated_folders: int,
+    original_case: dict[str, str] | None = None,
 ) -> list[Finding]:
     """Turn counts into things worth building, each carrying its evidence.
 
     Every suggestion is a sentence the operator can hand to the development
     panel unchanged. None of them contains a file's contents -- only column
     names and counts -- so approving one does not send the folder anywhere.
+
+    Templates are grouped by the folded key ("satisi yapan"), but the operator
+    reads -- and the development agent builds from -- the spelling in the file
+    ("Satışı Yapan"), so the key is translated back before it is shown.
     """
+    spelling = original_case or {}
     findings: list[Finding] = []
 
     for group in templates[:5]:
         if group.count < 3:
             continue
-        columns = ", ".join(header for header in group.headers if header)[:300]
+        columns = ", ".join(
+            spelling.get(header, header) for header in group.headers if header
+        )[:300]
         findings.append(Finding(
             kind="template",
             title=f"{group.count} dosya aynı şablonu kullanıyor",
