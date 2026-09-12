@@ -154,12 +154,8 @@ export function DocumentsTab({
 
   return (
     <div className="ops-page">
-      <section className="ops-page-heading">
-        <div>
-          <p className="ops-eyebrow">MERKEZİ BELGE ARŞİVİ</p>
-          <h1>Evrak Merkezi</h1>
-          <p>Yolcu PDF’leri ve genel ofis belgeleri tek, aranabilir görünümde.</p>
-        </div>
+      <section className="ops-page-intro">
+        <p>Yolcu PDF’leri ve genel ofis belgeleri tek, aranabilir görünümde.</p>
         <button className="ops-primary ops-heading-action" type="button" onClick={() => setShowUpload((value) => !value)}>
           + EVRAK
         </button>

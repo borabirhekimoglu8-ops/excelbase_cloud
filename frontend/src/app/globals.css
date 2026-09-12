@@ -1657,6 +1657,11 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   line-height: 1.45;
 }
 
+/* Tab pages already carry their title in the header bar; the intro only adds
+   the one-line description and the page action. */
+.ops-page-intro { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ops-page-intro p { max-width: 290px; margin: 0; color: var(--ido-muted); font-size: 12px; line-height: 1.45; }
+
 .ops-eyebrow {
   margin: 0 0 4px;
   color: var(--ido-primary);
@@ -2682,6 +2687,7 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 
   :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ops-metric-grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
   :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ops-page-heading p:not(.ops-eyebrow),
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ops-page-intro p,
   :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ops-section-heading p:not(.ops-eyebrow) { max-width: 620px; }
 
   :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ic-record-form {
