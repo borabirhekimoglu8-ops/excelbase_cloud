@@ -13,9 +13,9 @@ Excelbase Operations; iş dosyalarını, C kodlarını, görevleri, notları, ev
 - Gate Visa modülünde:
   - XLSX, XLS, XLSM, ODS ve CSV yolcu listelerini; ayrıca bu dosyaları içeren ZIP arşivlerini işler.
   - Dosya adedi sınırı koymaz; dosyaları sırayla işleyerek mobil cihaz belleğini korur.
-  - Yolcu kartından birden fazla PDF evrak ve JPG/JPEG biyometrik fotoğraf ekler.
+  - Yolcu kartından birden fazla PDF evrak ve biyometrik fotoğraf ekler; fotoğraf JPG, PNG, HEIC, WEBP, GIF, BMP, TIFF veya AVIF olabilir. Biçim dosya adından değil içeriğinden tanınır, uzantısız veya yanlış uzantılı dosyalar da kabul edilir.
   - Yolcuları tarih, durum ve metin ile filtreler; tekrarları ve eksik alanları gösterir.
-  - İDO logolu günlük liste, Excel, CSV, manifest, fotoğraf/evrak ZIP'i ve teslim paketi üretir.
+  - Yazdırılabilir günlük liste, Excel, CSV, manifest, fotoğraf/evrak ZIP'i ve teslim paketi üretir.
 - Yolcu, çalışma alanı ve ikili dosya kayıtlarını Web Crypto (AES-GCM) ile cihazda şifreli saklar.
 - Şifreli cihaz yedeği alır ve geri yükler.
 - Uygulama kabuğu ilk başarılı açılıştan sonra çevrimdışı çalışır.
