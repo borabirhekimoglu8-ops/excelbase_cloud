@@ -101,7 +101,7 @@ export function RecordsTab({ onCreate, canCreate = true }: { onCreate: () => voi
                 <span className="ic-folder-copy">
                   <small>{folderWeekday(folder.date_key)}</small>
                   <strong>{folderDateLabel(folder.date_key)}</strong>
-                  <span>{folder.count} yolcu · {folder.document_count} PDF · {folder.with_photo} JPG</span>
+                  <span>{folder.count} yolcu · {folder.document_count} PDF · {folder.with_photo} fotoğraf</span>
                 </span>
                 <span className="ic-folder-status">
                   <span className="ic-pill ic-pill-ok">{folder.ready_count} HAZIR</span>

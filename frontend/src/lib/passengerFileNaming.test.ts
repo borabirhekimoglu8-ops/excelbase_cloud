@@ -44,6 +44,8 @@ describe("passenger file naming", () => {
     // the operator a file their photo viewer refuses to open.
     expect(passengerPhotoFilename(passenger, "png")).toBe("2026-07-21_ECE_DENIS_OZTURK_TR7654321.png");
     expect(passengerPhotoFilename(passenger, "webp")).toBe("2026-07-21_ECE_DENIS_OZTURK_TR7654321.webp");
+    expect(passengerPhotoFilename(passenger, "heic")).toBe("2026-07-21_ECE_DENIS_OZTURK_TR7654321.heic");
+    expect(passengerPhotoFilename(passenger, "JPEG")).toBe("2026-07-21_ECE_DENIS_OZTURK_TR7654321.jpg");
     // An unrecognised or missing extension falls back to jpg rather than
     // producing a file with no extension at all.
     expect(passengerPhotoFilename(passenger, "exe")).toBe("2026-07-21_ECE_DENIS_OZTURK_TR7654321.jpg");
@@ -53,6 +55,8 @@ describe("passenger file naming", () => {
     expect(photoExtension("BULK1234.PNG")).toBe("png");
     expect(photoExtension("BULK1234.jpeg")).toBe("jpg");
     expect(photoExtension("BULK1234.webp")).toBe("webp");
+    expect(photoExtension("IMG_0042.HEIC")).toBe("heic");
+    expect(photoExtension("scan.tif")).toBe("tiff");
     expect(photoExtension("no-extension")).toBe("jpg");
   });
 

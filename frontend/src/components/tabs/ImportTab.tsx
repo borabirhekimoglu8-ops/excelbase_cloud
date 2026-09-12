@@ -20,6 +20,7 @@ import {
   undoImport,
 } from "@/lib/api";
 import { newId } from "@/lib/id";
+import { IMAGE_ACCEPT } from "@/lib/imageFormat";
 import { useStore } from "@/lib/store";
 import { LocalDownloadButton } from "@/components/LocalDownloadButton";
 
@@ -774,8 +775,8 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             FOTOĞRAF / ZIP SEÇ
             <input
               type="file"
-              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp,.zip,application/zip"
-              aria-label="JPG, PNG veya WEBP biyometrik fotoğraf ya da ZIP seç"
+              accept={`${IMAGE_ACCEPT},.zip,application/zip`}
+              aria-label="Biyometrik fotoğraf ya da ZIP seç"
               multiple
               onChange={handlePhotos}
               disabled={summary.passenger_count === 0 || photoBusy}

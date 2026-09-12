@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useEffect, useState } from "react";
 import { Passenger, fetchPassengers, mergeDuplicates, setPassengerPhoto } from "@/lib/api";
+import { IMAGE_ACCEPT } from "@/lib/imageFormat";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { PassengerDetail } from "@/components/PassengerDetail";
@@ -110,8 +111,8 @@ export function IssuesTab() {
                 </button>
                 {canWrite && category === "Fotosuz" && (
                   <label className="soft-btn">
-                    JPG ata
-                    <input type="file" accept=".jpg,.jpeg,image/jpeg" onChange={(e) => handlePhoto(p.id, e)} />
+                    Fotoğraf ata
+                    <input type="file" accept={IMAGE_ACCEPT} onChange={(e) => handlePhoto(p.id, e)} />
                   </label>
                 )}
               </div>

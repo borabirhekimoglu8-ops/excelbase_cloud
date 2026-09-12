@@ -39,6 +39,7 @@ import {
   VAULT_DATABASE_NAME,
   closeVaultDatabase,
   exportEncryptedVault,
+  getBinary,
   listBinaryIds,
   lockVault,
   restoreEncryptedVault,
@@ -449,12 +450,12 @@ describe("local offline API", () => {
     expect(passenger.photo_url).toMatch(/^blob:/);
   });
 
-  it("yolcu biyometrik alanına yalnız gerçek JPG, PNG veya WEBP kabul eder", async () => {
+  it("yolcu biyometrik alanına yalnız gerçek görüntü dosyası kabul eder", async () => {
     await localQueueImportFile(workbookFile("bio.xlsx", "Bio Yolcu", "BIO12345"), false, "skip", "bio", "bio-job");
     const passengerId = (await localPassengers())[0].id;
 
     const spoofedJpeg = new File(["JPG değil"], "biyometrik.jpg", { type: "image/jpeg" });
-    await expect(localSetPassengerPhoto(passengerId, spoofedJpeg)).rejects.toThrow(/bozuk görünüyor/i);
+    await expect(localSetPassengerPhoto(passengerId, spoofedJpeg)).rejects.toThrow(/geçerli bir görüntü dosyası değil/i);
     expect((await localPassengers())[0].photo).toBe("");
     expect((await listBinaryIds()).filter((id) => id.startsWith("photo:"))).toHaveLength(0);
 
@@ -464,8 +465,6 @@ describe("local offline API", () => {
   });
 
   it("yolcu biyometrik alanı gerçek bir PNG'yi de kabul eder", async () => {
-    // PNG was rejected outright until the format restriction was widened
-    // beyond JPEG; this pins that a real PNG signature now passes.
     await localQueueImportFile(workbookFile("png.xlsx", "Png Yolcu", "PNG12345"), false, "skip", "png", "png-job");
     const passengerId = (await localPassengers())[0].id;
     const realPng = new File(
@@ -477,14 +476,37 @@ describe("local offline API", () => {
     expect((await localPassengers())[0].photo).toMatch(/^photo:/);
   });
 
-  it("toplu biyometrik eşleştirmede sahte içeriği ve desteklenmeyen biçimleri reddeder", async () => {
+  it("fotoğrafı uzantısına değil içeriğine göre saklar", async () => {
+    // iPhone HEIC with no extension, and a PNG that was renamed ".jpg": the
+    // bytes decide the stored format, so the export later gets a name the
+    // photo viewer can open.
+    await localQueueImportFile(workbookFile("heic.xlsx", "Heic Yolcu", "HEIC1234"), false, "skip", "heic", "heic-job");
+    const passengerId = (await localPassengers())[0].id;
+    const heicHead = [0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63, 0, 0, 0, 0];
+    await localSetPassengerPhoto(passengerId, new File([new Uint8Array(heicHead)], "IMG_0042", { type: "" }));
+    let photo = await getBinary((await localPassengers())[0].photo);
+    expect(photo).toMatchObject({ name: "IMG_0042.heic", type: "image/heic" });
+
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    await localSetPassengerPhoto(passengerId, new File([pngBytes], "yanlis-uzanti.jpg", { type: "image/jpeg" }));
+    photo = await getBinary((await localPassengers())[0].photo);
+    expect(photo).toMatchObject({ name: "yanlis-uzanti.png", type: "image/png" });
+    expect((await listBinaryIds()).filter((id) => id.startsWith("photo:"))).toHaveLength(1);
+  });
+
+  it("toplu biyometrik eşleştirmede sahte içeriği reddeder, gerçek GIF'i eşleştirir", async () => {
     await localQueueImportFile(workbookFile("bio.xlsx", "Toplu Bio", "BULK1234"), false, "skip", "bulk", "bulk-job");
     const spoofedJpeg = new File(["sahte"], "BULK1234.jpg", { type: "image/jpeg" });
-    const gif = new File(["GIF89a"], "BULK1234.gif", { type: "image/gif" });
+    const pdf = new File(["%PDF-1.7"], "BULK1234.pdf", { type: "application/pdf" });
 
-    await expect(localMatchPhotos([spoofedJpeg])).rejects.toThrow(/bozuk görünüyor/i);
-    await expect(localMatchPhotos([gif])).rejects.toThrow(/JPG, JPEG veya PNG/i);
+    await expect(localMatchPhotos([spoofedJpeg])).rejects.toThrow(/geçerli bir görüntü dosyası değil/i);
+    await expect(localMatchPhotos([pdf])).rejects.toThrow(/geçerli bir görüntü dosyası değil/i);
     expect((await localPassengers())[0].photo).toBe("");
+
+    const gif = new File(["GIF89a"], "BULK1234.gif", { type: "image/gif" });
+    const result = await localMatchPhotos([gif]);
+    expect(result).toMatchObject({ matched: 1, unmatched: [] });
+    expect((await localPassengers())[0].photo).toMatch(/^photo:/);
   });
 
   it("toplu biyometrik eşleştirme gerçek bir PNG'yi eşleştirir", async () => {

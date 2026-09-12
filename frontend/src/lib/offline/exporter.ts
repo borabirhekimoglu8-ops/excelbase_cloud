@@ -382,8 +382,8 @@ export function createIdoDailyPassengerListHtmlBlob(
   <main class="sheet">
     <div class="accent"></div>
     <header>${logo}<div><p class="eyebrow">Gate Visa Checklist</p><h1>${escapeHtml(title)}</h1><p>Gate visa operations and document checklist</p></div><div class="operation"><span>Operation date</span><strong>${escapeHtml(operationLabel)}</strong><small>${escapeHtml(new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(generatedAt))}</small></div></header>
-    <section class="stats"><div class="stat"><b>${orderedRows.length}</b><span>Total passengers</span></div><div class="stat"><b>${readyCount}</b><span>Ready records</span></div><div class="stat"><b>${photoCount}</b><span>JPG photos</span></div><div class="stat"><b>${documentCount}</b><span>PDF documents</span></div></section>
-    <div class="table-wrap"><table><thead><tr><th class="num">No</th><th>Full Name</th><th>Passport No</th><th>Voucher</th><th>Departure</th><th>Arrival</th><th>Adult</th><th>Child</th><th class="center">JPG</th><th class="center">PDF</th><th class="center">Status</th></tr></thead><tbody>${tableRows}</tbody></table></div>
+    <section class="stats"><div class="stat"><b>${orderedRows.length}</b><span>Total passengers</span></div><div class="stat"><b>${readyCount}</b><span>Ready records</span></div><div class="stat"><b>${photoCount}</b><span>Photos</span></div><div class="stat"><b>${documentCount}</b><span>PDF documents</span></div></section>
+    <div class="table-wrap"><table><thead><tr><th class="num">No</th><th>Full Name</th><th>Passport No</th><th>Voucher</th><th>Departure</th><th>Arrival</th><th>Adult</th><th>Child</th><th class="center">Photo</th><th class="center">PDF</th><th class="center">Status</th></tr></thead><tbody>${tableRows}</tbody></table></div>
     <footer><div class="sign">Prepared by / Operations Officer</div><div class="sign">Checked by / Receiving Officer</div><div class="footnote">Prepared locally by Gate Visa Checklist. Passenger data is for authorised operational use only.</div></footer>
   </main>
 </body>
