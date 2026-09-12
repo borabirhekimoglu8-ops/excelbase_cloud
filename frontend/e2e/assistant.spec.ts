@@ -51,7 +51,7 @@ test("Claude Sonnet bağımsız çalışma alanı güvenli bağlamla gerçek soh
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
 
-  await page.getByRole("button", { name: /Claude Sonnet Asistan/ }).click();
+  await page.getByRole("button", { name: "Excelbase Asistanını aç" }).click();
   await expect(page.getByText("Claude Sonnet", { exact: true })).toBeVisible();
   await expect(page.getByText("Claude Sonnet hazır", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Operasyonu birlikte netleştirelim." })).toBeVisible();
@@ -85,7 +85,7 @@ test("Claude Sonnet bağımsız çalışma alanı güvenli bağlamla gerçek soh
 
   await page.getByRole("button", { name: "Geri" }).click();
   await expect(page.getByRole("heading", { name: /Günaydın/ })).toBeVisible();
-  await page.getByRole("button", { name: /Claude Sonnet Asistan/ }).click();
+  await page.getByRole("button", { name: "Excelbase Asistanını aç" }).click();
   await expect(page.getByText("Operasyon hazır. <script>window.hacked=true</script>", { exact: true })).toBeVisible();
 });
 
@@ -148,7 +148,7 @@ test("hızlı çift gönderim tek ücretli istek açar ve yeni konuşmaya eski y
   await page.locator('input[name="name"]').fill("Sonnet Race Test");
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
-  await page.getByRole("button", { name: /Claude Sonnet Asistan/ }).click();
+  await page.getByRole("button", { name: "Excelbase Asistanını aç" }).click();
   await page.getByText(/Yazdığım metnin Anthropic’e gönderileceğini biliyorum/).click();
 
   const composer = page.getByRole("textbox", {
