@@ -7,7 +7,7 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
@@ -1204,6 +1204,34 @@ def template() -> Response:
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="gate-visa-passenger-template.xlsx"'},
     )
+
+
+@app.put("/api/vault/sync")
+async def vault_sync_put(
+    request: Request,
+    x_vault_sync_token: str | None = Header(default=None),
+) -> dict:
+    from . import vault_sync
+
+    token = x_vault_sync_token or ""
+    body = await request.body()
+    try:
+        return vault_sync.put_blob(token, body)
+    except ValueError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
+
+
+@app.get("/api/vault/sync")
+async def vault_sync_get(x_vault_sync_token: str | None = Header(default=None)) -> Response:
+    from . import vault_sync
+
+    try:
+        blob = vault_sync.get_blob(x_vault_sync_token or "")
+    except ValueError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
+    if blob is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Bu eşleme kodu için henüz bir yedek yok.")
+    return Response(content=blob, media_type="application/vnd.excelbase.vault+json")
 
 
 @app.get("/api/backup", dependencies=[Depends(require_api_key_flexible)])

@@ -41,10 +41,18 @@
   --ido-amber-line: #f0c978;
   --ido-red: #a12a31;
   --ido-red-tint: #f7e9ea;
-  --ido-radius-sm: 2px;
-  --ido-radius: 5px;
-  --ido-radius-md: 4px;
-  --ido-radius-lg: 14px;
+  --ido-radius-sm: 8px;
+  --ido-radius: 12px;
+  --ido-radius-md: 10px;
+  --ido-radius-lg: 16px;
+  --font-sans: Inter, "Segoe UI", Arial, sans-serif;
+  --type-11: 11px;
+  --type-13: 13px;
+  --type-15: 15px;
+  --type-17: 17px;
+  --type-22: 22px;
+  --type-28: 28px;
+  --keyboard-inset: 0px;
   --ido-frame-max: 430px;
   --ido-header-h: 58px;
   --ido-nav-h: 83px;
@@ -56,8 +64,9 @@ body {
   margin: 0;
   background: var(--surface-soft);
   color: var(--ink);
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
-  font-size: 15px;
+  font-family: var(--font-sans);
+  font-size: var(--type-15);
+  font-variant-numeric: tabular-nums;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -391,7 +400,7 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   display: flex;
   flex-direction: column;
   position: relative;
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-sans);
   color: var(--ido-ink);
 }
 
@@ -427,22 +436,14 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ido-header-back:hover { background: rgba(255,255,255,.12); }
 .ido-header-mark {
   flex: 0 0 auto;
-  width: 44px;
-  height: 40px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(255,255,255,.25);
-  border-radius: 4px;
-  background: var(--ido-primary-deep);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 850;
-  letter-spacing: .08em;
 }
+.xb-mark { display: block; }
 .ido-header-identity { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
-.ido-header-brand { margin: 0; color: #fff; font-weight: 700; font-size: 12px; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ido-header-sub { margin: 0; color: #d7edf4; font-weight: 500; font-size: 9px; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ido-header-title { flex: 1 1 auto; min-width: 0; margin: 0; color: #fff; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ido-header-brand { margin: 0; color: #fff; font-weight: 700; font-size: var(--type-15); letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ido-header-sub { margin: 0; color: #d7edf4; font-weight: 500; font-size: var(--type-11); letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ido-header-title { flex: 1 1 auto; min-width: 0; margin: 0; color: #fff; font-weight: 600; font-size: var(--type-15); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ido-header-action {
   flex: 0 0 auto;
   background: #fff;
@@ -466,10 +467,10 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ido-content {
   flex: 1 1 auto;
   background: var(--ido-bg);
-  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom) + var(--keyboard-inset));
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 .ido-content.has-sticky { padding-bottom: calc(var(--ido-nav-h) + 20px); }
@@ -1510,9 +1511,9 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ops-eyebrow {
   margin: 0 0 4px;
   color: var(--ido-primary);
-  font-size: 9px;
-  font-weight: 850;
-  letter-spacing: .14em;
+  font-size: var(--type-11);
+  font-weight: 650;
+  letter-spacing: .02em;
 }
 
 .ops-metric-grid {
@@ -1966,14 +1967,20 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   border: 1px solid var(--ido-border);
   background: #fff;
 }
-.assistant-context-strip > div {
+.assistant-context-strip > div,
+.assistant-context-strip > button {
   min-width: 0;
   display: grid;
   gap: 2px;
   padding: 9px 8px;
+  border: 0;
   border-right: 1px solid var(--ido-border);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
-.assistant-context-strip > div:last-child { border-right: 0; }
+.assistant-context-strip > div:last-child,
+.assistant-context-strip > button:last-child { border-right: 0; }
 .assistant-context-strip span { color: var(--ido-faint); font-size: 9px; font-weight: 850; letter-spacing: .08em; }
 .assistant-context-strip strong { color: var(--ido-primary-deep); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .assistant-context-strip .attention strong { color: var(--ido-red); }
@@ -2072,6 +2079,22 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .assistant-welcome > p:first-of-type { margin: 4px 0 0; color: var(--ido-primary); font-size: 8px; font-weight: 850; letter-spacing: .13em; }
 .assistant-welcome h1 { margin: 0; color: var(--ido-primary-deep); font-size: 22px; line-height: 1.2; letter-spacing: -.02em; }
 .assistant-welcome > p:last-of-type { max-width: 360px; margin: 0; color: var(--ido-muted); font-size: 10px; line-height: 1.55; }
+.assistant-file-handoff {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--ido-radius);
+  background: var(--ido-blue-tint);
+  color: var(--ido-primary-deep);
+  font-size: var(--type-13);
+  font-weight: 650;
+  cursor: pointer;
+}
+.assistant-file-handoff input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .assistant-suggestions { width: 100%; display: grid; gap: 6px; margin-top: 8px; }
 .assistant-suggestions button {
   min-height: 48px;
@@ -2553,6 +2576,67 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   }
 }
 
+.xb-recovery-key {
+  margin: 0 0 16px;
+  padding: 14px 12px;
+  border: 1px dashed var(--ido-border);
+  border-radius: var(--ido-radius);
+  background: #fff;
+  color: var(--ido-primary-deep);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: var(--type-17);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-align: center;
+  word-break: break-all;
+}
+.xb-empty {
+  padding: 20px 16px;
+  border: 1px dashed var(--ido-border);
+  border-radius: var(--ido-radius);
+  background: #fff;
+  display: grid;
+  gap: 8px;
+}
+.xb-empty strong { color: var(--ido-ink); font-size: var(--type-17); }
+.xb-empty p { margin: 0; color: var(--ido-muted); font-size: var(--type-13); line-height: 1.45; }
+.xb-queue { display: grid; gap: 8px; }
+.xb-queue-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; background: #fff; border: 1px solid var(--ido-border); border-radius: var(--ido-radius); padding: 12px 14px; cursor: pointer; }
+.xb-queue-item:hover { border-color: var(--ido-primary); }
+.xb-queue-item.attention { border-color: var(--ido-amber-line); background: var(--ido-amber-tint); }
+.xb-queue-item strong { display: block; color: var(--ido-ink); font-size: var(--type-15); }
+.xb-queue-item small { display: block; margin-top: 2px; color: var(--ido-muted); font-size: var(--type-13); }
+.xb-swipe { position: relative; overflow: hidden; border-radius: var(--ido-radius); }
+.xb-swipe-actions { position: absolute; inset: 0 0 0 auto; width: 168px; display: flex; }
+.xb-swipe-actions button,
+.xb-swipe-actions label {
+  flex: 1 1 50%;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  border: 0;
+  background: var(--ido-primary);
+  color: #fff;
+  font-size: var(--type-11);
+  font-weight: 700;
+  cursor: pointer;
+}
+.xb-swipe-actions button:last-child,
+.xb-swipe-actions label:last-child { background: var(--ido-primary-deep); }
+.xb-swipe-actions input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; }
+.xb-swipe-front { position: relative; background: var(--ido-bg); transition: transform .12s ease-out; }
+.ops-split { display: grid; gap: 16px; min-height: 0; }
+.keyboard-open .ido-bottom-nav { display: none; }
+
+@media (min-width: 761px) {
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ops-split {
+    grid-template-columns: minmax(280px, 38%) minmax(0, 1fr);
+    align-items: start;
+  }
+  :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ops-split > * { min-width: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .assistant-message.pending i { animation: none; }
+  .xb-swipe-front { transition: none; }
 }

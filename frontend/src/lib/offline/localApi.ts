@@ -115,7 +115,10 @@ import {
   replacePassengers,
   restoreEncryptedVault,
   setMeta,
+  attachRecoveryKey,
   setupVault,
+  unlockVaultWithRecovery,
+  vaultRecoveryHint,
   unlockVault,
   vaultAuthStatus,
   type VaultBinary,
@@ -126,8 +129,10 @@ const META_IMPORT_HISTORY = "import-history";
 const META_OPERATION = "operation-meta";
 const META_UNMATCHED = "unmatched-photos";
 const META_LAST_UNDO = "last-undo";
+const META_AUDIT = "audit-trail";
+const META_LAST_BACKUP = "last-backup-at";
 const META_BATCH_PREFIX = "import-batch:";
-const APP_VERSION = "7.8.0-offline";
+const APP_VERSION = "7.9.0-offline";
 const SOURCE_PREFIX = "source:";
 const PHOTO_PREFIX = "photo:";
 const DOCUMENT_PREFIX = "document:";
@@ -290,6 +295,18 @@ export async function localSetup(displayName: string, pin: string): Promise<Auth
 
 export async function localLogin(pin: string): Promise<AuthStatus> {
   return unlockVault(pin);
+}
+
+export async function localLoginWithRecovery(recoveryKey: string): Promise<AuthStatus> {
+  return unlockVaultWithRecovery(recoveryKey);
+}
+
+export async function localAttachRecoveryKey(): Promise<string> {
+  return attachRecoveryKey();
+}
+
+export async function localRecoveryHint(): Promise<string | null> {
+  return vaultRecoveryHint();
 }
 
 export async function localLogout(): Promise<SimpleResult> {
@@ -1534,6 +1551,7 @@ export async function localUploadPassengerDocuments(
     }
     row.documents = [...(row.documents ?? []), ...created];
     await putPassenger(row);
+    await appendLocalAudit("pdf_attach", `passenger:${passengerId}`, created.map((doc) => doc.filename).join(", "));
   } catch (error) {
     for (const document of created) await deleteBinary(documentBinaryId(document.id));
     throw error;
@@ -1742,6 +1760,7 @@ export async function localSetPassengerPhoto(id: number, file: File): Promise<Si
     revokePhotoUrl(previousPhoto);
     await deleteBinary(previousPhoto);
   }
+  await appendLocalAudit("photo_attach", `passenger:${id}`, accepted.filename);
   return { ok: true, message: "Fotoğraf cihazda şifreli kaydedildi.", passenger_count: (await listPassengers()).length };
 }
 
@@ -1847,9 +1866,22 @@ export async function localUsers(): Promise<UserView[]> {
   return status.user ? [{ ...status.user, active: true }] : [];
 }
 
+async function appendLocalAudit(action: string, path: string, detail = ""): Promise<void> {
+  const current = (await getMeta<AuditEntry[]>(META_AUDIT)) ?? [];
+  const entry: AuditEntry = {
+    id: newId(),
+    time: new Date().toISOString(),
+    actor: "Yerel kullanıcı",
+    role: "admin",
+    action,
+    path: detail ? `${path} · ${detail}` : path,
+  };
+  await setMeta(META_AUDIT, [entry, ...current].slice(0, 200));
+}
+
 export async function localAudit(): Promise<AuditEntry[]> {
-  const history = await importHistory();
-  return history.map((item, index) => ({
+  const [trail, history] = await Promise.all([getMeta<AuditEntry[]>(META_AUDIT), importHistory()]);
+  const imports = history.map((item, index) => ({
     id: `${item.batch_id ?? "batch"}-${index}`,
     time: item.time ?? "",
     actor: "Yerel kullanıcı",
@@ -1857,6 +1889,15 @@ export async function localAudit(): Promise<AuditEntry[]> {
     action: "Dosya aktarımı",
     path: item.files ?? "",
   }));
+  return [...(trail ?? []), ...imports].toSorted((left, right) => right.time.localeCompare(left.time)).slice(0, 200);
+}
+
+export async function localMarkBackup(): Promise<void> {
+  await setMeta(META_LAST_BACKUP, new Date().toISOString());
+}
+
+export async function localLastBackupAt(): Promise<string | null> {
+  return (await getMeta<string>(META_LAST_BACKUP)) ?? null;
 }
 
 export async function localBackups(): Promise<BackupInfo[]> {

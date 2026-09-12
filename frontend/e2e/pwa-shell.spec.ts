@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { completeSetup } from "./helpers";
 import * as XLSX from "@e965/xlsx";
 import { BlobReader, ZipReader } from "@zip.js/zip.js";
 import { readFile } from "node:fs/promises";
@@ -86,9 +87,7 @@ test("PWA manifesti ve çevrimdışı uygulama kabuğu hazır", async ({ context
 
 test("uçak modunda yerel kasa açılır ve içe aktarılan yolcu kalır", async ({ context, page }) => {
   await page.goto("/");
-  await page.locator('input[name="name"]').fill("Yerel Yönetici");
-  await page.locator('input[name="pin"]').fill("123456");
-  await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
+  await completeSetup(page, "Yerel Yönetici");
 
   await openBulkImport(page);
   await page.getByLabel("ZIP veya Excel listelerini seç").setInputFiles({
@@ -115,9 +114,7 @@ test("uçak modunda yerel kasa açılır ve içe aktarılan yolcu kalır", async
 test("yolcuya biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", async ({ context, page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.locator('input[name="name"]').fill("Evrak Operatörü");
-  await page.locator('input[name="pin"]').fill("123456");
-  await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
+  await completeSetup(page, "Evrak Operatörü");
 
   await openBulkImport(page);
   await page.getByLabel("ZIP veya Excel listelerini seç").setInputFiles({
@@ -183,9 +180,7 @@ test("yolcuya biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", async (
 test("manuel yolcu kaydı günlük klasörde ve Yolcular ekranında kalıcıdır", async ({ context, page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.locator('input[name="name"]').fill("Kayıt Operatörü");
-  await page.locator('input[name="pin"]').fill("123456");
-  await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
+  await completeSetup(page, "Kayıt Operatörü");
 
   await openRecordFolders(page);
   await expect(page.getByRole("heading", { name: "Günlük kayıt klasörleri" })).toBeVisible();
@@ -257,9 +252,7 @@ test("manuel yolcu kaydı günlük klasörde ve Yolcular ekranında kalıcıdır
 test("manuel yolcu kaydı tek birleşik PDF ile hazır olur", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.locator('input[name="name"]').fill("Toplu Evrak Operatörü");
-  await page.locator('input[name="pin"]').fill("123456");
-  await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
+  await completeSetup(page, "Toplu Evrak Operatörü");
 
   await openRecordFolders(page);
   await page.getByRole("button", { name: "+ YENİ YOLCU KAYDI", exact: true }).click();
@@ -309,9 +302,7 @@ test("manuel yolcu kaydı tek birleşik PDF ile hazır olur", async ({ page }) =
 test("otomatik web görünümü bilgisayarda genişler ve telefon tercihi kalıcıdır", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
-  await page.locator('input[name="name"]').fill("Web Operatörü");
-  await page.locator('input[name="pin"]').fill("123456");
-  await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
+  await completeSetup(page, "Web Operatörü");
 
   await expect.poll(() => page.locator(".ido-frame").evaluate((element) => element.getBoundingClientRect().width))
     .toBeGreaterThan(1100);
@@ -332,9 +323,7 @@ test("otomatik web görünümü bilgisayarda genişler ve telefon tercihi kalıc
 test("49 Excel dosyası sırayla işlenir ve çevrimdışı soğuk açılışta 49 yolcu kalır", async ({ context, page }) => {
   test.setTimeout(180_000);
   await page.goto("/");
-  await page.locator('input[name="name"]').fill("Toplu Test");
-  await page.locator('input[name="pin"]').fill("123456");
-  await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
+  await completeSetup(page, "Toplu Test");
   await openBulkImport(page);
 
   const files = Array.from({ length: 49 }, (_, offset) => {

@@ -290,7 +290,7 @@ export function PassengerRecordForm({
       <section className="ic-form-section">
         <div className="ic-form-section-head">
           <span>02</span>
-          <div><h3>Yolcu ve rezervasyon</h3><p>İDO Gate Visa yolcu listesi alanları.</p></div>
+          <div><h3>Yolcu ve rezervasyon</h3><p>Kapı vizesi yolcu listesi alanları.</p></div>
         </div>
         <div className="ic-form-grid">
           <label className="ic-form-field compact"><span>No</span><input inputMode="numeric" value={form.no} onChange={(event) => setValue("no", event.target.value)} placeholder="Otomatik / isteğe bağlı" /></label>

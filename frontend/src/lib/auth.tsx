@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
-import { AuthStatus, AuthUser, fetchAuthStatus, login, logout, setupAuth } from "@/lib/api";
+import { AuthStatus, AuthUser, fetchAuthStatus, login, loginWithRecovery, logout, setupAuth } from "@/lib/api";
+import { BrandMark } from "@/components/ui/BrandMark";
 
 type AuthValue = {
   user: AuthUser;
@@ -10,10 +11,24 @@ type AuthValue = {
 
 const AuthContext = createContext<AuthValue | null>(null);
 
+function AuthBrand() {
+  return (
+    <div className="brand-lockup auth-brand">
+      <BrandMark size={48} tone="on-light" />
+      <div>
+        <strong>Excelbase</strong>
+        <small>Çevrimdışı operasyon merkezi</small>
+      </div>
+    </div>
+  );
+}
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [pendingRecovery, setPendingRecovery] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState(false);
 
   useEffect(() => {
     fetchAuthStatus()
@@ -27,7 +42,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setBusy(true);
     setError("");
     try {
-      setStatus(await setupAuth(String(form.get("name") ?? ""), String(form.get("pin") ?? "")));
+      const next = await setupAuth(String(form.get("name") ?? ""), String(form.get("pin") ?? ""));
+      setStatus(next);
+      if (next.recoveryKey) setPendingRecovery(next.recoveryKey);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kurulum tamamlanamadı.");
     } finally {
@@ -49,6 +66,21 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
   }
 
+  async function handleRecovery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    setError("");
+    try {
+      setStatus(await loginWithRecovery(String(form.get("recovery") ?? "")));
+      setRecovering(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kurtarma kodu kabul edilmedi.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function signOut() {
     await logout();
     setStatus({ setup_required: false, authenticated: false, user: null });
@@ -57,7 +89,33 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const value = useMemo(() => (status?.user ? { user: status.user, signOut } : null), [status]);
 
   if (!status) {
-    return <div className="auth-loading">Excelbase Operations yerel kasası hazırlanıyor…</div>;
+    return <div className="auth-loading">Excelbase yerel kasası hazırlanıyor…</div>;
+  }
+
+  if (pendingRecovery) {
+    return (
+      <main className="auth-page">
+        <section className="auth-panel">
+          <AuthBrand />
+          <div className="auth-copy">
+            <p className="overline">Kurtarma kodu</p>
+            <h1>Bu kodu bir yere yazın</h1>
+            <p>
+              Erişim kodunu unutursanız kasayı yalnız bu kod açar. Sunucuda kopyası yoktur.
+              Ekranı kapatmadan önce bir kâğıda veya şifre yöneticisine kaydedin.
+            </p>
+          </div>
+          <p className="xb-recovery-key" aria-label="Kurtarma kodu">{pendingRecovery}</p>
+          <button
+            className="primary-btn wide"
+            type="button"
+            onClick={() => setPendingRecovery(null)}
+          >
+            Kodu yazdım, devam et
+          </button>
+        </section>
+      </main>
+    );
   }
 
   if (!status.authenticated || !status.user || !value) {
@@ -65,46 +123,71 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return (
       <main className="auth-page">
         <section className="auth-panel">
-          <div className="brand-lockup auth-brand">
-            <span className="auth-logo-mark" aria-hidden="true">XB</span>
-            <div>
-              <strong>Excelbase Operations</strong>
-              <small>Çevrimdışı Operasyon Merkezi</small>
-            </div>
-          </div>
+          <AuthBrand />
           <div className="auth-copy">
-            <p className="overline">{setup ? "İLK KURULUM" : "GÜVENLİ ERİŞİM"}</p>
-            <h1>{setup ? "Bu cihazdaki kasayı oluşturun" : "Yerel kasanın kilidini açın"}</h1>
+            <p className="overline">{setup ? "İlk kurulum" : recovering ? "Kurtarma" : "Güvenli erişim"}</p>
+            <h1>
+              {setup
+                ? "Bu cihazdaki kasayı oluşturun"
+                : recovering
+                  ? "Kurtarma koduyla açın"
+                  : "Yerel kasanın kilidini açın"}
+            </h1>
             <p>
               {setup
-                ? "Veriler bu iPhone’da şifreli saklanır. En az 6 haneli, tahmin edilmesi zor bir erişim kodu belirleyin."
-                : "Cihazdaki şifreli operasyon verilerini açmak için erişim kodunuzu girin."}
+                ? "Veriler bu iPhone’da şifreli saklanır. En az 6 haneli bir erişim kodu belirleyin; bir kurtarma kodu da üretilir."
+                : recovering
+                  ? "Kurulumda gösterilen kodu girin. Tireler isteğe bağlıdır."
+                  : "Cihazdaki şifreli operasyon verilerini açmak için erişim kodunuzu girin."}
             </p>
           </div>
-          <form className="auth-form" onSubmit={setup ? handleSetup : handleLogin}>
-            {setup && (
+          {recovering ? (
+            <form className="auth-form" onSubmit={handleRecovery}>
               <label className="field">
-                <span>Ad soyad</span>
-                <input name="name" autoComplete="name" required />
+                <span>Kurtarma kodu</span>
+                <input name="recovery" autoComplete="off" spellCheck={false} required />
               </label>
-            )}
-            <label className="field">
-              <span>Erişim kodu</span>
-              <input
-                name="pin"
-                type="password"
-                inputMode="numeric"
-                autoComplete={setup ? "new-password" : "current-password"}
-                minLength={6}
-                required
-              />
-            </label>
-            {error && <div className="form-error">{error}</div>}
-            <button className="primary-btn wide" disabled={busy} type="submit">
-              {busy ? "İşleniyor…" : setup ? "Kurulumu tamamla" : "Giriş yap"}
-            </button>
-          </form>
-          <p className="security-note">Kod sunucuya gönderilmez. Kodu unutursanız kasa açılamaz; düzenli şifreli yedek alın.</p>
+              {error && <div className="form-error">{error}</div>}
+              <button className="primary-btn wide" disabled={busy} type="submit">
+                {busy ? "İşleniyor…" : "Kurtarma koduyla aç"}
+              </button>
+              <button className="text-btn" type="button" onClick={() => { setRecovering(false); setError(""); }}>
+                Erişim koduna dön
+              </button>
+            </form>
+          ) : (
+            <form className="auth-form" onSubmit={setup ? handleSetup : handleLogin}>
+              {setup && (
+                <label className="field">
+                  <span>Ad soyad</span>
+                  <input name="name" autoComplete="name" required />
+                </label>
+              )}
+              <label className="field">
+                <span>Erişim kodu</span>
+                <input
+                  name="pin"
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete={setup ? "new-password" : "current-password"}
+                  minLength={6}
+                  required
+                />
+              </label>
+              {error && <div className="form-error">{error}</div>}
+              <button className="primary-btn wide" disabled={busy} type="submit">
+                {busy ? "İşleniyor…" : setup ? "Kurulumu tamamla" : "Giriş yap"}
+              </button>
+              {!setup && (
+                <button className="text-btn" type="button" onClick={() => { setRecovering(true); setError(""); }}>
+                  Kodu unuttum
+                </button>
+              )}
+            </form>
+          )}
+          <p className="security-note">
+            Kod sunucuya gönderilmez. Düzenli şifreli yedek alın; ikinci bir cihaza taşımak için eşleme kodunu kullanın.
+          </p>
         </section>
       </main>
     );

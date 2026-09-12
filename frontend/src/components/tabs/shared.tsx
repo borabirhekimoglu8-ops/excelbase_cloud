@@ -16,7 +16,7 @@ export function EmptyState({
   return (
     <div className="tab-body">
       <div className="empty-hero">
-        <span className="empty-mark">GV</span>
+        <span className="empty-mark">E</span>
         <h3>{title}</h3>
         <p className="muted">{subtitle}</p>
       </div>

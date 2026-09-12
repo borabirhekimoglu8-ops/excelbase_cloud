@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { completeSetup } from "./helpers";
 
 test("Claude Sonnet bağımsız çalışma alanı güvenli bağlamla gerçek sohbet akışını çalıştırır", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -47,13 +48,11 @@ test("Claude Sonnet bağımsız çalışma alanı güvenli bağlamla gerçek soh
   });
 
   await page.goto("/");
-  await page.locator('input[name="name"]').fill("Sonnet Test");
-  await page.locator('input[name="pin"]').fill("123456");
-  await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
+  await completeSetup(page, "Sonnet Test");
 
   await page.getByRole("button", { name: "Excelbase Asistanını aç" }).click();
-  await expect(page.getByText("Claude Sonnet", { exact: true })).toBeVisible();
-  await expect(page.getByText("Claude Sonnet hazır", { exact: true })).toBeVisible();
+  await expect(page.getByText("Asistan", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Asistan hazır", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Operasyonu birlikte netleştirelim." })).toBeVisible();
   const composerShell = page.locator(".assistant-composer-shell");
   const composerBox = await composerShell.boundingBox();
@@ -61,7 +60,7 @@ test("Claude Sonnet bağımsız çalışma alanı güvenli bağlamla gerçek soh
   expect(composerBox!.y + composerBox!.height).toBeLessThanOrEqual(844);
 
   const composer = page.getByRole("textbox", {
-    name: "Sonnet mesajı",
+    name: "Asistan mesajı",
     exact: true,
   });
   await expect(composer).toBeDisabled();
@@ -70,7 +69,7 @@ test("Claude Sonnet bağımsız çalışma alanı güvenli bağlamla gerçek soh
   await composer.fill("Bugünkü durumu özetle.");
   await page
     .getByRole("button", {
-      name: "Sonnet mesajını gönder",
+      name: "Asistan mesajını gönder",
       exact: true,
     })
     .click();
@@ -145,19 +144,17 @@ test("hızlı çift gönderim tek ücretli istek açar ve yeni konuşmaya eski y
   });
 
   await page.goto("/");
-  await page.locator('input[name="name"]').fill("Sonnet Race Test");
-  await page.locator('input[name="pin"]').fill("123456");
-  await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
+  await completeSetup(page, "Sonnet Race Test");
   await page.getByRole("button", { name: "Excelbase Asistanını aç" }).click();
   await page.getByText(/Yazdığım metnin Anthropic’e gönderileceğini biliyorum/).click();
 
   const composer = page.getByRole("textbox", {
-    name: "Sonnet mesajı",
+    name: "Asistan mesajı",
     exact: true,
   });
   await composer.fill("Tek kez gönder.");
   const send = page.getByRole("button", {
-    name: "Sonnet mesajını gönder",
+    name: "Asistan mesajını gönder",
     exact: true,
   });
   await send.evaluate((element) => {

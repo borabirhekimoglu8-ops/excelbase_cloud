@@ -40,6 +40,7 @@ import {
   packAssistantHistory,
 } from "@/lib/assistant/conversation";
 import { useStore } from "@/lib/store";
+import { setPendingImportFiles } from "@/lib/pendingImport";
 
 const SUGGESTIONS = [
   "Bugünkü operasyon durumunu yönetici özeti olarak çıkar.",
@@ -61,11 +62,11 @@ const CONFIGURATION_MESSAGES: Record<
   { title: string; body: string }
 > = {
   ready: {
-    title: "Claude Sonnet hazır",
+    title: "Asistan hazır",
     body: "Sunucu yapılandırması doğrulandı.",
   },
   disabled: {
-    title: "Sonnet sunucuda kapalı",
+    title: "Asistan sunucuda kapalı",
     body: "Excelbase servisinde EXCELBASE_ASSISTANT_ENABLED değerini 1 olarak tanımlayın.",
   },
   provider_mismatch: {
@@ -73,7 +74,7 @@ const CONFIGURATION_MESSAGES: Record<
     body: "Excelbase servisinde EXCELBASE_ASSISTANT_PROVIDER değerini anthropic olarak tanımlayın.",
   },
   model_mismatch: {
-    title: "Sonnet model ayarı uyuşmuyor",
+    title: "Asistan model ayarı uyuşmuyor",
     body: "Excelbase servisinde EXCELBASE_ASSISTANT_MODEL değerini claude-sonnet-5 olarak tanımlayın.",
   },
   api_key_missing: {
@@ -133,17 +134,19 @@ function friendlyError(error: unknown, context: AssistantErrorContext = "session
     if (error.status === 504) return "Sonnet zamanında yanıt vermedi. Soruyu kısaltıp tekrar deneyin.";
     return error.message;
   }
-  return error instanceof Error ? error.message : "Claude Sonnet yanıt veremedi.";
+  return error instanceof Error ? error.message : "Asistan yanıt veremedi.";
 }
 
 type AssistantWorkspaceProps = {
   conversation: AssistantConversationState;
   setConversation: Dispatch<SetStateAction<AssistantConversationState>>;
+  onNavigate?: (target: string) => void;
 };
 
 export function AssistantWorkspace({
   conversation,
   setConversation,
+  onNavigate,
 }: AssistantWorkspaceProps) {
   const { summary, dateScope } = useStore();
   const [status, setStatus] = useState<AssistantStatus | null>(null);
@@ -469,12 +472,12 @@ export function AssistantWorkspace({
   const scopeLabel = RANGE_LABELS[safeContext.scope.range] ?? "Tüm kayıtlar";
   const verifiedSonnet = status?.model_family === "sonnet";
   const modelLabel = verifiedSonnet
-    ? status.model_label?.trim() || "Claude Sonnet"
+    ? "Asistan"
     : "Çevrimiçi asistan";
   const configurationMessage = status?.configuration_state
     ? CONFIGURATION_MESSAGES[status.configuration_state]
     : {
-        title: "Sonnet yapılandırması tamamlanmadı",
+        title: "Asistan yapılandırması tamamlanmadı",
         body: "Render üzerindeki excelbase Web Service ortam değişkenlerini doğrulayıp yeniden deploy edin.",
       };
 
@@ -483,7 +486,7 @@ export function AssistantWorkspace({
       ref={workspaceRef}
       className={`assistant-workspace${ready ? " ready" : ""}`}
       tabIndex={-1}
-      aria-label="Claude Sonnet asistanı"
+      aria-label="Excelbase asistanı"
     >
       <section className="assistant-connection" role="status" aria-live="polite">
         <span className={`assistant-live-dot${ready && online ? " ready" : ""}`} aria-hidden="true" />
@@ -492,12 +495,12 @@ export function AssistantWorkspace({
             {!online
               ? "Çevrimdışı"
               : checking
-                ? "Sonnet bağlantısı kontrol ediliyor"
+                ? "Asistan bağlantısı kontrol ediliyor"
                 : ready
                   ? `${modelLabel} hazır`
                   : status?.available
                     ? "Çevrimiçi oturum gerekli"
-                    : "Sonnet yapılandırması bekleniyor"}
+                    : "Asistan yapılandırması bekleniyor"}
           </strong>
           <small>
             {ready && online
@@ -529,7 +532,7 @@ export function AssistantWorkspace({
             {ready && (
               <button
                 type="button"
-                aria-label="Çevrimiçi Sonnet oturumunu kapat"
+                aria-label="Çevrimiçi asistan oturumunu kapat"
                 disabled={disconnecting || sending}
                 onClick={() => void disconnectSession()}
               >
@@ -540,23 +543,27 @@ export function AssistantWorkspace({
         )}
       </section>
 
-      <section className="assistant-context-strip" aria-label="Sonnet operasyon bağlamı">
-        <div>
-          <span>KAPSAM</span>
+      <section className="assistant-context-strip" aria-label="Operasyon özeti">
+        <button type="button" onClick={() => onNavigate?.("reports")}>
+          <span>Kapsam</span>
           <strong>{scopeLabel}</strong>
-        </div>
-        <div>
-          <span>YOLCU</span>
+        </button>
+        <button type="button" onClick={() => onNavigate?.("gate-visa-list")}>
+          <span>Yolcu</span>
           <strong>{safeContext.metrics.passenger_count}</strong>
-        </div>
-        <div>
-          <span>HAZIRLIK</span>
+        </button>
+        <button type="button" onClick={() => onNavigate?.("reports")}>
+          <span>Hazırlık</span>
           <strong>%{safeContext.metrics.readiness_percent}</strong>
-        </div>
-        <div className={safeContext.metrics.missing_count ? "attention" : ""}>
-          <span>EKSİK</span>
+        </button>
+        <button
+          type="button"
+          className={safeContext.metrics.missing_count ? "attention" : ""}
+          onClick={() => onNavigate?.(safeContext.metrics.missing_count ? "passengers-eksik" : "gate-visa-list")}
+        >
+          <span>Eksik</span>
           <strong>{safeContext.metrics.missing_count}</strong>
-        </div>
+        </button>
       </section>
 
       {!checking && online && status && !status.available && (
@@ -664,17 +671,33 @@ export function AssistantWorkspace({
             aria-live="polite"
             aria-relevant="additions"
             aria-busy={sending}
-            aria-label="Sonnet konuşması"
+            aria-label="Asistan konuşması"
           >
             {messages.length === 0 && (
               <div className="assistant-welcome">
                 <span className="assistant-sonnet-mark" aria-hidden="true">S</span>
-                <p>{verifiedSonnet ? modelLabel.toLocaleUpperCase("tr-TR") : "EXCELBASE ÇEVRİMİÇİ ASİSTAN"}</p>
+                <p>{verifiedSonnet ? "Excelbase asistanı" : "Excelbase çevrimiçi asistan"}</p>
                 <h1>Operasyonu birlikte netleştirelim.</h1>
                 <p>
-                  Sonnet yalnız ekrandaki toplu operasyon özetini otomatik alır.
+                  Asistan yalnız ekrandaki toplu operasyon özetini otomatik alır.
                   Yolcu adı, pasaport, PDF, fotoğraf ve dosya içeriği gönderilmez.
                 </p>
+                <label className="assistant-file-handoff">
+                  Excel listesini kapı vizesine çevir
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.xlsm,.csv,.ods,.zip,application/zip"
+                    multiple
+                    aria-label="Kapı vizesi listesi seç"
+                    onChange={(event) => {
+                      const files = Array.from(event.currentTarget.files ?? []);
+                      event.currentTarget.value = "";
+                      if (!files.length) return;
+                      setPendingImportFiles(files);
+                      onNavigate?.("import");
+                    }}
+                  />
+                </label>
                 <div className="assistant-suggestions">
                   {SUGGESTIONS.map((suggestion) => (
                     <button
@@ -693,7 +716,7 @@ export function AssistantWorkspace({
 
             {messages.map((message) => (
               <article key={message.id} className={`assistant-message ${message.role}`}>
-                <span>{message.role === "assistant" ? "SONNET" : "SİZ"}</span>
+                <span>{message.role === "assistant" ? "ASİSTAN" : "SİZ"}</span>
                 <p>{message.content}</p>
                 {message.status === "failed" && <small>Gönderilemedi · yeni mesaj geçmişine eklenmedi</small>}
                 {message.role === "assistant" && message.outputTokens !== undefined && (
@@ -707,7 +730,7 @@ export function AssistantWorkspace({
               {toolActivity.length > 0 && (
                 <span className="assistant-tool-activity">{toolActivity.join(" · ")}</span>
               )}
-                <span>SONNET</span>
+                <span>ASİSTAN</span>
                 <p><i aria-hidden="true" /> <i aria-hidden="true" /> <i aria-hidden="true" /> Yanıt hazırlanıyor</p>
               </article>
             )}
@@ -744,16 +767,16 @@ export function AssistantWorkspace({
                 }}
                 onKeyDown={onComposerKeyDown}
                 rows={2}
-                placeholder={online ? "Sonnet’e sorun…" : "Sonnet için internet bağlantısı gerekli"}
+                placeholder={online ? "Asistana sorun…" : "Asistan için internet bağlantısı gerekli"}
                 disabled={!online || sending || !privacyAcknowledged}
-                aria-label="Sonnet mesajı"
+                aria-label="Asistan mesajı"
               />
               {sending ? (
                 <button
                   className="stop"
                   type="button"
                   onClick={() => requestRef.current?.abort()}
-                  aria-label="Sonnet yanıtını beklemeyi durdur"
+                  aria-label="Asistan yanıtını beklemeyi durdur"
                 >
                   ■
                 </button>
@@ -761,13 +784,13 @@ export function AssistantWorkspace({
                 <button
                   type="submit"
                   disabled={!draft.trim() || !online || !privacyAcknowledged}
-                  aria-label="Sonnet mesajını gönder"
+                  aria-label="Asistan mesajını gönder"
                 >
                   ↑
                 </button>
               )}
             </form>
-            <small>Sonnet hata yapabilir. Önemli operasyon kararlarını kaynaktan doğrulayın.</small>
+            <small>Asistan hata yapabilir. Önemli operasyon kararlarını kaynaktan doğrulayın.</small>
           </section>
 
         </>

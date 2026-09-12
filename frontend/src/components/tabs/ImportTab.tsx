@@ -23,6 +23,7 @@ import { newId } from "@/lib/id";
 import { IMAGE_ACCEPT } from "@/lib/imageFormat";
 import { useStore } from "@/lib/store";
 import { LocalDownloadButton } from "@/components/LocalDownloadButton";
+import { takePendingImportFiles } from "@/lib/pendingImport";
 
 type Step = "files" | "mapping" | "result";
 type DeliveryStage = "waiting" | "sending" | "retrying" | "delivered" | "failed";
@@ -205,6 +206,13 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
     void refreshUnmatched();
   }, [refreshUnmatched, summary.passenger_count]);
 
+  useEffect(() => {
+    const pending = takePendingImportFiles();
+    if (pending.length) void ingestFiles(pending);
+    // One-shot handoff from the assistant / home screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ZIP parent satırı child toplamlarını zaten taşır. Sonuç toplamlarında
   // parent ve child'ları birlikte toplamak yolcu sayısını iki kez sayardı.
   const topLevelJobs = jobs.filter((job) => !job.parent_id);
@@ -218,13 +226,8 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
   const combinedMessage = jobs.map((j) => j.message).join(" ").toLowerCase();
   const canReview = topLevelJobs.length > 0 && !queueActive;
 
-  async function handleExcel(event: ChangeEvent<HTMLInputElement>) {
-    const input = event.target;
-    const sourceFiles = Array.from(input.files ?? []);
-    if (!sourceFiles.length) {
-      input.value = "";
-      return;
-    }
+  async function ingestFiles(sourceFiles: File[]) {
+    if (!sourceFiles.length) return;
 
     setUploading(true);
     const batchId = newId();
@@ -362,11 +365,16 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
       notify(error instanceof Error ? error.message : "Dosya aktarımı beklenmedik biçimde durdu.", "error");
       void refreshQueue();
     } finally {
-      // iPhone dosya tutamaçları bütün sıra bitene kadar canlı tutulur.
-      input.value = "";
       setDeliveryProgress(null);
       setUploading(false);
     }
+  }
+
+  async function handleExcel(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.target;
+    const sourceFiles = Array.from(input.files ?? []);
+    input.value = "";
+    await ingestFiles(sourceFiles);
   }
 
   async function handleRetry(job: ImportJob) {
@@ -637,7 +645,7 @@ export function ImportTab({ onNavigate }: { onNavigate: (tab: string) => void })
             <div>
               <p className="ic-section-title">Alan Eşleştirme Kontrolü</p>
               <p style={{ margin: 0, color: "var(--ido-muted)", fontWeight: 500, fontSize: 9 }}>
-                Gate Visa PAX LIST şablonu sistem tarafından eşleştirildi
+                Kapı vizesi listesi şablonu sistem tarafından eşleştirildi
               </p>
             </div>
           </div>

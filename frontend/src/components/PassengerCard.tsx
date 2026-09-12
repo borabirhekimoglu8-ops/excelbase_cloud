@@ -1,6 +1,8 @@
 "use client";
 
 import { Passenger } from "@/lib/api";
+import { IMAGE_ACCEPT } from "@/lib/imageFormat";
+import { SwipeRow } from "@/components/ui/SwipeRow";
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -41,6 +43,7 @@ export function PassengerCard({
   canAddDocuments = false,
   documentBusy = false,
   onAddDocuments,
+  onAddPhoto,
 }: {
   passenger: Passenger;
   onOpen?: (id: number) => void;
@@ -50,6 +53,7 @@ export function PassengerCard({
   canAddDocuments?: boolean;
   documentBusy?: boolean;
   onAddDocuments?: (id: number, files: File[]) => Promise<void> | void;
+  onAddPhoto?: (id: number, file: File) => Promise<void> | void;
 }) {
   const { tone, label } = passengerStatusTone(passenger);
   const documentCount = passenger.documents?.length ?? 0;
@@ -61,7 +65,7 @@ export function PassengerCard({
     `${documentCount} PDF`,
   ].filter(Boolean);
 
-  return (
+  const row = (
     <div
       className="ic-row as-btn"
       style={{ minHeight: 76 }}
@@ -123,5 +127,50 @@ export function PassengerCard({
         )}
       </div>
     </div>
+  );
+
+  const swipeEnabled = Boolean(canAddDocuments || onAddPhoto);
+  return (
+    <SwipeRow
+      disabled={!swipeEnabled}
+      actions={(
+        <>
+          {onAddPhoto && (
+            <label>
+              Fotoğraf
+              <input
+                type="file"
+                accept={IMAGE_ACCEPT}
+                aria-label={`${passenger.full_name || "Yolcu"} için fotoğraf seç`}
+                onChange={async (event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) await onAddPhoto(passenger.id, file);
+                }}
+              />
+            </label>
+          )}
+          {canAddDocuments && (
+            <label>
+              PDF
+              <input
+                type="file"
+                accept=".pdf,application/pdf"
+                multiple
+                disabled={documentBusy}
+                aria-label={`${passenger.full_name || "Yolcu"} için PDF evrak seç`}
+                onChange={async (event) => {
+                  const files = Array.from(event.currentTarget.files ?? []);
+                  event.currentTarget.value = "";
+                  if (files.length) await onAddDocuments?.(passenger.id, files);
+                }}
+              />
+            </label>
+          )}
+        </>
+      )}
+    >
+      {row}
+    </SwipeRow>
   );
 }

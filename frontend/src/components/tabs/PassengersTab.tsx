@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Passenger,
   addPassengerDocuments,
+  setPassengerPhoto,
   bulkDelete,
   fetchImportQueue,
   fetchPassengerPage,
@@ -16,9 +17,10 @@ import { PassengerDetail } from "@/components/PassengerDetail";
 import { downloadLocal } from "@/lib/offline/downloads";
 
 const FILTER_CHIPS: { key: string; label: (n: number) => string; tone?: "ok" | "warn" }[] = [
-  { key: "", label: (n) => `TÜM KAYITLAR ${n}` },
-  { key: "Hazır", label: (n) => `HAZIR ${n}`, tone: "ok" },
-  { key: "Eksik", label: (n) => `BELGE EKSİK ${n}`, tone: "warn" },
+  { key: "", label: (n) => `Tüm kayıtlar ${n}` },
+  { key: "Hazır", label: (n) => `Hazır ${n}`, tone: "ok" },
+  { key: "Eksik", label: (n) => `Belge eksik ${n}`, tone: "warn" },
+  { key: "Fotosuz", label: (n) => `Fotosuz ${n}`, tone: "warn" },
 ];
 
 const PAGE_SIZE = 20;
@@ -181,6 +183,17 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
     }
   }
 
+  async function handleInlinePhoto(passengerId: number, file: File) {
+    try {
+      await setPassengerPhoto(passengerId, file);
+      notify("Fotoğraf kaydedildi.");
+      bump();
+      setRetryNonce((value) => value + 1);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Fotoğraf kaydedilemedi.", "error");
+    }
+  }
+
   async function handleInlineDocuments(passengerId: number, files: File[]) {
     if (!files.length) return;
     setDocumentUploadId(passengerId);
@@ -338,6 +351,7 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
             canAddDocuments={canWrite}
             documentBusy={documentUploadId === p.id}
             onAddDocuments={handleInlineDocuments}
+            onAddPhoto={canWrite ? handleInlinePhoto : undefined}
           />
         ))}
       </div>

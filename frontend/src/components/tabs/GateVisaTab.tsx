@@ -119,8 +119,8 @@ export function GateVisaTab({
         <button type="button" className="ic-gatevisa-primary" onClick={onImport}>
           <span aria-hidden="true">⇪</span>
           <span>
-            <strong>EXCEL İLE LİSTE YÜKLE</strong>
-            <small>Gate Visa PAX listesi · ZIP veya Excel</small>
+            <strong>Excel ile liste yükle</strong>
+            <small>Kapı vizesi listesi · ZIP veya Excel</small>
           </span>
         </button>
       </section>
