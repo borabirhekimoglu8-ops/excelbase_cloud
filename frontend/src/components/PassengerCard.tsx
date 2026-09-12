@@ -141,7 +141,7 @@ export function PassengerCard({
               <input
                 type="file"
                 accept={IMAGE_ACCEPT}
-                aria-label={`${passenger.full_name || "Yolcu"} için fotoğraf seç`}
+                aria-label={`${passenger.full_name || "Yolcu"} için kaydırarak fotoğraf seç`}
                 onChange={async (event) => {
                   const file = event.currentTarget.files?.[0];
                   event.currentTarget.value = "";
@@ -158,7 +158,7 @@ export function PassengerCard({
                 accept=".pdf,application/pdf"
                 multiple
                 disabled={documentBusy}
-                aria-label={`${passenger.full_name || "Yolcu"} için PDF evrak seç`}
+                aria-label={`${passenger.full_name || "Yolcu"} için kaydırarak PDF evrak seç`}
                 onChange={async (event) => {
                   const files = Array.from(event.currentTarget.files ?? []);
                   event.currentTarget.value = "";
