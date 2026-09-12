@@ -15,6 +15,7 @@ import {
   updatePassenger,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { IMAGE_ACCEPT, IMAGE_FORMAT_LABEL } from "@/lib/imageFormat";
 import { useStore } from "@/lib/store";
 
 type FormKey = Exclude<keyof ManualPassengerInput, "created_by" | "save_as_draft">;
@@ -74,7 +75,7 @@ function completeRecordError(
   if (!form.departure_date || !form.arrival_date) return "Gidiş ve varış tarihlerini seçin.";
   if (form.arrival_date < form.departure_date) return "Varış tarihi gidiş tarihinden önce olamaz.";
   if (!form.adult_fee.trim() && !form.child_fee.trim()) return "Yetişkin veya çocuk ücretini girin.";
-  if (!photo) return "JPG biyometrik fotoğrafı ekleyin.";
+  if (!photo) return "Biyometrik fotoğrafı ekleyin.";
   if (!hasRequiredDocumentCoverage(documents)) {
     return "Tek birleşik evrak PDF'ini veya ayrı pasaport ve başvuru formu PDF'lerini ekleyin.";
   }
@@ -128,10 +129,6 @@ export function PassengerRecordForm({
     const file = input.files?.[0] ?? null;
     input.value = "";
     if (!file) return;
-    if (!/\.(jpe?g|png|webp)$/i.test(file.name) || (file.type && !/^image\/(jpe?g|png|webp)$/i.test(file.type))) {
-      setFormError("Biyometrik fotoğraf JPG, PNG veya WEBP formatında olmalıdır.");
-      return;
-    }
     if (file.size > MAX_PHOTO_BYTES) {
       setFormError("Biyometrik fotoğraf 25 MB sınırını aşıyor.");
       return;
@@ -268,7 +265,7 @@ export function PassengerRecordForm({
         <div>
           <p className="ic-record-eyebrow">YENİ YOLCU DOSYASI</p>
           <h2>Tek kayıtta bilgi ve evrak</h2>
-          <p>Excel şablonundaki alanları doldurun; JPG fotoğraf ve PDF evrakları aynı yolcu klasörüne bağlayın.</p>
+          <p>Excel şablonundaki alanları doldurun; fotoğraf ve PDF evrakları aynı yolcu klasörüne bağlayın.</p>
         </div>
         <div className="ic-record-date-seal">
           <span>KAYIT TARİHİ</span>
@@ -320,7 +317,7 @@ export function PassengerRecordForm({
       <section className="ic-form-section">
         <div className="ic-form-section-head">
           <span>04</span>
-          <div><h3>Biyometrik fotoğraf</h3><p>Tek bir gerçek JPG, PNG veya WEBP dosyası, en fazla 25 MB.</p></div>
+          <div><h3>Biyometrik fotoğraf</h3><p>{IMAGE_FORMAT_LABEL}; en fazla 25 MB.</p></div>
         </div>
         <div className="ic-record-photo">
           <div className="ic-record-photo-preview">
@@ -333,7 +330,7 @@ export function PassengerRecordForm({
             <strong>{photo?.name ?? "Fotoğraf seçilmedi"}</strong>
             <small>{photo ? formatSize(photo.size) : "Yolcunun biyometrik fotoğrafını ekleyin"}</small>
             <div className="ic-record-file-actions">
-              <label className="ic-record-file-button primary">{photo ? "FOTOĞRAF DEĞİŞTİR" : "FOTOĞRAF SEÇ"}<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handlePhoto} /></label>
+              <label className="ic-record-file-button primary">{photo ? "FOTOĞRAF DEĞİŞTİR" : "FOTOĞRAF SEÇ"}<input type="file" accept={IMAGE_ACCEPT} aria-label="Biyometrik fotoğraf seç" onChange={handlePhoto} /></label>
               {photo && <button type="button" onClick={() => setPhoto(null)}>Kaldır</button>}
             </div>
           </div>

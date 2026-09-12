@@ -8,14 +8,14 @@ Excelbase Operations; iş dosyalarını, C kodlarını, görevleri, notları, ev
 - Yolcu, görev, operasyon notu ve genel ofis evraklarını aynı iş dosyasına bağlar.
 - C kodlarını açıklama, geçerlilik tarihi ve etiketlerle aranabilir bir arşivde tutar.
 - Yolcu evraklarıyla genel PDF, Word, Excel, görsel ve yazışmaları birleşik Evrak Merkezi'nde gösterir.
-- ANA, İŞLER, YOLCULAR, EVRAKLAR ve RAPORLAR için tek bir mobil çalışma alanı sunar.
+- ANA, KAPI, İŞLER, YOLCULAR ve EVRAKLAR sekmeleriyle tek bir mobil çalışma alanı sunar; satış verileri ve raporlar ana ekrandan açılır.
 - Uygulama içindeki bağımsız Claude Sonnet çalışma alanında gerçek sohbet sunar; otomatik bağlam yalnız toplu operasyon sayılarını içerir.
 - Gate Visa modülünde:
   - XLSX, XLS, XLSM, ODS ve CSV yolcu listelerini; ayrıca bu dosyaları içeren ZIP arşivlerini işler.
   - Dosya adedi sınırı koymaz; dosyaları sırayla işleyerek mobil cihaz belleğini korur.
-  - Yolcu kartından birden fazla PDF evrak ve JPG/JPEG biyometrik fotoğraf ekler.
+  - Yolcu kartından birden fazla PDF evrak ve biyometrik fotoğraf ekler; fotoğraf JPG, PNG, HEIC, WEBP, GIF, BMP, TIFF veya AVIF olabilir. Biçim dosya adından değil içeriğinden tanınır, uzantısız veya yanlış uzantılı dosyalar da kabul edilir. HEIC ve büyük çekimler cihazda en fazla 1200 px'lik JPEG'e çevrilir (tarayıcı çözebildiğinde; aksi hâlde özgün dosya saklanır).
   - Yolcuları tarih, durum ve metin ile filtreler; tekrarları ve eksik alanları gösterir.
-  - İDO logolu günlük liste, Excel, CSV, manifest, fotoğraf/evrak ZIP'i ve teslim paketi üretir.
+  - Yazdırılabilir günlük liste, Excel, CSV, manifest, fotoğraf/evrak ZIP'i ve teslim paketi üretir.
 - Yolcu, çalışma alanı ve ikili dosya kayıtlarını Web Crypto (AES-GCM) ile cihazda şifreli saklar.
 - Şifreli cihaz yedeği alır ve geri yükler.
 - Uygulama kabuğu ilk başarılı açılıştan sonra çevrimdışı çalışır.
@@ -44,7 +44,8 @@ Excelbase Operations; iş dosyalarını, C kodlarını, görevleri, notları, ev
 - `frontend/` — statik Next.js PWA, IndexedDB veri katmanı, Web Crypto kasası, dosya ayrıştırıcıları ve yerel çıktı üreticileri.
 - `frontend/public/sw.js` — uygulama kabuğunu sürümleyip çevrimdışı açılışı sağlayan service worker.
 - `backend/` — statik üretim çıktısını, sağlık kontrolünü ve kimliği doğrulanmış Sonnet proxy'sini sunan FastAPI katmanı. Ana PWA çalışma verisi için bu API'ye bağlı değildir.
-- `v8/` — ayrı tutulan eski/deneysel ilişkisel servis; ana PWA arayüzünde V8 sayfası bulunmaz.
+- `v8/` — ayrı tutulan eski/deneysel ilişkisel servis; ana PWA arayüzünde V8 sayfası bulunmaz. `render.yaml` bu servisi ayrı dağıttığı için yerinde durur.
+- `legacy/streamlit/` — PWA öncesi Streamlit arayüzünün arşivi. Geliştirilmez ve dağıtılmaz; paylaşılan Python okuyucuları (`excelbase_core.py`, `gate_visa_reader.py`, `operation_helpers.py` vb.) hâlâ depo kökünde durur çünkü FastAPI ve v8 de onları kullanır.
 
 ## Yerel geliştirme
 

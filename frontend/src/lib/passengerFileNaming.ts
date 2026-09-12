@@ -1,4 +1,5 @@
 import type { DocumentCategory } from "@/lib/documentCategories";
+import { IMAGE_EXTENSIONS, isImageFilename, normalizeImageExtension } from "@/lib/imageFormat";
 
 export type PassengerFileIdentity = {
   id?: number;
@@ -98,12 +99,14 @@ export function passengerFileBase(passenger: PassengerFileIdentity): string {
  * would hand the operator a file their photo viewer refuses to open.
  */
 export function photoExtension(sourceFilename: string, fallback = "jpg"): string {
-  const extension = sourceFilename.split(".").pop()?.toLocaleLowerCase("en-US") ?? "";
-  return /^(jpe?g|png|webp)$/.test(extension) ? (extension === "jpeg" ? "jpg" : extension) : fallback;
+  return isImageFilename(sourceFilename)
+    ? normalizeImageExtension(sourceFilename.split(".").pop() ?? "")
+    : fallback;
 }
 
 export function passengerPhotoFilename(passenger: PassengerFileIdentity, extension = "jpg"): string {
-  const safeExtension = /^(jpg|png|webp)$/.test(extension) ? extension : "jpg";
+  const normalized = normalizeImageExtension(extension);
+  const safeExtension = IMAGE_EXTENSIONS.has(normalized) ? normalized : "jpg";
   return `${passengerFileBase(passenger)}.${safeExtension}`;
 }
 

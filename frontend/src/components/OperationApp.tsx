@@ -52,6 +52,8 @@ type Screen =
   | { kind: "new-passenger" }
   | { kind: "import" }
   | { kind: "records" }
+  | { kind: "sales" }
+  | { kind: "reports" }
   | { kind: "assistant" }
   | { kind: "settings" }
   | { kind: "settings-sub"; sub: SettingsSub };
@@ -61,8 +63,6 @@ const ROOT_TITLES: Record<Exclude<PrimaryNavKey, "home">, string> = {
   "work-files": "İş Dosyaları",
   passengers: "Yolcu Listelerim",
   documents: "Evrak Merkezi",
-  sales: "Satış Verileri",
-  reports: "Raporlar",
 };
 
 const SETTINGS_TITLES: Record<SettingsSub, string> = {
@@ -91,6 +91,18 @@ function Shell() {
       setLayoutPreference("auto");
     }
   }, []);
+
+  // The window is the scroll container, so a screen opened from the bottom of
+  // a long page would otherwise appear already scrolled past its own header.
+  const screenKey = [
+    screen.kind,
+    "tab" in screen ? screen.tab : "",
+    "sub" in screen ? screen.sub : "",
+    "id" in screen ? screen.id : "",
+  ].join(":");
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [screenKey]);
 
   function updateLayoutPreference(nextPreference: LayoutPreference) {
     setLayoutPreference(nextPreference);
@@ -130,12 +142,8 @@ function Shell() {
       goRoot(target);
       return;
     }
-    if (target === "records") {
-      setScreen({ kind: "records" });
-      return;
-    }
-    if (target === "import") {
-      setScreen({ kind: "import" });
+    if (target === "records" || target === "import" || target === "sales" || target === "reports") {
+      setScreen({ kind: target });
       return;
     }
     goRoot("home");
@@ -159,16 +167,18 @@ function Shell() {
     setScreen({ kind: "settings-sub", sub: destination });
   }
 
+  // Import and the record folders are Kapı work, so the Kapı tab stays lit
+  // underneath them. Sales and reports open from the home screen with a back
+  // button and no tab bar, like settings.
   const bottomNavActive: PrimaryNavKey | null = screen.kind === "root"
     ? screen.tab
-    : screen.kind === "import"
+    : screen.kind === "import" || screen.kind === "records"
       ? "gate-visa"
-      : screen.kind === "records"
-        ? "reports"
-        : null;
+      : null;
   const showDateScope = (
-    (screen.kind === "root" && (screen.tab === "gate-visa" || screen.tab === "reports"))
+    (screen.kind === "root" && screen.tab === "gate-visa")
     || screen.kind === "records"
+    || screen.kind === "reports"
   );
   const stickyContent = screen.kind === "import" || screen.kind === "new-passenger" || screen.kind === "new-work-file";
 
@@ -184,22 +194,26 @@ function Shell() {
         {screen.kind === "root" && screen.tab !== "home" && (
           <AppHeaderScreen
             title={ROOT_TITLES[screen.tab]}
-            brand={screen.tab === "gate-visa" ? "ido" : "operations"}
             onAssistant={openAssistant}
             onSettings={() => setScreen({ kind: "settings" })}
           />
         )}
         {screen.kind === "work-file" && (
-          <AppHeaderScreen title="İş Dosyası" brand="operations" onBack={() => goRoot("work-files")} />
+          <AppHeaderScreen title="İş Dosyası" onBack={() => goRoot("work-files")} />
         )}
         {screen.kind === "new-work-file" && (
-          <AppHeaderScreen title="Yeni İş Dosyası" brand="operations" onBack={() => goRoot("work-files")} />
+          <AppHeaderScreen title="Yeni İş Dosyası" onBack={() => goRoot("work-files")} />
+        )}
+        {screen.kind === "sales" && (
+          <AppHeaderScreen title="Satış Verileri" onBack={() => goRoot("home")} />
+        )}
+        {screen.kind === "reports" && (
+          <AppHeaderScreen title="Raporlar" onBack={() => goRoot("home")} />
         )}
         {screen.kind === "records" && (
           <AppHeaderScreen
             title="Kayıt Klasörleri"
-            brand="ido"
-            onBack={() => goRoot("reports")}
+            onBack={() => goRoot("gate-visa")}
             action={
               user.role !== "viewer" ? (
                 <button className="ido-header-action" onClick={() => setScreen({ kind: "new-passenger" })} type="button">
@@ -212,7 +226,6 @@ function Shell() {
         {screen.kind === "new-passenger" && (
           <AppHeaderScreen
             title="Yeni Yolcu Kaydı"
-            brand="ido"
             onBack={() => {
               if (window.confirm("Yeni kayıt ekranından çıkılsın mı? Kaydedilmemiş bilgiler silinir.")) {
                 goRoot("gate-visa", { gateView: "list" });
@@ -223,14 +236,12 @@ function Shell() {
         {screen.kind === "import" && (
           <AppHeaderScreen
             title="Toplu Yolcu Yükleme"
-            brand="ido"
             onBack={() => goRoot("gate-visa", { gateView: "list" })}
           />
         )}
         {screen.kind === "assistant" && (
           <AppHeaderScreen
             title="Claude Sonnet"
-            brand="operations"
             onBack={() => setScreen(
               assistantReturnScreen.kind === "assistant"
                 ? { kind: "root", tab: "home" }
@@ -239,12 +250,11 @@ function Shell() {
           />
         )}
         {screen.kind === "settings" && (
-          <AppHeaderScreen title="Ayarlar" brand="operations" onBack={() => goRoot("home")} />
+          <AppHeaderScreen title="Ayarlar" onBack={() => goRoot("home")} />
         )}
         {screen.kind === "settings-sub" && (
           <AppHeaderScreen
             title={SETTINGS_TITLES[screen.sub]}
-            brand={screen.sub === "management" ? "operations" : "ido"}
             onBack={() => setScreen({ kind: "settings" })}
           />
         )}
@@ -262,7 +272,6 @@ function Shell() {
             <HomeTab
               onNavigate={navigate}
               onOpenWorkFile={(id) => setScreen({ kind: "work-file", id })}
-              onAssistant={openAssistant}
             />
           )}
           {screen.kind === "root" && screen.tab === "work-files" && (
@@ -287,8 +296,8 @@ function Shell() {
               initialStatus={screen.passengerStatus ?? ""}
             />
           )}
-          {screen.kind === "root" && screen.tab === "sales" && <SalesTab />}
-          {screen.kind === "root" && screen.tab === "reports" && <ReportsTab onOpen={openReport} />}
+          {screen.kind === "sales" && <SalesTab />}
+          {screen.kind === "reports" && <ReportsTab onOpen={openReport} />}
           {screen.kind === "work-file" && <WorkFileDetail id={screen.id} onBack={() => goRoot("work-files")} />}
           {screen.kind === "new-work-file" && (
             <WorkFileForm

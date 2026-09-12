@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# The shared readers (excelbase_core, gate_visa_reader, ...) still live at the
+# repository root because the FastAPI backend and v8 import them too.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 import base64
 import html
 import json

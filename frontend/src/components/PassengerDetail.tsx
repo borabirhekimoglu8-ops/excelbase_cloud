@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
+import { IMAGE_ACCEPT, IMAGE_FORMAT_LABEL } from "@/lib/imageFormat";
 import { PassengerPhoto, passengerStatusTone } from "@/components/PassengerCard";
 import { AppHeaderScreen } from "@/components/ido/AppHeader";
 
@@ -153,13 +154,6 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
   async function handlePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    const extensionOk = /\.(jpe?g|png|webp)$/i.test(file.name);
-    const mimeOk = !file.type || /^image\/(jpe?g|png|webp)$/i.test(file.type);
-    if (!extensionOk || !mimeOk) {
-      notify("Biyometrik fotoğraf JPG, PNG veya WEBP formatında olmalıdır.", "error");
-      event.target.value = "";
-      return;
-    }
     setBusy(true);
     try {
       await setPassengerPhoto(id, file);
@@ -397,12 +391,9 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
               <span className="ic-filetype pdf">FOTO</span>
               <div className="ic-row-copy">
                 <p className="ic-row-title">
-                  {/* The stored format (jpg/png/webp) is not known without opening
-                      the binary, so the label states the fact rather than
-                      guessing a filename whose extension could be wrong. */}
                   {passenger.photo ? "Fotoğraf yüklendi" : "Fotoğraf yüklenmedi"}
                 </p>
-                <p className="ic-row-meta">{passenger.photo ? "Yolcu profilinde kullanılıyor" : "JPG, PNG veya WEBP kabul edilir"}</p>
+                <p className="ic-row-meta">{passenger.photo ? "Yolcu profilinde kullanılıyor" : IMAGE_FORMAT_LABEL}</p>
               </div>
             </div>
             {canWrite && (
@@ -411,7 +402,7 @@ export function PassengerDetail({ id, onClose }: { id: number; onClose: () => vo
                   {passenger.photo ? "FOTOĞRAF DEĞİŞTİR" : "FOTOĞRAF EKLE"}
                   <input
                     type="file"
-                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                    accept={IMAGE_ACCEPT}
                     aria-label="Biyometrik fotoğraf seç"
                     onChange={handlePhoto}
                     disabled={busy}

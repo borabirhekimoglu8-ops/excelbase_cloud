@@ -33,6 +33,14 @@ import type {
 } from "@/lib/api";
 import { newId } from "@/lib/id";
 import {
+  IMAGE_FORMAT_LABEL,
+  imageMimeFromFilename,
+  isImageFilename,
+  sniffImageFormat,
+  withImageExtension,
+} from "@/lib/imageFormat";
+import { normalizePhoto } from "@/lib/photoNormalize";
+import {
   autoNamedPassengerDocuments,
   passengerPhotoFilename,
   photoExtension,
@@ -119,7 +127,7 @@ const META_OPERATION = "operation-meta";
 const META_UNMATCHED = "unmatched-photos";
 const META_LAST_UNDO = "last-undo";
 const META_BATCH_PREFIX = "import-batch:";
-const APP_VERSION = "7.6.3-offline";
+const APP_VERSION = "7.8.0-offline";
 const SOURCE_PREFIX = "source:";
 const PHOTO_PREFIX = "photo:";
 const DOCUMENT_PREFIX = "document:";
@@ -1427,64 +1435,29 @@ export async function localUploadPassengerFiles(files: File[], replace: boolean,
   };
 }
 
-function imageMime(filename: string, fallback = "application/octet-stream"): string {
-  const ext = filename.split(".").pop()?.toLocaleLowerCase("en-US");
-  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
-  if (ext === "png") return "image/png";
-  if (ext === "webp") return "image/webp";
-  if (ext === "heic" || ext === "heif") return "image/heic";
-  return fallback;
-}
-
 function leafFilename(filename: string, fallback: string): string {
   const leaf = filename.replaceAll("\\", "/").split("/").pop()?.trim() ?? "";
   return leaf || fallback;
 }
 
-/** Extensions accepted for a passenger photo. HEIC is left out: its signature
- * lives in an ISO base-media box rather than a fixed byte prefix, which the
- * cheap check below cannot verify. */
-const PHOTO_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
-
-async function photoSignatureMatches(blob: Blob, extension: string): Promise<boolean> {
-  if (extension === "jpg" || extension === "jpeg") {
-    const head = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
-    return head.length === 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+/**
+ * Accepts any real picture and returns it renamed to the format its bytes
+ * declare. The filename and declared MIME type are advisory only: a PNG
+ * called ".jpg" is stored as a PNG, a file with no extension is fine, and
+ * text renamed to ".jpg" is rejected.
+ */
+async function acceptedPhoto(blob: Blob, filename: string): Promise<{ filename: string; blob: Blob }> {
+  const format = await sniffImageFormat(blob);
+  if (!format) {
+    throw new Error(`${leafFilename(filename, "Fotoğraf")}: geçerli bir görüntü dosyası değil (${IMAGE_FORMAT_LABEL}).`);
   }
-  if (extension === "png") {
-    const head = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
-    const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-    return head.length === 8 && signature.every((byte, index) => head[index] === byte);
-  }
-  if (extension === "webp") {
-    const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
-    return head.length === 12
-      && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46
-      && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50;
-  }
-  return false;
-}
-
-async function assertPhotoBlob(blob: Blob, filename: string, declaredMime = blob.type): Promise<void> {
-  const extension = filename.split(".").pop()?.toLocaleLowerCase("en-US") ?? "";
-  if (!PHOTO_EXTENSIONS.has(extension)) {
-    throw new Error(`${filename || "Fotoğraf"}: JPG, JPEG veya PNG olmalıdır.`);
-  }
-  const expectedMime = imageMime(filename);
-  const mime = declaredMime.toLocaleLowerCase("en-US");
-  const acceptedMime = (
-    !mime
-    || mime === expectedMime
-    || mime === "application/octet-stream"
-    || (expectedMime === "image/jpeg" && mime === "image/jpg")
-  );
-  if (!acceptedMime || !(await photoSignatureMatches(blob, extension))) {
-    throw new Error(`${filename || "Fotoğraf"}: dosya bozuk görünüyor veya uzantısıyla eşleşmiyor.`);
-  }
-}
-
-async function assertPhotoFile(file: File): Promise<void> {
-  await assertPhotoBlob(file, file.name, file.type);
+  // HEIC and oversized captures become a ≤1200 px JPEG where the browser can
+  // decode them; otherwise the original bytes are kept under the right name.
+  const normalized = await normalizePhoto(blob, format);
+  return {
+    filename: withImageExtension(filename, normalized.format),
+    blob: new Blob([normalized.blob], { type: normalized.format.mime }),
+  };
 }
 
 async function assertPdfFile(file: File): Promise<void> {
@@ -1643,36 +1616,33 @@ async function selectedPhotoFiles(files: File[]): Promise<Array<{ filename: stri
     const signature = new Uint8Array(await file.slice(0, 4).arrayBuffer());
     const isZip = signature[0] === 0x50 && signature[1] === 0x4b;
     if (!isZip) {
-      await assertPhotoFile(file);
       if (file.size > MAX_PHOTO_BYTES || total + file.size > MAX_PHOTO_BATCH_BYTES) {
         throw new Error("Fotoğraf seçimi güvenli cihaz boyutu sınırını aşıyor.");
       }
-      total += file.size;
-      output.push({ filename: file.name, blob: file });
+      const accepted = await acceptedPhoto(file, file.name);
+      total += accepted.blob.size;
+      output.push(accepted);
       continue;
     }
     const reader = new ZipReader(new BlobReader(file), { useWebWorkers: false });
     try {
       for await (const entry of reader.getEntriesGenerator()) {
         if (entry.directory || !safeArchivePath(entry.filename) || entry.encrypted || isArchiveSymlink(entry)) continue;
-        const extension = entry.filename.split(".").pop()?.toLocaleLowerCase("en-US") ?? "";
-        const mime = imageMime(entry.filename);
-        if (!mime.startsWith("image/")) continue;
-        if (!PHOTO_EXTENSIONS.has(extension)) {
-          throw new Error(`${entry.filename}: desteklenmeyen görüntü biçimi. JPG, JPEG veya PNG kullanın.`);
-        }
+        // Archives mix photos with PDFs and spreadsheets; only entries named
+        // like a picture are opened, and the bytes then have the final say.
+        if (!isImageFilename(entry.filename)) continue;
         if (entry.uncompressedSize > MAX_PHOTO_BYTES || total + entry.uncompressedSize > MAX_PHOTO_BATCH_BYTES) {
           throw new Error("Fotoğraf ZIP'i güvenli açılmış boyut sınırını aşıyor.");
         }
         const ratio = entry.uncompressedSize / Math.max(entry.compressedSize, 1);
         if (entry.uncompressedSize > 1024 * 1024 && ratio > 200) continue;
-        const blob = await entry.getData(new BlobWriter(mime), { checkSignature: true, useWebWorkers: false });
-        await assertPhotoBlob(blob, entry.filename, mime);
-        if (blob.size > MAX_PHOTO_BYTES || total + blob.size > MAX_PHOTO_BATCH_BYTES) {
+        const raw = await entry.getData(new BlobWriter(), { checkSignature: true, useWebWorkers: false });
+        if (raw.size > MAX_PHOTO_BYTES || total + raw.size > MAX_PHOTO_BATCH_BYTES) {
           throw new Error("Fotoğraf ZIP'i güvenli açılmış boyut sınırını aşıyor.");
         }
-        total += blob.size;
-        output.push({ filename: entry.filename.split("/").pop() || entry.filename, blob });
+        const accepted = await acceptedPhoto(raw, entry.filename);
+        total += accepted.blob.size;
+        output.push(accepted);
       }
     } finally {
       await reader.close();
@@ -1704,7 +1674,7 @@ function photoMatch(filename: string, rows: StoredPassenger[]): { passenger: Sto
 
 async function storePhoto(filename: string, blob: Blob): Promise<string> {
   const id = `${PHOTO_PREFIX}${newId()}`;
-  const file = new File([blob], filename, { type: blob.type || imageMime(filename), lastModified: Date.now() });
+  const file = new File([blob], filename, { type: blob.type || imageMimeFromFilename(filename), lastModified: Date.now() });
   await putBinary(id, file, { kind: "photo", filename, mime: file.type } satisfies BinaryMetadata);
   return id;
 }
@@ -1758,9 +1728,9 @@ export async function localSetPassengerPhoto(id: number, file: File): Promise<Si
   const row = await getPassenger<StoredPassenger>(id);
   if (!row) throw new Error("Yolcu bulunamadı.");
   if (file.size > MAX_PHOTO_BYTES) throw new Error("Fotoğraf 25 MB sınırını aşıyor.");
-  await assertPhotoFile(file);
+  const accepted = await acceptedPhoto(file, file.name);
   const previousPhoto = row.photo;
-  const nextPhoto = await storePhoto(file.name, file);
+  const nextPhoto = await storePhoto(accepted.filename, accepted.blob);
   try {
     row.photo = nextPhoto;
     await putPassenger(row);
@@ -1847,7 +1817,7 @@ export async function localImportMail(file: File, batchId: string): Promise<Mail
       warnings.push(`${filename}: güvenli ek boyutu sınırı nedeniyle atlandı.`);
       continue;
     }
-    if (attachment.mimeType.startsWith("image/") || imageMime(filename).startsWith("image/")) {
+    if (attachment.mimeType.startsWith("image/") || isImageFilename(filename)) {
       photos.push(attached);
       continue;
     }

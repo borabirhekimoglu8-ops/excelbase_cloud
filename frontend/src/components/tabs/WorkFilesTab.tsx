@@ -138,12 +138,8 @@ export function WorkFilesTab({
 
   return (
     <div className="ops-page">
-      <section className="ops-page-heading">
-        <div>
-          <p className="ops-eyebrow">OPERASYON DOSYALARI</p>
-          <h1>İş Dosyaları</h1>
-          <p>C kodları, görevler, yolcular ve evraklar aynı operasyon kaydında.</p>
-        </div>
+      <section className="ops-page-intro">
+        <p>C kodları, görevler, yolcular ve evraklar aynı operasyon kaydında.</p>
         <button className="ops-primary ops-heading-action" type="button" onClick={onCreate}>+ YENİ İŞ</button>
       </section>
 

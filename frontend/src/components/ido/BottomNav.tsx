@@ -5,22 +5,19 @@ export type PrimaryNavKey =
   | "gate-visa"
   | "work-files"
   | "passengers"
-  | "documents"
-  | "sales"
-  | "reports";
+  | "documents";
 /** Eski ekran yönlendiricisi yeni kabuğa geçirilirken aktif anahtarı kabul eder. */
 export type NavKey = PrimaryNavKey | "records" | "import" | "settings";
 
-// Labels stay short because the bar divides its width evenly: at seven items a
-// phone gives each one about 55px, and a longer word wraps or clips.
+// Five daily destinations. Sales data and reports are reached from the home
+// screen instead: they are consulted, not worked in, and a seventh 55px tab
+// made every label wrap on a phone.
 const ITEMS: Array<{ key: PrimaryNavKey; label: string }> = [
   { key: "home", label: "ANA" },
   { key: "gate-visa", label: "KAPI" },
   { key: "work-files", label: "İŞLER" },
   { key: "passengers", label: "YOLCULAR" },
   { key: "documents", label: "EVRAKLAR" },
-  { key: "sales", label: "SATIŞ" },
-  { key: "reports", label: "RAPOR" },
 ];
 
 /**
@@ -64,26 +61,12 @@ function NavIcon({ kind }: { kind: PrimaryNavKey }) {
       </svg>
     );
   }
-  if (kind === "gate-visa") {
-    // A passport-style booklet with a stamp: the Gate Visa list.
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M5.5 4.2h13v15.6h-13zM8.5 4.2v15.6" />
-        <circle cx="14" cy="10" r="2.4" />
-        <path d="M11.6 15h4.8" />
-      </svg>
-    );
-  }
-  if (kind === "sales") {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M4 18.5 9.5 13l3.5 3.2 6.5-7.2M15 8.5h5v5" />
-      </svg>
-    );
-  }
+  // gate-visa: a passport-style booklet with a stamp.
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 19.5h16M6.5 17V11h3v6M10.5 17V6.5h3V17M14.5 17V9h3v8" />
+      <path d="M5.5 4.2h13v15.6h-13zM8.5 4.2v15.6" />
+      <circle cx="14" cy="10" r="2.4" />
+      <path d="M11.6 15h4.8" />
     </svg>
   );
 }

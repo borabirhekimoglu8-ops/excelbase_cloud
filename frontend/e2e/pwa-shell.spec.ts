@@ -20,11 +20,21 @@ async function openBulkImport(page: Page): Promise<void> {
     .click();
 }
 
+/** Kapı Vizesi sekmesi: klasörler varsayılan görünümdür. */
 async function openRecordFolders(page: Page): Promise<void> {
   await page.getByRole("navigation", { name: "Ana gezinme" })
-    .getByRole("button", { name: "RAPORLAR", exact: true })
+    .getByRole("button", { name: "KAPI", exact: true })
     .click();
-  await page.getByRole("button", { name: /Günlük Kayıt Klasörleri/ }).click();
+  await page.getByRole("tab", { name: "KLASÖRLER" }).click();
+}
+
+/** Kapı vizeli yolcu listesi Kapı sekmesinin bir alt görünümüdür; ana
+ * gezinmedeki YOLCULAR artık cihaza yüklenen tüm listelerin ana kaydıdır. */
+async function openGatePassengers(page: Page): Promise<void> {
+  await page.getByRole("navigation", { name: "Ana gezinme" })
+    .getByRole("button", { name: "KAPI", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "YOLCULAR" }).click();
 }
 
 async function zipFilenames(path: string): Promise<string[]> {
@@ -88,7 +98,7 @@ test("uçak modunda yerel kasa açılır ve içe aktarılan yolcu kalır", async
   });
   await expect(page.getByText("HAZIR", { exact: true })).toBeVisible();
 
-  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
+  await openGatePassengers(page);
   await expect(page.getByText("AYŞE YOLCU")).toBeVisible();
 
   await page.evaluate(async () => navigator.serviceWorker.ready);
@@ -97,12 +107,12 @@ test("uçak modunda yerel kasa açılır ve içe aktarılan yolcu kalır", async
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Giriş yap" }).click();
-  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
+  await openGatePassengers(page);
   await expect(page.getByText("AYŞE YOLCU")).toBeVisible();
   await context.setOffline(false);
 });
 
-test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", async ({ context, page }) => {
+test("yolcuya biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", async ({ context, page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.locator('input[name="name"]').fill("Evrak Operatörü");
@@ -117,7 +127,7 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
   });
   await expect(page.getByText("HAZIR", { exact: true })).toBeVisible();
 
-  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
+  await openGatePassengers(page);
   const inlinePdfInput = page.getByLabel("AYŞE YOLCU için PDF evrak seç");
   const inlinePdfAction = page.getByText("PDF EKLE", { exact: true });
   await expect(inlinePdfAction).toBeVisible();
@@ -137,12 +147,13 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
   await expect(quickPdfAction).toBeVisible();
   await expect(quickPdfAction).toBeInViewport();
 
-  await page.getByLabel("JPG biyometrik fotoğraf seç").setInputFiles({
+  // A PNG handed over with a ".jpg" name and JPEG MIME type: the bytes win.
+  await page.getByLabel("Biyometrik fotoğraf seç").setInputFiles({
     name: "TR123456-biyometrik.jpg",
     mimeType: "image/jpeg",
-    buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]),
+    buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]),
   });
-  await expect(page.getByText("JPG DEĞİŞTİR", { exact: true })).toBeVisible();
+  await expect(page.getByText("FOTOĞRAF DEĞİŞTİR", { exact: true })).toBeVisible();
   await expect(page.locator('.ido-sheet img[alt="AYŞE YOLCU"]')).toHaveAttribute("src", /^blob:/);
 
   await quickDocumentPanel.getByRole("combobox").selectOption("application_form");
@@ -161,7 +172,7 @@ test("yolcuya JPG biyometrik fotoğraf ve PDF evrak çevrimdışı eklenir", asy
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator('input[name="pin"]').fill("123456");
   await page.getByRole("button", { name: "Giriş yap" }).click();
-  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
+  await openGatePassengers(page);
   await page.getByText("AYŞE YOLCU", { exact: true }).click();
   await expect(page.locator('.ido-sheet img[alt="AYŞE YOLCU"]')).toHaveAttribute("src", /^blob:/);
   await expect(page.getByText("2026-07-16_AYSE_YOLCU_TR123456_OTHER_DOCUMENT.pdf", { exact: true })).toBeVisible();
@@ -191,7 +202,7 @@ test("manuel yolcu kaydı günlük klasörde ve Yolcular ekranında kalıcıdır
   await page.getByLabel("Vize ücreti · Yetişkin", { exact: true }).fill("60");
   await page.getByLabel("Vize ücreti · Çocuk", { exact: true }).fill("0");
 
-  await page.locator('input[type="file"][accept*=".jpg"]').setInputFiles({
+  await page.getByLabel("Biyometrik fotoğraf seç").setInputFiles({
     name: "TR7654321-biyometrik.jpg",
     mimeType: "image/jpeg",
     buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]),
@@ -222,7 +233,7 @@ test("manuel yolcu kaydı günlük klasörde ve Yolcular ekranında kalıcıdır
 
   await openRecordFolders(page);
   const folder = page.locator(".ic-folder-card").filter({ hasText: "17 Temmuz 2026" });
-  await expect(folder).toContainText("1 yolcu · 2 PDF · 1 JPG");
+  await expect(folder).toContainText("1 yolcu · 2 PDF · 1 fotoğraf");
   await folder.getByRole("button", { expanded: false }).click();
   await expect(folder).toContainText("1 HAZIR");
   await expect(folder.getByRole("button", { name: "TARİH KLASÖRÜNÜ ZIP İNDİR" })).toBeVisible();
@@ -236,8 +247,8 @@ test("manuel yolcu kaydı günlük klasörde ve Yolcular ekranında kalıcıdır
 
   await openRecordFolders(page);
   await expect(page.locator(".ic-folder-card").filter({ hasText: "17 Temmuz 2026" }))
-    .toContainText("1 yolcu · 2 PDF · 1 JPG");
-  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
+    .toContainText("1 yolcu · 2 PDF · 1 fotoğraf");
+  await openGatePassengers(page);
   await expect(page.getByText("ECE DENİZ", { exact: true })).toBeVisible();
   await expect(page.locator(".ic-row-meta").filter({ hasText: "2 PDF" })).toBeVisible();
   await context.setOffline(false);
@@ -260,7 +271,7 @@ test("manuel yolcu kaydı tek birleşik PDF ile hazır olur", async ({ page }) =
   await page.getByLabel("Gidiş tarihi", { exact: true }).fill("2026-07-26");
   await page.getByLabel("Varış tarihi", { exact: true }).fill("2026-07-30");
   await page.getByLabel("Vize ücreti · Yetişkin", { exact: true }).fill("60");
-  await page.locator('input[type="file"][accept*=".jpg"]').setInputFiles({
+  await page.getByLabel("Biyometrik fotoğraf seç").setInputFiles({
     name: "TR7654322-biyometrik.jpg",
     mimeType: "image/jpeg",
     buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]),
@@ -278,7 +289,7 @@ test("manuel yolcu kaydı tek birleşik PDF ile hazır olur", async ({ page }) =
 
   await openRecordFolders(page);
   const folder = page.locator(".ic-folder-card").filter({ hasText: "25 Temmuz 2026" });
-  await expect(folder).toContainText("1 yolcu · 1 PDF · 1 JPG");
+  await expect(folder).toContainText("1 yolcu · 1 PDF · 1 fotoğraf");
   await folder.getByRole("button", { expanded: false }).click();
   await expect(folder).toContainText("1 HAZIR");
   const zipDownloadPromise = page.waitForEvent("download");
@@ -337,7 +348,7 @@ test("49 Excel dosyası sırayla işlenir ve çevrimdışı soğuk açılışta 
   await page.getByLabel("ZIP veya Excel listelerini seç").setInputFiles(files);
   await expect(page.getByText("HAZIR", { exact: true })).toHaveCount(49, { timeout: 120_000 });
 
-  await page.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
+  await openGatePassengers(page);
   await expect(page.getByText("TOPLAM 49 KAYIT", { exact: true })).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "İDO LİSTESİ", exact: true }).click();
@@ -360,7 +371,7 @@ test("49 Excel dosyası sırayla işlenir ve çevrimdışı soğuk açılışta 
   await offlinePage.goto("/", { waitUntil: "domcontentloaded" });
   await offlinePage.locator('input[name="pin"]').fill("123456");
   await offlinePage.getByRole("button", { name: "Giriş yap" }).click();
-  await offlinePage.getByRole("navigation", { name: "Ana gezinme" }).getByRole("button", { name: "YOLCULAR", exact: true }).click();
+  await openGatePassengers(offlinePage);
   await expect(offlinePage.getByText("TOPLAM 49 KAYIT", { exact: true })).toBeVisible();
   await context.setOffline(false);
 });

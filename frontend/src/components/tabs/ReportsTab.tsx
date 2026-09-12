@@ -38,21 +38,11 @@ const REPORTS: Array<{
 ];
 
 export function ReportsTab({ onOpen }: { onOpen: (destination: ReportDestination) => void }) {
-  const { summary, dateScope } = useStore();
+  const { summary } = useStore();
   const issueTotal = Object.values(summary.issue_counts).reduce((total, count) => total + count, 0);
-  const scopeLabel = dateScope.range === "Tümü" ? "Tüm kayıtlar" : dateScope.range;
 
   return (
     <div className="ops-page">
-      <section className="ops-page-heading">
-        <div>
-          <p className="ops-eyebrow">OPERASYON ANALİZİ</p>
-          <h1>Raporlar</h1>
-          <p>{scopeLabel} için doğrulanmış saha verileri ve dışa aktarma araçları.</p>
-        </div>
-        <span className="ops-status-mark">CANLI</span>
-      </section>
-
       <div className="ops-metric-grid">
         <article>
           <span>Yolcu</span>
@@ -82,8 +72,6 @@ export function ReportsTab({ onOpen }: { onOpen: (destination: ReportDestination
             <p className="ops-eyebrow">GATE VISA</p>
             <h2>Operasyon raporları</h2>
           </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/ido-logo.jpg" alt="İDO" />
         </div>
         <div className="ops-link-list">
           {REPORTS.map((report) => (
