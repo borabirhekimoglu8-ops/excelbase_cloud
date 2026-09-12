@@ -1505,6 +1505,7 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
    the one-line description and the page action. */
 .ops-page-intro { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ops-page-intro p { max-width: 290px; margin: 0; color: var(--ido-muted); font-size: 12px; line-height: 1.45; }
+.ops-page-intro button { flex: 0 0 auto; white-space: nowrap; }
 
 .ops-eyebrow {
   margin: 0 0 4px;

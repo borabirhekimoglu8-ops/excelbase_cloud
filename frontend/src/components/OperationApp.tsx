@@ -92,6 +92,18 @@ function Shell() {
     }
   }, []);
 
+  // The window is the scroll container, so a screen opened from the bottom of
+  // a long page would otherwise appear already scrolled past its own header.
+  const screenKey = [
+    screen.kind,
+    "tab" in screen ? screen.tab : "",
+    "sub" in screen ? screen.sub : "",
+    "id" in screen ? screen.id : "",
+  ].join(":");
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [screenKey]);
+
   function updateLayoutPreference(nextPreference: LayoutPreference) {
     setLayoutPreference(nextPreference);
     try {
