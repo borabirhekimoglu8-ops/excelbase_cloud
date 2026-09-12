@@ -866,8 +866,8 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   flex: 1 1 0;
   /* Bir flex ogesinin varsayilan min-width degeri auto, yani icerigin
      min-content genisligi. Isaretcinin sabit 70px'i her sekmeye 70px taban
-     dayatiyordu; yedi sekmede bu 490px eder ve 390px'lik telefonda tum sayfa
-     yana kayardi. Sifirlanmasi isaretcinin max-width kuralini isler kilar. */
+     dayatiyordu ve dar telefonda tum sayfa yana kayardi. Sifirlanmasi
+     isaretcinin max-width kuralini isler kilar. */
   min-width: 0;
   display: grid;
   justify-items: center;
@@ -885,7 +885,7 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ido-nav-marker { width: 80%; max-width: 70px; height: 2px; background: transparent; }
 .ido-nav-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ido-nav-item.active .ido-nav-marker { background: var(--ido-primary); }
-.ido-nav-label { color: var(--ido-faint); font-weight: 500; font-size: 9px; letter-spacing: .01em; }
+.ido-nav-label { color: var(--ido-faint); font-weight: 500; font-size: 10px; letter-spacing: .02em; }
 .ido-nav-item.active .ido-nav-label { color: var(--ido-primary); font-weight: 600; }
 
 /* Kapı Vizesi kabuğu: yükleme eylemleri + gunluk kayit klasorleri */
@@ -2060,6 +2060,7 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ops-gate-progress span { color: var(--ido-muted); font-size: 8px; font-weight: 750; }
 .ops-home-actions { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 6px; }
 .ops-home-actions button { min-width: 0; padding: 0 7px; font-size: 8px; }
+.ops-home-links { display: grid; gap: 6px; }
 
 .ops-empty-inline { padding: 12px; border: 1px dashed var(--ido-border); background: #f9fbfc; color: var(--ido-muted); font-size: 10px; line-height: 1.45; }
 .ops-section-link { min-height: 36px; padding: 0 5px; border: 0; background: transparent; color: var(--ido-primary); font-size: 9px; font-weight: 800; cursor: pointer; }

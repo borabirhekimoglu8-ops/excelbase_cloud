@@ -52,6 +52,8 @@ type Screen =
   | { kind: "new-passenger" }
   | { kind: "import" }
   | { kind: "records" }
+  | { kind: "sales" }
+  | { kind: "reports" }
   | { kind: "assistant" }
   | { kind: "settings" }
   | { kind: "settings-sub"; sub: SettingsSub };
@@ -61,8 +63,6 @@ const ROOT_TITLES: Record<Exclude<PrimaryNavKey, "home">, string> = {
   "work-files": "İş Dosyaları",
   passengers: "Yolcu Listelerim",
   documents: "Evrak Merkezi",
-  sales: "Satış Verileri",
-  reports: "Raporlar",
 };
 
 const SETTINGS_TITLES: Record<SettingsSub, string> = {
@@ -130,12 +130,8 @@ function Shell() {
       goRoot(target);
       return;
     }
-    if (target === "records") {
-      setScreen({ kind: "records" });
-      return;
-    }
-    if (target === "import") {
-      setScreen({ kind: "import" });
+    if (target === "records" || target === "import" || target === "sales" || target === "reports") {
+      setScreen({ kind: target });
       return;
     }
     goRoot("home");
@@ -159,16 +155,18 @@ function Shell() {
     setScreen({ kind: "settings-sub", sub: destination });
   }
 
+  // Import and the record folders are Kapı work, so the Kapı tab stays lit
+  // underneath them. Sales and reports open from the home screen with a back
+  // button and no tab bar, like settings.
   const bottomNavActive: PrimaryNavKey | null = screen.kind === "root"
     ? screen.tab
-    : screen.kind === "import"
+    : screen.kind === "import" || screen.kind === "records"
       ? "gate-visa"
-      : screen.kind === "records"
-        ? "reports"
-        : null;
+      : null;
   const showDateScope = (
-    (screen.kind === "root" && (screen.tab === "gate-visa" || screen.tab === "reports"))
+    (screen.kind === "root" && screen.tab === "gate-visa")
     || screen.kind === "records"
+    || screen.kind === "reports"
   );
   const stickyContent = screen.kind === "import" || screen.kind === "new-passenger" || screen.kind === "new-work-file";
 
@@ -194,10 +192,16 @@ function Shell() {
         {screen.kind === "new-work-file" && (
           <AppHeaderScreen title="Yeni İş Dosyası" onBack={() => goRoot("work-files")} />
         )}
+        {screen.kind === "sales" && (
+          <AppHeaderScreen title="Satış Verileri" onBack={() => goRoot("home")} />
+        )}
+        {screen.kind === "reports" && (
+          <AppHeaderScreen title="Raporlar" onBack={() => goRoot("home")} />
+        )}
         {screen.kind === "records" && (
           <AppHeaderScreen
             title="Kayıt Klasörleri"
-            onBack={() => goRoot("reports")}
+            onBack={() => goRoot("gate-visa")}
             action={
               user.role !== "viewer" ? (
                 <button className="ido-header-action" onClick={() => setScreen({ kind: "new-passenger" })} type="button">
@@ -280,8 +284,8 @@ function Shell() {
               initialStatus={screen.passengerStatus ?? ""}
             />
           )}
-          {screen.kind === "root" && screen.tab === "sales" && <SalesTab />}
-          {screen.kind === "root" && screen.tab === "reports" && <ReportsTab onOpen={openReport} />}
+          {screen.kind === "sales" && <SalesTab />}
+          {screen.kind === "reports" && <ReportsTab onOpen={openReport} />}
           {screen.kind === "work-file" && <WorkFileDetail id={screen.id} onBack={() => goRoot("work-files")} />}
           {screen.kind === "new-work-file" && (
             <WorkFileForm

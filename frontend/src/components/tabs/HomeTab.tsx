@@ -178,6 +178,35 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
           </div>
         )}
       </section>
+
+      <section className="ops-module-card" aria-labelledby="home-more-title">
+        <div className="ops-section-heading">
+          <div>
+            <p className="ops-eyebrow">ANALİZ</p>
+            <h2 id="home-more-title">Satış ve raporlar</h2>
+          </div>
+        </div>
+        <div className="ops-home-links">
+          <button className="ic-row as-btn compact" type="button" onClick={() => onNavigate("sales")}>
+            <div className="ic-row-id">
+              <div className="ic-row-copy">
+                <p className="ic-row-title">Satış Verileri</p>
+                <p className="ic-row-meta">Excel satış listesini yükle, filtrele ve özetle</p>
+              </div>
+            </div>
+            <span className="ic-map-arrow" aria-hidden="true">›</span>
+          </button>
+          <button className="ic-row as-btn compact" type="button" onClick={() => onNavigate("reports")}>
+            <div className="ic-row-id">
+              <div className="ic-row-copy">
+                <p className="ic-row-title">Raporlar</p>
+                <p className="ic-row-meta">Günlük özet, kontrol merkezi, arşiv ve çıktılar</p>
+              </div>
+            </div>
+            <span className="ic-map-arrow" aria-hidden="true">›</span>
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
