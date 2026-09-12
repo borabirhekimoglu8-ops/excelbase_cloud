@@ -17,6 +17,7 @@ import {
   uploadOfficeDocument,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { IMAGE_ACCEPT } from "@/lib/imageFormat";
 import { useStore } from "@/lib/store";
 import type { Passenger } from "@/lib/api";
 import type {
@@ -359,7 +360,7 @@ export function WorkFileDetail({ id, onBack }: { id: string; onBack: () => void 
               aria-label="İş dosyasına evrak seç"
               type="file"
               disabled={busy === "document"}
-              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.csv,.ods"
+              accept={`.pdf,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ods,${IMAGE_ACCEPT}`}
               onChange={(event) => void uploadDocument(event)}
             />
           </label>

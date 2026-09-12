@@ -8,6 +8,7 @@ import {
   openPassengerDocument,
   uploadOfficeDocument,
 } from "@/lib/api";
+import { IMAGE_ACCEPT } from "@/lib/imageFormat";
 import { useStore } from "@/lib/store";
 import type {
   OfficeDocumentCategory,
@@ -196,7 +197,7 @@ export function DocumentsTab({
               aria-label="Evrak merkezine dosya seç"
               type="file"
               disabled={busy === "upload"}
-              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.csv,.ods"
+              accept={`.pdf,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ods,${IMAGE_ACCEPT}`}
               onChange={(event) => void upload(event)}
             />
           </label>
