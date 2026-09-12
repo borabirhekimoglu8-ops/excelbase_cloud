@@ -1,0 +1,3 @@
+# Eski Streamlit arayüzü. Paylaşılan Python bağımlılıkları depo kökünden gelir.
+-r ../../requirements.txt
+streamlit>=1.36

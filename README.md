@@ -44,7 +44,8 @@ Excelbase Operations; iş dosyalarını, C kodlarını, görevleri, notları, ev
 - `frontend/` — statik Next.js PWA, IndexedDB veri katmanı, Web Crypto kasası, dosya ayrıştırıcıları ve yerel çıktı üreticileri.
 - `frontend/public/sw.js` — uygulama kabuğunu sürümleyip çevrimdışı açılışı sağlayan service worker.
 - `backend/` — statik üretim çıktısını, sağlık kontrolünü ve kimliği doğrulanmış Sonnet proxy'sini sunan FastAPI katmanı. Ana PWA çalışma verisi için bu API'ye bağlı değildir.
-- `v8/` — ayrı tutulan eski/deneysel ilişkisel servis; ana PWA arayüzünde V8 sayfası bulunmaz.
+- `v8/` — ayrı tutulan eski/deneysel ilişkisel servis; ana PWA arayüzünde V8 sayfası bulunmaz. `render.yaml` bu servisi ayrı dağıttığı için yerinde durur.
+- `legacy/streamlit/` — PWA öncesi Streamlit arayüzünün arşivi. Geliştirilmez ve dağıtılmaz; paylaşılan Python okuyucuları (`excelbase_core.py`, `gate_visa_reader.py`, `operation_helpers.py` vb.) hâlâ depo kökünde durur çünkü FastAPI ve v8 de onları kullanır.
 
 ## Yerel geliştirme
 
