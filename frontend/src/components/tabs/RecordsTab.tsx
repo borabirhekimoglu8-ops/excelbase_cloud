@@ -52,15 +52,13 @@ export function RecordsTab({ onCreate, canCreate = true }: { onCreate: () => voi
 
   return (
     <div className="ic-records-page">
-      <section className="ic-records-hero">
-        <div className="ic-records-hero-brand">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/ido-logo.jpg" alt="İDO" />
+      <section className="ic-records-summary">
+        <div className="ic-records-summary-head">
           <div>
-            <p>GATE VISA CHECKLIST</p>
             <h2>Günlük kayıt klasörleri</h2>
-            <span>Her yolcu, evraklarıyla birlikte oluşturulduğu günün klasöründe saklanır.</span>
+            <p>Her yolcu, oluşturulduğu günün klasöründe evraklarıyla birlikte saklanır.</p>
           </div>
+          {canCreate && <button className="ic-records-new" type="button" onClick={onCreate}>+ YENİ YOLCU KAYDI</button>}
         </div>
         <div className="ic-records-stats">
           <div><strong>{total}</strong><span>YOLCU</span></div>
@@ -68,16 +66,7 @@ export function RecordsTab({ onCreate, canCreate = true }: { onCreate: () => voi
           <div><strong>{ready}</strong><span>HAZIR</span></div>
           <div><strong>{pending}</strong><span>BEKLİYOR</span></div>
         </div>
-        {canCreate && <button className="ic-records-new" type="button" onClick={onCreate}>+ YENİ YOLCU KAYDI</button>}
       </section>
-
-      <div className="ic-section-head">
-        <div>
-          <p className="ic-section-title">Kayıt tarihine göre klasörler</p>
-          <p className="ic-section-caption">Sefer tarihinden bağımsız günlük dosya düzeni</p>
-        </div>
-        <span className="ic-pill ic-pill-info">{folders.length} KLASÖR</span>
-      </div>
 
       {loading && <div className="ic-records-loading">Kayıt klasörleri hazırlanıyor…</div>}
       {error && <div className="ic-record-error" role="alert">{error}</div>}
@@ -85,8 +74,7 @@ export function RecordsTab({ onCreate, canCreate = true }: { onCreate: () => voi
         <div className="ic-records-empty">
           <span className="ic-records-empty-mark">+</span>
           <h3>Bu tarihte kayıt klasörü yok</h3>
-          <p>İlk yolcu kaydını açın veya Yükle sekmesinden toplu Excel aktarın.</p>
-          {canCreate && <button type="button" onClick={onCreate}>YENİ KAYIT AÇ</button>}
+          <p>Yukarıdan yeni bir yolcu kaydı açın veya Excel ile toplu liste yükleyin.</p>
         </div>
       )}
 

@@ -184,21 +184,19 @@ function Shell() {
         {screen.kind === "root" && screen.tab !== "home" && (
           <AppHeaderScreen
             title={ROOT_TITLES[screen.tab]}
-            brand={screen.tab === "gate-visa" ? "ido" : "operations"}
             onAssistant={openAssistant}
             onSettings={() => setScreen({ kind: "settings" })}
           />
         )}
         {screen.kind === "work-file" && (
-          <AppHeaderScreen title="İş Dosyası" brand="operations" onBack={() => goRoot("work-files")} />
+          <AppHeaderScreen title="İş Dosyası" onBack={() => goRoot("work-files")} />
         )}
         {screen.kind === "new-work-file" && (
-          <AppHeaderScreen title="Yeni İş Dosyası" brand="operations" onBack={() => goRoot("work-files")} />
+          <AppHeaderScreen title="Yeni İş Dosyası" onBack={() => goRoot("work-files")} />
         )}
         {screen.kind === "records" && (
           <AppHeaderScreen
             title="Kayıt Klasörleri"
-            brand="ido"
             onBack={() => goRoot("reports")}
             action={
               user.role !== "viewer" ? (
@@ -212,7 +210,6 @@ function Shell() {
         {screen.kind === "new-passenger" && (
           <AppHeaderScreen
             title="Yeni Yolcu Kaydı"
-            brand="ido"
             onBack={() => {
               if (window.confirm("Yeni kayıt ekranından çıkılsın mı? Kaydedilmemiş bilgiler silinir.")) {
                 goRoot("gate-visa", { gateView: "list" });
@@ -223,14 +220,12 @@ function Shell() {
         {screen.kind === "import" && (
           <AppHeaderScreen
             title="Toplu Yolcu Yükleme"
-            brand="ido"
             onBack={() => goRoot("gate-visa", { gateView: "list" })}
           />
         )}
         {screen.kind === "assistant" && (
           <AppHeaderScreen
             title="Claude Sonnet"
-            brand="operations"
             onBack={() => setScreen(
               assistantReturnScreen.kind === "assistant"
                 ? { kind: "root", tab: "home" }
@@ -239,12 +234,11 @@ function Shell() {
           />
         )}
         {screen.kind === "settings" && (
-          <AppHeaderScreen title="Ayarlar" brand="operations" onBack={() => goRoot("home")} />
+          <AppHeaderScreen title="Ayarlar" onBack={() => goRoot("home")} />
         )}
         {screen.kind === "settings-sub" && (
           <AppHeaderScreen
             title={SETTINGS_TITLES[screen.sub]}
-            brand={screen.sub === "management" ? "operations" : "ido"}
             onBack={() => setScreen({ kind: "settings" })}
           />
         )}
@@ -262,7 +256,6 @@ function Shell() {
             <HomeTab
               onNavigate={navigate}
               onOpenWorkFile={(id) => setScreen({ kind: "work-file", id })}
-              onAssistant={openAssistant}
             />
           )}
           {screen.kind === "root" && screen.tab === "work-files" && (

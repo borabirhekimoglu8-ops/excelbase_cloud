@@ -115,15 +115,18 @@ input[type="file"] { display: none; }
   letter-spacing: .08em;
 }
 .auth-logo-mark {
-  display: inline-block;
+  display: inline-grid;
+  place-items: center;
   flex: 0 0 auto;
-  width: 82px;
+  width: 48px;
   height: 48px;
-  overflow: hidden;
   border-radius: 6px;
-  background: var(--ido-primary);
+  background: var(--ido-primary-deep);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 850;
+  letter-spacing: .08em;
 }
-.auth-logo-mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .header-account { gap: 14px; }
 .account-copy { text-align: right; }
 .account-copy strong { color: var(--navy-900); font-size: 13px; }
@@ -564,35 +567,24 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   border-radius: 8px;
 }
 .ido-header-back:hover { background: rgba(255,255,255,.12); }
-.ido-header-logo {
+.ido-header-mark {
   flex: 0 0 auto;
-  width: 68px;
+  width: 44px;
   height: 40px;
-  border-radius: var(--ido-radius-sm);
-  overflow: hidden;
-  background: #fff;
-  display: block;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 4px;
+  background: var(--ido-primary-deep);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: .08em;
 }
-.ido-header-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.ido-header-logo.lg { width: 92px; height: 42px; }
 .ido-header-identity { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
 .ido-header-brand { margin: 0; color: #fff; font-weight: 700; font-size: 12px; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ido-header-sub { margin: 0; color: #d7edf4; font-weight: 500; font-size: 9px; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ido-header-title { flex: 1 1 auto; min-width: 0; margin: 0; color: #fff; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ido-header-badge {
-  flex: 0 0 auto;
-  background: #fff;
-  color: var(--ido-primary);
-  font-weight: 700;
-  font-size: 9px;
-  letter-spacing: .04em;
-  border-radius: var(--ido-radius-sm);
-  padding: 8px 10px;
-  min-height: 32px;
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-}
 .ido-header-action {
   flex: 0 0 auto;
   background: #fff;
@@ -741,7 +733,6 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 /* Günlük, kurumsal yolcu listesi çıkışı */
 .ic-list-export { display: grid; gap: 12px; background: var(--ido-primary-deep); color: #fff; border-radius: var(--ido-radius); padding: 13px 14px; box-shadow: 0 8px 24px rgba(9,42,67,.08); }
 .ic-list-export-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.ic-list-export-head img { flex: 0 0 auto; width: 58px; height: 42px; border-radius: 5px; background: #fff; object-fit: contain; padding: 3px; }
 .ic-list-export-head div { min-width: 0; }
 .ic-list-export-head p { margin: 0; font-weight: 700; font-size: 14px; }
 .ic-list-export-head span { display: block; margin-top: 2px; color: #c9dce3; font-weight: 500; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1211,59 +1202,42 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 
 /* Satis verileri */
 .ic-sales-page { display: grid; gap: 12px; min-width: 0; }
-/* A flat white card with a hairline border read as a bare admin form. The
-   gradient, the orange accent bar and the soft shadow are what "Satış
-   Verileri" and "Yolcu Listelerim" share with the branded hero elsewhere in
-   the app -- this screen is not a lesser one. */
 .ic-sales-hero {
-  position: relative;
   display: grid;
-  gap: 11px;
-  padding: 18px 16px;
-  overflow: hidden;
-  border-radius: var(--ido-radius-lg);
-  background: linear-gradient(155deg, var(--ido-primary-deep) 0%, #0a4b68 62%, var(--ido-primary) 130%);
-  box-shadow: 0 10px 28px rgba(5, 59, 82, .18);
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--ido-border);
+  border-radius: 4px;
+  background: #fff;
 }
-.ic-sales-hero::after {
-  content: "";
-  position: absolute;
-  inset: -40% -30% auto auto;
-  width: 220px;
-  height: 220px;
-  background: radial-gradient(circle, var(--ido-orange) 0%, transparent 70%);
-  opacity: .28;
-  pointer-events: none;
-}
-.ic-sales-hero > div { position: relative; display: grid; gap: 5px; }
+.ic-sales-hero > div { display: grid; gap: 4px; min-width: 0; }
 .ic-sales-hero p {
   margin: 0;
-  color: #ffd8b8;
-  font-size: 8px;
+  color: var(--ido-primary);
+  font-size: 9px;
   font-weight: 850;
-  letter-spacing: .16em;
+  letter-spacing: .14em;
 }
-.ic-sales-hero h2 { margin: 0; color: #fff; font-size: 18px; line-height: 1.28; letter-spacing: -.01em; }
-.ic-sales-hero span { color: rgba(255, 255, 255, .78); font-size: 10.5px; line-height: 1.6; }
-.ic-sales-hero span strong { color: #fff; }
+.ic-sales-hero h2 { margin: 0; color: var(--ido-primary-deep); font-size: 16px; line-height: 1.25; font-weight: 720; letter-spacing: -.02em; }
+.ic-sales-hero > div > span { color: var(--ido-muted); font-size: 10px; line-height: 1.5; }
+.ic-sales-hero > div > span strong { color: var(--ido-primary-deep); }
 .ic-sales-upload {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 48px;
-  border-radius: var(--ido-radius);
-  background: #fff;
-  color: var(--ido-primary-deep);
+  min-height: 46px;
+  border-radius: 3px;
+  background: var(--ido-primary);
+  color: #fff;
   font-size: 10px;
-  font-weight: 850;
-  letter-spacing: .06em;
+  font-weight: 800;
+  letter-spacing: .04em;
   cursor: pointer;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, .16);
-  transition: transform .12s ease, box-shadow .12s ease;
 }
-.ic-sales-upload:active { transform: scale(.98); box-shadow: 0 3px 10px rgba(0, 0, 0, .16); }
+.ic-sales-upload span { color: inherit; }
+.ic-sales-upload:active { opacity: .9; }
 .ic-sales-upload.busy { opacity: .7; cursor: wait; }
 /* Dosya girdisi gizlenir ama erisilebilir kalir: label tiklamayi tasir. */
 .ic-sales-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
@@ -1489,36 +1463,22 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 
 /* Günlük kayıt klasörleri */
 .ic-records-page { display: grid; gap: 10px; }
-.ic-records-hero {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  gap: 14px;
-  padding: 16px;
-  background: var(--ido-primary-deep);
-  color: #fff;
-  border-radius: 5px;
-  box-shadow: 0 10px 26px rgba(5,59,82,.12);
-}
-.ic-records-hero::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; background: linear-gradient(90deg,var(--ido-primary) 0 78%,var(--ido-orange) 78%); }
-.ic-records-hero-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.ic-records-hero-brand img { flex: 0 0 auto; width: 67px; height: 46px; object-fit: contain; padding: 3px; border-radius: 4px; background: #fff; }
-.ic-records-hero-brand div { min-width: 0; }
-.ic-records-hero-brand p { margin: 0 0 2px; color: #83d1e3; font-size: 8px; font-weight: 800; letter-spacing: .14em; }
-.ic-records-hero-brand h2 { margin: 0; font-size: 19px; line-height: 1.2; font-weight: 700; letter-spacing: -.015em; }
-.ic-records-hero-brand span { display: block; margin-top: 4px; color: #c5dce5; font-size: 9px; line-height: 1.35; }
-.ic-records-stats { display: grid; grid-template-columns: repeat(4,1fr); border: 1px solid rgba(255,255,255,.16); border-radius: 3px; overflow: hidden; }
-.ic-records-stats div { display: grid; justify-items: center; gap: 1px; padding: 8px 3px; border-right: 1px solid rgba(255,255,255,.14); }
+.ic-records-summary { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--ido-border); border-radius: 4px; background: #fff; }
+.ic-records-summary-head { display: grid; gap: 10px; }
+.ic-records-summary-head div { min-width: 0; }
+.ic-records-summary-head h2 { margin: 0; color: var(--ido-primary-deep); font-size: 16px; line-height: 1.25; font-weight: 720; letter-spacing: -.02em; }
+.ic-records-summary-head p { margin: 4px 0 0; color: var(--ido-muted); font-size: 10px; line-height: 1.45; }
+.ic-records-stats { display: grid; grid-template-columns: repeat(4,1fr); border: 1px solid var(--ido-border); border-radius: 3px; overflow: hidden; }
+.ic-records-stats div { display: grid; justify-items: center; gap: 1px; padding: 8px 3px; border-right: 1px solid var(--ido-border); }
 .ic-records-stats div:last-child { border-right: 0; }
-.ic-records-stats strong { font-size: 17px; line-height: 1.1; font-weight: 750; }
-.ic-records-stats span { color: #b8d2dc; font-size: 7px; font-weight: 700; letter-spacing: .06em; }
-.ic-records-new { min-height: 46px; border: 0; border-radius: 3px; background: #fff; color: var(--ido-primary-deep); font-size: 10px; font-weight: 800; letter-spacing: .035em; cursor: pointer; }
+.ic-records-stats strong { color: var(--ido-primary-deep); font-size: 17px; line-height: 1.1; font-weight: 750; }
+.ic-records-stats span { color: var(--ido-muted); font-size: 7px; font-weight: 700; letter-spacing: .06em; }
+.ic-records-new { min-height: 46px; border: 0; border-radius: 3px; background: var(--ido-primary); color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .035em; cursor: pointer; }
 .ic-records-loading { padding: 28px 16px; border: 1px solid var(--ido-border); background: #fff; color: var(--ido-muted); text-align: center; font-size: 11px; }
 .ic-records-empty { display: grid; justify-items: center; gap: 7px; padding: 34px 20px; border: 1px solid var(--ido-border); background: #fff; text-align: center; }
 .ic-records-empty-mark { width: 42px; height: 42px; display: grid; place-items: center; background: var(--ido-blue-tint); color: var(--ido-primary); font-size: 24px; }
 .ic-records-empty h3 { margin: 3px 0 0; color: var(--ido-ink); font-size: 16px; }
 .ic-records-empty p { margin: 0; color: var(--ido-muted); font-size: 10px; }
-.ic-records-empty button { min-height: 44px; margin-top: 5px; padding: 0 18px; border: 0; background: var(--ido-primary); color: #fff; font-size: 10px; font-weight: 750; cursor: pointer; }
 .ic-folder-list { display: grid; gap: 8px; }
 .ic-folder-card { overflow: hidden; border: 1px solid var(--ido-border); border-left: 4px solid #a7bac3; border-radius: 4px; background: #fff; }
 .ic-folder-card.open { border-left-color: var(--ido-primary); box-shadow: 0 8px 22px rgba(5,59,82,.06); }
@@ -1757,20 +1717,6 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   letter-spacing: .14em;
 }
 
-.ops-status-mark {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 0 9px;
-  border: 1px solid #b9d7df;
-  border-radius: 3px;
-  background: #fff;
-  color: var(--ido-primary);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .07em;
-}
 
 .ops-metric-grid {
   display: grid;
@@ -1805,7 +1751,6 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 }
 
 .ops-module-head { align-items: center; }
-.ops-module-head img { width: 64px; height: 42px; object-fit: contain; padding: 2px; border: 1px solid var(--ido-border); background: #fff; }
 .ops-section-heading > span { color: var(--ido-muted); font-size: 10px; font-weight: 700; }
 
 .ops-link-list {
@@ -2143,20 +2088,6 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ops-assistant-composer textarea:disabled,.ops-assistant-composer button:disabled { opacity: .55; cursor: not-allowed; }
 
 /* Excelbase Operations kabuk bileşenleri */
-.operations-header-mark,
-.ido-header-logo.lg.operations-header-mark {
-  width: 44px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(255,255,255,.25);
-  border-radius: 4px;
-  background: var(--ido-primary-deep);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 850;
-  letter-spacing: .08em;
-}
 .operations-header-utilities { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; }
 .operations-header-icon { width: 42px; min-width: 42px; height: 42px; min-height: 42px; padding: 0; background: rgba(255,255,255,.96); }
 .operations-header-icon svg,.ido-nav-icon svg { width: 20px; height: 20px; display: block; }
@@ -2291,83 +2222,6 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .operations-work-next small { color: var(--ido-faint); font-size: 7px; font-weight: 850; letter-spacing: .08em; }
 .operations-work-next strong { color: var(--ido-primary-deep); font-size: 10px; }
 
-.ops-home-hero {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 18px 16px 20px;
-  overflow: hidden;
-  border-radius: var(--ido-radius-lg);
-  isolation: isolate;
-  box-shadow: 0 12px 30px rgba(5, 59, 82, .22);
-}
-.ops-home-hero h1 { margin: 0; color: #fff; font-size: 22px; line-height: 1.2; letter-spacing: -.025em; }
-.ops-home-hero .ops-eyebrow { color: #ffd8b8; }
-.ops-home-hero p:not(.ops-eyebrow) { margin: 5px 0 0; color: rgba(255, 255, 255, .82); font-size: 10px; line-height: 1.4; }
-.ops-home-hero .ops-status-mark {
-  position: relative;
-  background: rgba(255, 255, 255, .14);
-  border-color: rgba(255, 255, 255, .4);
-  color: #fff;
-}
-.ops-home-hero > * { position: relative; z-index: 1; }
-
-/* The scene sitting behind the greeting: sky, a ferry that bobs, waves that
-   drift. Absolutely positioned and z-indexed under the text (see `> *`
-   above), so it reads as a backdrop rather than competing with it. */
-.ido-hero-scene { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
-.ido-hero-sky { position: absolute; inset: 0; width: 100%; height: 100%; }
-.ido-hero-glint { animation: ido-hero-glint-drift 14s ease-in-out infinite; transform-origin: center; }
-.ido-hero-ferry {
-  position: absolute;
-  right: 8%;
-  bottom: 18px;
-  width: 132px;
-  height: auto;
-  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .28));
-  animation: ido-hero-ferry-bob 5.5s ease-in-out infinite;
-}
-.ido-hero-waves { position: absolute; left: 0; right: 0; bottom: -2px; width: 100%; height: 44px; }
-.ido-hero-wave-back { animation: ido-hero-wave-drift 11s linear infinite; }
-.ido-hero-wave-front { animation: ido-hero-wave-drift 7s linear infinite reverse; }
-/* Stacked above the ferry on the right edge, not the bottom-left: the
-   greeting text sits top-left and its length is the user's own name plus a
-   date string, so it can run to three lines. A badge anywhere in that column
-   would eventually sit under real text instead of the backdrop. */
-.ido-hero-badge {
-  position: absolute;
-  right: 8%;
-  top: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 30px;
-  border-radius: 6px;
-  background: #fff;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, .22);
-  overflow: hidden;
-}
-.ido-hero-badge img { width: 100%; height: 100%; object-fit: cover; }
-
-@keyframes ido-hero-ferry-bob {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-4px) rotate(-.6deg); }
-}
-@keyframes ido-hero-wave-drift {
-  from { transform: translateX(0); }
-  to { transform: translateX(-400px); }
-}
-@keyframes ido-hero-glint-drift {
-  0%, 100% { transform: translate(0, 0) scale(1); opacity: .07; }
-  50% { transform: translate(-18px, 8px) scale(1.08); opacity: .12; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ido-hero-glint, .ido-hero-ferry, .ido-hero-wave-track { animation: none; }
-}
 .ops-module-copy { margin: 4px 0 0; color: var(--ido-muted); font-size: 10px; line-height: 1.4; }
 .ops-gate-progress { display: grid; grid-template-columns: repeat(3,1fr); border: 1px solid var(--ido-border); }
 .ops-gate-progress div { display: grid; justify-items: center; gap: 1px; padding: 9px 4px; border-right: 1px solid var(--ido-border); }
@@ -2377,26 +2231,6 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ops-home-actions { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 6px; }
 .ops-home-actions button { min-width: 0; padding: 0 7px; font-size: 8px; }
 
-.ops-assistant-card {
-  width: 100%;
-  min-height: 78px;
-  display: grid;
-  grid-template-columns: 42px minmax(0,1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid #9fc4cf;
-  border-radius: 4px;
-  background: var(--ido-primary-deep);
-  color: #fff;
-  text-align: left;
-  cursor: pointer;
-}
-.ops-assistant-mark { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.3); border-radius: 50%; color: #8bd8e8; font-size: 10px; font-weight: 850; }
-.ops-assistant-card > span:nth-child(2) { min-width: 0; display: grid; gap: 2px; }
-.ops-assistant-card strong { font-size: 12px; }
-.ops-assistant-card small { color: #c4dbe4; font-size: 9px; line-height: 1.4; }
-.ops-assistant-card b { color: #8bd8e8; font-size: 22px; font-weight: 450; }
 .ops-empty-inline { padding: 12px; border: 1px dashed var(--ido-border); background: #f9fbfc; color: var(--ido-muted); font-size: 10px; line-height: 1.45; }
 .ops-section-link { min-height: 36px; padding: 0 5px; border: 0; background: transparent; color: var(--ido-primary); font-size: 9px; font-weight: 800; cursor: pointer; }
 
@@ -2906,7 +2740,6 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   .operations-quick-grid { grid-template-columns: 1fr; }
   .ops-form-actions { grid-template-columns: 1fr; }
   .ops-home-actions { grid-template-columns: 1fr; }
-  .ops-home-hero { display: grid; }
   .ops-kv { grid-template-columns: 1fr; }
   .ops-kv div { border-right: 0; }
   .ops-assistant-metrics { grid-template-columns: 1fr 1fr; }

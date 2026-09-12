@@ -2,8 +2,6 @@
 
 import { ReactNode } from "react";
 
-const LOGO_SRC = "/brand/ido-logo.jpg";
-
 type HeaderUtilitiesProps = {
   onAssistant?: () => void;
   onSettings?: () => void;
@@ -44,44 +42,38 @@ function HeaderUtilities({ onAssistant, onSettings }: HeaderUtilitiesProps) {
   );
 }
 
-/** Ana ekranda gösterilen Excelbase Operations şemsiye kimliği. */
+/** Ana ekranın üst çubuğu: uygulama adı ve yardımcı düğmeler. */
 export function AppHeaderHome({
-  statusLabel = "ÇEVRİMDIŞI HAZIR",
   onAssistant,
   onSettings,
 }: {
-  statusLabel?: string;
   onAssistant?: () => void;
   onSettings?: () => void;
 }) {
   return (
     <header className="ido-header">
-      <span className="ido-header-logo lg operations-header-mark" aria-hidden="true">XB</span>
+      <span className="ido-header-mark" aria-hidden="true">XB</span>
       <div className="ido-header-identity">
         <p className="ido-header-brand">EXCELBASE</p>
         <p className="ido-header-sub">OPERATIONS</p>
       </div>
-      {!onAssistant && !onSettings ? <span className="ido-header-badge">{statusLabel}</span> : null}
       <HeaderUtilities onAssistant={onAssistant} onSettings={onSettings} />
     </header>
   );
 }
 
-/** Alt ekranlarda gösterilen geri butonlu, başlıklı üst çubuk. */
+/** Alt ekranların üst çubuğu: geri, başlık ve varsa eylemler. Marka
+ * görseli taşımaz; başlık tek başına yeterlidir. */
 export function AppHeaderScreen({
   title,
   onBack,
   action,
-  compact = false,
-  brand = "ido",
   onAssistant,
   onSettings,
 }: {
   title: string;
   onBack?: () => void;
   action?: ReactNode;
-  compact?: boolean;
-  brand?: "ido" | "operations" | "none";
   onAssistant?: () => void;
   onSettings?: () => void;
 }) {
@@ -92,17 +84,9 @@ export function AppHeaderScreen({
           ‹
         </button>
       ) : (
-        <span style={{ width: 44, height: 44, flex: "0 0 auto" }} aria-hidden="true" />
+        <span className="ido-header-mark" aria-hidden="true">XB</span>
       )}
       <p className="ido-header-title">{title}</p>
-      {brand === "ido" ? (
-        <span className={`ido-header-logo${compact ? " compact" : ""}`}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={LOGO_SRC} alt="İDO" />
-        </span>
-      ) : brand === "operations" ? (
-        <span className={`ido-header-logo operations-header-mark${compact ? " compact" : ""}`} aria-hidden="true">XB</span>
-      ) : null}
       <HeaderUtilities onAssistant={onAssistant} onSettings={onSettings} />
       {action}
     </header>

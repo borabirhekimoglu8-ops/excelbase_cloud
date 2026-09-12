@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { WorkFileCard } from "@/components/WorkFileCard";
-import { IdoHeroBanner } from "@/components/ido/HeroBanner";
 import {
   fetchOfficeDocuments,
   fetchWorkFiles,
@@ -15,7 +14,6 @@ import type { OfficeDocument, WorkFile, WorkspaceTask } from "@/lib/workspace";
 type HomeTabProps = {
   onNavigate: (target: string) => void;
   onOpenWorkFile: (id: string) => void;
-  onAssistant: () => void;
 };
 
 function isActiveWorkFile(workFile: WorkFile): boolean {
@@ -38,7 +36,7 @@ function workFileRank(workFile: WorkFile): number {
   return priority + overdue + blocked;
 }
 
-export function HomeTab({ onNavigate, onOpenWorkFile, onAssistant }: HomeTabProps) {
+export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
   const { user } = useAuth();
   const { summary, version } = useStore();
   const [workFiles, setWorkFiles] = useState<WorkFile[]>([]);
@@ -80,14 +78,12 @@ export function HomeTab({ onNavigate, onOpenWorkFile, onAssistant }: HomeTabProp
 
   return (
     <div className="ops-page">
-      <section className="ops-home-hero">
-        <IdoHeroBanner />
+      <section className="ops-page-heading">
         <div>
           <p className="ops-eyebrow">ÇALIŞMA ALANI</p>
           <h1>Günaydın, {user.name.split(" ")[0] || "Operasyon"}</h1>
-          <p>{todayLabel} · İşler, yolcular ve evraklar cihazınızda şifreli tutuluyor.</p>
+          <p>{todayLabel} · Veriler bu cihazda şifreli tutulur.</p>
         </div>
-        <span className="ops-status-mark">ÇEVRİMDIŞI HAZIR</span>
       </section>
 
       <div className="ops-metric-grid">
@@ -118,12 +114,10 @@ export function HomeTab({ onNavigate, onOpenWorkFile, onAssistant }: HomeTabProp
       <section className="ops-module-card">
         <div className="ops-module-head">
           <div>
-            <p className="ops-eyebrow">AKTİF MODÜL</p>
+            <p className="ops-eyebrow">KAPI VİZESİ</p>
             <h2>Gate Visa Checklist</h2>
-            <p className="ops-module-copy">Yolcu listeleri, biyometrik fotoğraflar, PDF evraklar ve günlük çıktılar.</p>
+            <p className="ops-module-copy">Yolcu listeleri, fotoğraflar, PDF evraklar ve günlük çıktılar.</p>
           </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/ido-logo.jpg" alt="İDO" />
         </div>
         <div className="ops-gate-progress">
           <div>
@@ -184,15 +178,6 @@ export function HomeTab({ onNavigate, onOpenWorkFile, onAssistant }: HomeTabProp
           </div>
         )}
       </section>
-
-      <button className="ops-assistant-card" type="button" onClick={onAssistant}>
-        <span className="ops-assistant-mark" aria-hidden="true">S</span>
-        <span>
-          <strong>Claude Sonnet Asistan</strong>
-          <small>Operasyon özetini gerçek Sonnet ile değerlendirin; bağımsız çalışma alanını açın.</small>
-        </span>
-        <b aria-hidden="true">›</b>
-      </button>
     </div>
   );
 }

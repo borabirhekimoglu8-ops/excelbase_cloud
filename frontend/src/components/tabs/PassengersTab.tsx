@@ -257,10 +257,8 @@ export function PassengersTab({ initialStatus = "" }: { initialStatus?: string }
         </div>
       )}
 
-      <section className="ic-list-export" aria-label="İDO yolcu listesi çıktıları">
+      <section className="ic-list-export" aria-label="Yolcu listesi çıktıları">
         <div className="ic-list-export-head">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/ido-logo.jpg" alt="İDO" />
           <div>
             <p>Günlük Yolcu Listesi</p>
             <span>

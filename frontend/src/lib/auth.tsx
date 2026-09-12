@@ -66,10 +66,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <main className="auth-page">
         <section className="auth-panel">
           <div className="brand-lockup auth-brand">
-            <span className="auth-logo-mark">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/brand/ido-logo.jpg" alt="İDO" />
-            </span>
+            <span className="auth-logo-mark" aria-hidden="true">XB</span>
             <div>
               <strong>Excelbase Operations</strong>
               <small>Çevrimdışı Operasyon Merkezi</small>
