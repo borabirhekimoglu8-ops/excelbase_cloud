@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
+import { BrandMark } from "@/components/ui/BrandMark";
 
 type HeaderUtilitiesProps = {
   onAssistant?: () => void;
@@ -52,10 +53,10 @@ export function AppHeaderHome({
 }) {
   return (
     <header className="ido-header">
-      <span className="ido-header-mark" aria-hidden="true">XB</span>
+      <span className="ido-header-mark" aria-hidden="true"><BrandMark size={36} /></span>
       <div className="ido-header-identity">
-        <p className="ido-header-brand">EXCELBASE</p>
-        <p className="ido-header-sub">OPERATIONS</p>
+        <p className="ido-header-brand">Excelbase</p>
+        <p className="ido-header-sub">Operasyon</p>
       </div>
       <HeaderUtilities onAssistant={onAssistant} onSettings={onSettings} />
     </header>
@@ -84,7 +85,7 @@ export function AppHeaderScreen({
           ‹
         </button>
       ) : (
-        <span className="ido-header-mark" aria-hidden="true">XB</span>
+        <span className="ido-header-mark" aria-hidden="true"><BrandMark size={36} /></span>
       )}
       <p className="ido-header-title">{title}</p>
       <HeaderUtilities onAssistant={onAssistant} onSettings={onSettings} />

@@ -13,6 +13,7 @@ import {
 } from "./exporter";
 import {
   localExportEncryptedBackup,
+  localMarkBackup,
   localExportDocuments,
   localExportPhotos,
   localExportRows,
@@ -79,7 +80,8 @@ export async function downloadLocal(kind: LocalDownloadKind, options: LocalDownl
     return;
   }
   if (kind === "backup") {
-    await saveBlob(await localExportEncryptedBackup(), `gate-visa-checklist-encrypted-backup-${stamp()}.excelbase-backup`);
+    const result = await saveBlob(await localExportEncryptedBackup(), `excelbase-encrypted-backup-${stamp()}.excelbase-backup`);
+    if (result !== "cancelled") await localMarkBackup();
     return;
   }
 

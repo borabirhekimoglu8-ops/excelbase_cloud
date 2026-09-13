@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     name: "Excelbase Operations",
     short_name: "Excelbase Operations",
-    description: "İş dosyaları, yolcular, evraklar, raporlar ve Gate Visa süreçleri için çevrimdışı operasyon merkezi.",
+    description: "İş dosyaları, yolcular, evraklar, raporlar ve kapı vizesi süreçleri için çevrimdışı operasyon merkezi.",
     start_url: "/",
     scope: "/",
     display: "standalone",

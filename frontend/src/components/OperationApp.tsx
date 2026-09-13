@@ -35,6 +35,8 @@ import {
   LayoutPreference,
   parseLayoutPreference,
 } from "@/lib/layoutPreference";
+import { useEdgeSwipeBack } from "@/hooks/useEdgeSwipeBack";
+import { useKeyboardInset } from "@/hooks/useKeyboardInset";
 
 type RootScreen = {
   kind: "root";
@@ -83,6 +85,7 @@ function Shell() {
     () => emptyAssistantConversation(),
   );
   const [layoutPreference, setLayoutPreference] = useState<LayoutPreference>("auto");
+  const [wideLayout, setWideLayout] = useState(false);
 
   useEffect(() => {
     try {
@@ -90,6 +93,11 @@ function Shell() {
     } catch {
       setLayoutPreference("auto");
     }
+    const media = window.matchMedia("(min-width: 761px)");
+    const apply = () => setWideLayout(media.matches);
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
   }, []);
 
   // The window is the scroll container, so a screen opened from the bottom of
@@ -146,6 +154,14 @@ function Shell() {
       setScreen({ kind: target });
       return;
     }
+    if (target === "issues" || target === "gallery" || target === "archive" || target === "package" || target === "management") {
+      setScreen({ kind: "settings-sub", sub: target });
+      return;
+    }
+    if (target === "assistant") {
+      openAssistant();
+      return;
+    }
     goRoot("home");
   }
 
@@ -181,6 +197,37 @@ function Shell() {
     || screen.kind === "reports"
   );
   const stickyContent = screen.kind === "import" || screen.kind === "new-passenger" || screen.kind === "new-work-file";
+  const canGoBack = screen.kind !== "root" || screen.tab !== "home";
+  const goBack = () => {
+    if (screen.kind === "root") {
+      goRoot("home");
+      return;
+    }
+    if (screen.kind === "work-file" || screen.kind === "new-work-file") {
+      goRoot("work-files");
+      return;
+    }
+    if (screen.kind === "settings-sub") {
+      setScreen({ kind: "settings" });
+      return;
+    }
+    if (screen.kind === "assistant") {
+      setScreen(assistantReturnScreen.kind === "assistant" ? { kind: "root", tab: "home" } : assistantReturnScreen);
+      return;
+    }
+    if (screen.kind === "import" || screen.kind === "new-passenger" || screen.kind === "records") {
+      goRoot("gate-visa", { gateView: screen.kind === "records" ? "folders" : "list" });
+      return;
+    }
+    goRoot("home");
+  };
+  useKeyboardInset();
+  useEdgeSwipeBack(canGoBack, goBack);
+  const desktopSplit = (
+    wideLayout
+    && layoutPreference !== "mobile"
+    && (screen.kind === "work-file" || (screen.kind === "root" && screen.tab === "work-files"))
+  );
 
   return (
     <div className={`ido-app layout-${layoutPreference}`}>
@@ -241,7 +288,7 @@ function Shell() {
         )}
         {screen.kind === "assistant" && (
           <AppHeaderScreen
-            title="Claude Sonnet"
+            title="Asistan"
             onBack={() => setScreen(
               assistantReturnScreen.kind === "assistant"
                 ? { kind: "root", tab: "home" }
@@ -274,11 +321,27 @@ function Shell() {
               onOpenWorkFile={(id) => setScreen({ kind: "work-file", id })}
             />
           )}
-          {screen.kind === "root" && screen.tab === "work-files" && (
+          {screen.kind === "root" && screen.tab === "work-files" && !desktopSplit && (
             <WorkFilesTab
               onCreate={() => setScreen({ kind: "new-work-file" })}
               onOpen={(id) => setScreen({ kind: "work-file", id })}
             />
+          )}
+          {desktopSplit && (
+            <div className="ops-split">
+              <WorkFilesTab
+                onCreate={() => setScreen({ kind: "new-work-file" })}
+                onOpen={(id) => setScreen({ kind: "work-file", id })}
+              />
+              {screen.kind === "work-file" ? (
+                <WorkFileDetail id={screen.id} onBack={() => goRoot("work-files")} />
+              ) : (
+                <div className="xb-empty">
+                  <strong>Bir iş dosyası seçin</strong>
+                  <p>Soldaki listeden bir kayda dokunun; evrak, görev ve yolcular burada açılır.</p>
+                </div>
+              )}
+            </div>
           )}
           {screen.kind === "root" && screen.tab === "passengers" && <PassengerRosterTab />}
           {screen.kind === "root" && screen.tab === "documents" && (
@@ -298,7 +361,7 @@ function Shell() {
           )}
           {screen.kind === "sales" && <SalesTab />}
           {screen.kind === "reports" && <ReportsTab onOpen={openReport} />}
-          {screen.kind === "work-file" && <WorkFileDetail id={screen.id} onBack={() => goRoot("work-files")} />}
+          {screen.kind === "work-file" && !desktopSplit && <WorkFileDetail id={screen.id} onBack={() => goRoot("work-files")} />}
           {screen.kind === "new-work-file" && (
             <WorkFileForm
               onCancel={() => goRoot("work-files")}
@@ -319,6 +382,7 @@ function Shell() {
             <AssistantWorkspace
               conversation={assistantConversation}
               setConversation={setAssistantConversation}
+              onNavigate={navigate}
             />
           )}
           {screen.kind === "settings" && (

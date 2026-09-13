@@ -53,6 +53,11 @@ import {
   localSaveOperationMeta,
   localSetPassengerPhoto,
   localSetup,
+  localAttachRecoveryKey,
+  localLastBackupAt,
+  localLoginWithRecovery,
+  localMarkBackup,
+  localRecoveryHint,
   localSummary,
   localToggleWorkspaceTask,
   localUndoImport,
@@ -267,7 +272,12 @@ export type MatchPhotosResponse = {
 export type UnmatchedPhoto = { id: string; filename: string; photo_url: string; created_at: string };
 export type SimpleResult = { ok: boolean; message: string; passenger_count: number };
 export type AuthUser = { id: string; name: string; role: "admin" | "operator" | "viewer" };
-export type AuthStatus = { setup_required: boolean; authenticated: boolean; user: AuthUser | null };
+export type AuthStatus = {
+  setup_required: boolean;
+  authenticated: boolean;
+  user: AuthUser | null;
+  recoveryKey?: string;
+};
 export type UserView = AuthUser & { active: boolean };
 export type AuditEntry = { id: string; time: string; actor: string; role: string; action: string; path: string };
 export type BackupInfo = { snapshot_date: string };
@@ -338,6 +348,11 @@ export function downloadUrl(path: string): string {
 export const fetchAuthStatus = localAuthStatus;
 export const setupAuth = localSetup;
 export const login = localLogin;
+export const loginWithRecovery = localLoginWithRecovery;
+export const attachRecoveryKey = localAttachRecoveryKey;
+export const recoveryHint = localRecoveryHint;
+export const markBackupTaken = localMarkBackup;
+export const lastBackupAt = localLastBackupAt;
 export const logout = localLogout;
 export const fetchSummary = localSummary;
 export const fetchPassengers = localPassengers;

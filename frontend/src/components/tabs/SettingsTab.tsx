@@ -115,9 +115,9 @@ export function SettingsTab({
       <div className="ic-info-note">
         <span className="ic-info-mark">i</span>
         <div className="ic-info-note-copy">
-          <p className="ic-info-note-title">Excelbase Operations · v{UI_VERSION}</p>
+          <p className="ic-info-note-title">Excelbase · v{UI_VERSION}</p>
           <p className="ic-info-note-detail">
-            {connected ? "Çevrimdışı kullanıma hazır" : "Yerel kasa okunamadı"} · Gate Visa modülü ve çalışma alanı verileri bu cihazda şifreli saklanıyor.
+            {connected ? "Çevrimdışı kullanıma hazır" : "Yerel kasa okunamadı"} · Kapı vizesi ve çalışma alanı verileri bu cihazda şifreli saklanıyor.
           </p>
         </div>
       </div>

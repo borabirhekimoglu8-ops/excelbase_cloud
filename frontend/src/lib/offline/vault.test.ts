@@ -32,6 +32,7 @@ import {
   setMeta,
   setupVault,
   unlockVault,
+  unlockVaultWithRecovery,
   vaultAuthStatus,
 } from "./vault";
 
@@ -65,6 +66,14 @@ describe("encrypted offline vault", () => {
     expect(await vaultAuthStatus()).toEqual({ setup_required: false, authenticated: false, user: null });
     await expect(unlockVault("000000")).rejects.toThrow("Erişim kodu yanlış");
     expect((await unlockVault("123456")).user?.name).toBe("Ayşe Yılmaz");
+  });
+
+  it("unlocks with the recovery key shown at setup", async () => {
+    const setup = await setupVault("Ayşe Yılmaz", "123456");
+    expect(setup.recoveryKey).toMatch(/^[0-9A-F]{4}(-[0-9A-F]{4}){7}$/);
+    lockVault();
+    await expect(unlockVaultWithRecovery("ffff-ffff-ffff-ffff-ffff-ffff-ffff-ffff")).rejects.toThrow(/Kurtarma kodu yanlış/);
+    expect((await unlockVaultWithRecovery(setup.recoveryKey)).user?.name).toBe("Ayşe Yılmaz");
   });
 
   it("supports passenger CRUD and atomic batch replacement", async () => {

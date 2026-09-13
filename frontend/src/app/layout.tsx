@@ -1,11 +1,18 @@
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import { PwaBootstrap } from "@/components/pwa/PwaBootstrap";
 import "./globals.css";
 
+const inter = Inter({
+  subsets: ["latin", "latin-ext"],
+  display: "swap",
+  variable: "--font-sans",
+});
+
 export const metadata: Metadata = {
   applicationName: "Excelbase Operations",
-  title: "Excelbase Operations · Operasyon ve Evrak Merkezi",
-  description: "İş dosyaları, yolcular, evraklar, raporlar ve Gate Visa süreçleri için çevrimdışı operasyon merkezi.",
+    title: "Excelbase Operations · Operasyon ve evrak merkezi",
+    description: "İş dosyaları, yolcular, evraklar, raporlar ve kapı vizesi süreçleri için çevrimdışı operasyon merkezi.",
   manifest: "/manifest.webmanifest",
   formatDetection: {
     telephone: false,
@@ -33,8 +40,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="tr">
-      <body>
+    <html lang="tr" className={inter.variable}>
+      <body className={inter.className}>
         {children}
         <PwaBootstrap />
       </body>

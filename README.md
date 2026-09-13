@@ -36,14 +36,14 @@ Excelbase Operations; iş dosyalarını, C kodlarını, görevleri, notları, ev
 - Anthropic API anahtarı yalnız FastAPI/Render ortamında tutulur; PWA paketine, IndexedDB'ye veya API yanıtına girmez.
 - Şifreleme anahtarı yalnızca kasa açıkken bellekte tutulur.
 - IndexedDB'deki yolcu, iş dosyası, C kodu, görev, not ve evrak kayıtları şifreli içerik taşır.
-- Kasa kodunu unutmak cihazdaki veriyi erişilemez yapar.
+- Kasa kodunu unutmak cihazdaki veriyi erişilemez yapar; kurulumda gösterilen kurtarma kodu ikinci bir anahtardır.
 - Safari verisini silmeden, cihaz değiştirmeden veya uygulamayı kaldırmadan önce **Paket → Şifreli yedek al** ile yedeği Dosyalar'a kaydedin.
 
 ## Mimari
 
 - `frontend/` — statik Next.js PWA, IndexedDB veri katmanı, Web Crypto kasası, dosya ayrıştırıcıları ve yerel çıktı üreticileri.
 - `frontend/public/sw.js` — uygulama kabuğunu sürümleyip çevrimdışı açılışı sağlayan service worker.
-- `backend/` — statik üretim çıktısını, sağlık kontrolünü ve kimliği doğrulanmış Sonnet proxy'sini sunan FastAPI katmanı. Ana PWA çalışma verisi için bu API'ye bağlı değildir.
+- `backend/` — statik üretim çıktısını, sağlık kontrolünü, kimliği doğrulanmış asistan vekilini ve şifreli kasa eşlemesini (`/api/vault/sync`) sunan FastAPI katmanı. Ana PWA çalışma verisi için bu API'ye bağlı değildir; senkron yalnız zaten şifreli yedek paketini taşır.
 - `v8/` — ayrı tutulan eski/deneysel ilişkisel servis; ana PWA arayüzünde V8 sayfası bulunmaz. `render.yaml` bu servisi ayrı dağıttığı için yerinde durur.
 - `legacy/streamlit/` — PWA öncesi Streamlit arayüzünün arşivi. Geliştirilmez ve dağıtılmaz; paylaşılan Python okuyucuları (`excelbase_core.py`, `gate_visa_reader.py`, `operation_helpers.py` vb.) hâlâ depo kökünde durur çünkü FastAPI ve v8 de onları kullanır.
 

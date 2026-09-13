@@ -24,8 +24,13 @@ type VaultConfig = {
   iterations: number;
   salt: ArrayBuffer;
   wrappedDek: EncryptedPayload;
+  /** Second wrap of the DEK, keyed from the recovery code shown once at setup. */
+  wrappedDekRecovery?: EncryptedPayload;
+  recoveryHint?: string;
   verifier: EncryptedPayload;
 };
+
+export type VaultSetupResult = VaultAuthStatus & { recoveryKey: string };
 
 interface VaultSchema extends DBSchema {
   config: { key: string; value: VaultConfig };
@@ -194,7 +199,38 @@ function validatePin(pin: string): void {
   if (!/^\d{6,}$/.test(pin)) throw new Error("Erişim kodu en az 6 rakam olmalıdır.");
 }
 
-export async function setupVault(name: string, pin: string): Promise<VaultAuthStatus> {
+export function formatRecoveryKey(hex: string): string {
+  const compact = hex.replace(/[^0-9a-f]/gi, "").toUpperCase();
+  return compact.match(/.{1,4}/g)?.join("-") ?? compact;
+}
+
+export function normalizeRecoveryKey(value: string): string {
+  return value.replace(/[^0-9a-f]/gi, "").toLowerCase();
+}
+
+function mintRecoveryKey(): string {
+  const bytes = randomBytes(16);
+  return formatRecoveryKey([...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join(""));
+}
+
+async function deriveRecoveryWrapKey(recoveryKey: string, salt: ArrayBuffer, iterations: number): Promise<CryptoKey> {
+  const material = await cryptography().subtle.importKey(
+    "raw",
+    encoder.encode(normalizeRecoveryKey(recoveryKey)),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+  return cryptography().subtle.deriveKey(
+    { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+export async function setupVault(name: string, pin: string): Promise<VaultSetupResult> {
   const displayName = name.trim();
   if (!displayName) throw new Error("Ad soyad alanı boş bırakılamaz.");
   validatePin(pin);
@@ -212,10 +248,13 @@ export async function setupVault(name: string, pin: string): Promise<VaultAuthSt
       "raw",
       rawDek,
       { name: "AES-GCM", length: 256 },
-      false,
+      true,
       ["encrypt", "decrypt"],
     );
     const wrappedDek = await encryptBytes(pinKey, rawDek, "wrapped-dek");
+    const recoveryKey = mintRecoveryKey();
+    const recoveryWrap = await deriveRecoveryWrapKey(recoveryKey, salt, PBKDF2_ITERATIONS);
+    const wrappedDekRecovery = await encryptBytes(recoveryWrap, rawDek, "wrapped-dek-recovery");
     const verifier = await encryptJson(
       importedDataKey,
       { magic: "excelbase-local-vault", name: displayName },
@@ -227,6 +266,8 @@ export async function setupVault(name: string, pin: string): Promise<VaultAuthSt
       iterations: PBKDF2_ITERATIONS,
       salt,
       wrappedDek,
+      wrappedDekRecovery,
+      recoveryHint: recoveryKey.slice(-4),
       verifier,
     };
 
@@ -246,7 +287,7 @@ export async function setupVault(name: string, pin: string): Promise<VaultAuthSt
     dataKey = importedDataKey;
     unlockedUser = { id: "local-admin", name: displayName, role: "admin" };
     announceChange();
-    return vaultAuthStatus();
+    return { ...(await vaultAuthStatus()), recoveryKey };
   } finally {
     rawDek.fill(0);
   }
@@ -265,7 +306,7 @@ export async function unlockVault(pin: string): Promise<VaultAuthStatus> {
         "raw",
         rawDek,
         { name: "AES-GCM", length: 256 },
-        false,
+        true,
         ["encrypt", "decrypt"],
       );
       const verifier = await decryptJson<{ magic: string; name: string }>(candidate, config.verifier, "verifier");
@@ -282,6 +323,69 @@ export async function unlockVault(pin: string): Promise<VaultAuthStatus> {
     unlockedUser = null;
     throw new Error("Erişim kodu yanlış veya kasa verisi bozulmuş.");
   }
+}
+
+export async function unlockVaultWithRecovery(recoveryKey: string): Promise<VaultAuthStatus> {
+  const db = await database();
+  const config = await db.get("config", VAULT_CONFIG_KEY);
+  if (!config) throw new Error("Bu cihazda henüz bir kasa oluşturulmamış.");
+  if (!config.wrappedDekRecovery) {
+    throw new Error("Bu kasa için kurtarma kodu tanımlanmamış. Erişim kodunu kullanın.");
+  }
+  try {
+    const wrapKey = await deriveRecoveryWrapKey(recoveryKey, config.salt, config.iterations);
+    const rawDek = new Uint8Array(await decryptBytes(wrapKey, config.wrappedDekRecovery, "wrapped-dek-recovery"));
+    try {
+      const candidate = await cryptography().subtle.importKey(
+        "raw",
+        rawDek,
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt"],
+      );
+      const verifier = await decryptJson<{ magic: string; name: string }>(candidate, config.verifier, "verifier");
+      if (verifier.magic !== "excelbase-local-vault" || !verifier.name) throw new Error("invalid verifier");
+      dataKey = candidate;
+      unlockedUser = { id: "local-admin", name: verifier.name, role: "admin" };
+      announceChange();
+      return vaultAuthStatus();
+    } finally {
+      rawDek.fill(0);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Bu kasa")) throw error;
+    dataKey = null;
+    unlockedUser = null;
+    throw new Error("Kurtarma kodu yanlış veya kasa verisi bozulmuş.");
+  }
+}
+
+/** Issues a recovery code for a vault that was created before recovery existed. */
+export async function attachRecoveryKey(): Promise<string> {
+  const dek = activeKey();
+  const db = await database();
+  const config = await db.get("config", VAULT_CONFIG_KEY);
+  if (!config) throw new Error("Bu cihazda henüz bir kasa oluşturulmamış.");
+  const exported = await cryptography().subtle.exportKey("raw", dek);
+  const rawDek = new Uint8Array(exported);
+  try {
+    const recoveryKey = mintRecoveryKey();
+    const wrapKey = await deriveRecoveryWrapKey(recoveryKey, config.salt, config.iterations);
+    const wrappedDekRecovery = await encryptBytes(wrapKey, rawDek, "wrapped-dek-recovery");
+    await db.put("config", {
+      ...config,
+      wrappedDekRecovery,
+      recoveryHint: recoveryKey.slice(-4),
+    }, VAULT_CONFIG_KEY);
+    return recoveryKey;
+  } finally {
+    rawDek.fill(0);
+  }
+}
+
+export async function vaultRecoveryHint(): Promise<string | null> {
+  const config = await (await database()).get("config", VAULT_CONFIG_KEY);
+  return config?.recoveryHint ?? null;
 }
 
 export function lockVault(): void {
