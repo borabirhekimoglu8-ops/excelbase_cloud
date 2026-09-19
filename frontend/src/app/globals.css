@@ -2926,9 +2926,6 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
     top: 6%;
     opacity: .48;
   }
-  .ido-frame {
-    max-width: none;
-  }
   :is(.ido-app.layout-auto,.ido-app.layout-desktop) .ido-bottom-nav {
     margin: 0;
     border-radius: 0;
