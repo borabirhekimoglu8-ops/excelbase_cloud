@@ -25,6 +25,7 @@ from .config import (
     api_key,
     assistant_settings,
     drive_audit_settings,
+    workstation_settings,
 )
 from .models import (
     ArchiveResponse,
@@ -116,6 +117,20 @@ from .driveaudit.service import (
     DriveAuditUnavailableError,
     drive_audit_state,
     run_scan,
+)
+from .workstation.schemas import (
+    WorkstationAdviseRequest,
+    WorkstationRootRequest,
+    WorkstationSearchRequest,
+)
+from .workstation.service import (
+    WorkstationError,
+    WorkstationUnavailableError,
+    advise,
+    build_catalog,
+    catalog_stats,
+    search_catalog,
+    workstation_state,
 )
 from . import services
 from .state import APP_VERSION
@@ -471,6 +486,103 @@ async def drive_audit_scan(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from None
     return report.as_dict()
+
+
+@app.get("/api/workstation/v1/status")
+def workstation_status_endpoint(
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    """Whether the local work-folder catalogue is available."""
+    state = workstation_state()
+    settings = workstation_settings()
+    return {
+        "state": state,
+        "available": state == "ready",
+        "default_root": settings.default_root,
+        "privacy": "catalog_metadata_only",
+        "egress": "none",
+    }
+
+
+@app.post("/api/workstation/v1/catalog/build")
+async def workstation_catalog_build(
+    payload: WorkstationRootRequest,
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    """Index filenames and paths under a work folder. Never opens file bodies."""
+    try:
+        return await asyncio.to_thread(build_catalog, payload.root)
+    except WorkstationUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"İş istasyonu kullanılabilir değil: {exc}",
+        ) from None
+    except WorkstationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from None
+
+
+@app.get("/api/workstation/v1/catalog/stats")
+def workstation_catalog_stats(
+    root: str = Query(default=""),
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    try:
+        return catalog_stats(root)
+    except WorkstationUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"İş istasyonu kullanılabilir değil: {exc}",
+        ) from None
+    except WorkstationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from None
+
+
+@app.post("/api/workstation/v1/catalog/search")
+async def workstation_catalog_search(
+    payload: WorkstationSearchRequest,
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    """Search the local catalogue by filename / path tokens only."""
+    try:
+        return await asyncio.to_thread(
+            search_catalog,
+            payload.query,
+            payload.root,
+            kind=payload.kind or None,
+            limit=payload.limit,
+        )
+    except WorkstationUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"İş istasyonu kullanılabilir değil: {exc}",
+        ) from None
+    except WorkstationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from None
+
+
+@app.post("/api/workstation/v1/advise")
+async def workstation_advise(
+    payload: WorkstationAdviseRequest,
+    _actor: Actor = Depends(require_assistant_session),
+) -> dict:
+    """Deterministic local advice from catalogue aggregates — no model, no egress."""
+    try:
+        return await asyncio.to_thread(advise, payload.question, payload.root)
+    except WorkstationUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"İş istasyonu kullanılabilir değil: {exc}",
+        ) from None
+    except WorkstationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from None
 
 
 @app.post("/api/dev-agent/v1/apply")
