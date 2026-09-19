@@ -9,6 +9,7 @@ type QuickCreateSheetProps = {
   onNewPassenger?: () => void;
   onUploadDocument?: () => void;
   onBulkImport?: () => void;
+  onBulkPhotos?: () => void;
   onNewPetition?: () => void;
   onNewTask?: () => void;
 };
@@ -28,6 +29,7 @@ export function QuickCreateSheet({
   onNewPassenger,
   onUploadDocument,
   onBulkImport,
+  onBulkPhotos,
   onNewPetition,
   onNewTask,
 }: QuickCreateSheetProps) {
@@ -81,6 +83,7 @@ export function QuickCreateSheet({
     { key: "passenger", label: "Yeni yolcu", detail: "Bilgi, biyometrik fotoğraf ve PDF", mark: "YO", run: onNewPassenger },
     { key: "document", label: "Evrak yükle", detail: "İşe, yolcuya veya arşive bağla", mark: "EV", run: onUploadDocument },
     { key: "bulk-import", label: "Toplu yolcu listesi", detail: "Excel, CSV, ODS veya ZIP içe aktar", mark: "XL", run: onBulkImport },
+    { key: "bulk-photos", label: "Toplu fotoğraf eşleştir", detail: "Vesikalık / ZIP · otomatik isim-pasaport", mark: "FO", run: onBulkPhotos },
     { key: "petition", label: "Yeni dilekçe", detail: "Kayıttan resmi belge oluştur", mark: "Dİ", run: onNewPetition },
     { key: "task", label: "Yeni görev", detail: "Son tarih ve öncelik belirle", mark: "GR", run: onNewTask },
   ];

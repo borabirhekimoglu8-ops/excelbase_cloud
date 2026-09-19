@@ -38,12 +38,14 @@ function dayLabel(dateKey: string): string {
 export function GateVisaTab({
   onImport,
   onCreate,
+  onBulkPhotos,
   canCreate,
   initialView = "folders",
   initialStatus = "",
 }: {
   onImport: () => void;
   onCreate: () => void;
+  onBulkPhotos?: () => void;
   canCreate: boolean;
   initialView?: View;
   initialStatus?: string;
@@ -123,6 +125,15 @@ export function GateVisaTab({
             <small>Kapı vizesi listesi · ZIP veya Excel</small>
           </span>
         </button>
+        {onBulkPhotos ? (
+          <button type="button" className="ic-gatevisa-primary" onClick={onBulkPhotos}>
+            <span aria-hidden="true">▣</span>
+            <span>
+              <strong>Toplu fotoğraf eşleştir</strong>
+              <small>Vesikalık / ZIP · isim veya pasaport ile otomatik</small>
+            </span>
+          </button>
+        ) : null}
       </section>
 
       <div className="ic-subtabs" role="tablist" aria-label="Görünüm">

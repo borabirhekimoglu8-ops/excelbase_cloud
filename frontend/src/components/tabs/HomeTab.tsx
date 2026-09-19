@@ -102,6 +102,13 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
   }
 
   const queue = [
+    summary.unmatched_photo_count > 0 && {
+      key: "unmatched",
+      title: `${summary.unmatched_photo_count} eşleşmemiş fotoğraf`,
+      detail: "Toplu fotoğraf ekranından yolcuya bağlayın",
+      target: "bulk-photos",
+      attention: true,
+    },
     summary.missing_photo > 0 && {
       key: "fotosuz",
       title: `${summary.missing_photo} fotosuz yolcu`,
@@ -114,13 +121,6 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
       title: `${summary.missing_count} eksik evrak`,
       detail: "Pasaport, voucher veya zorunlu PDF eksik",
       target: "passengers-eksik",
-      attention: true,
-    },
-    summary.unmatched_photo_count > 0 && {
-      key: "unmatched",
-      title: `${summary.unmatched_photo_count} eşleşmemiş fotoğraf`,
-      detail: "Kontrol merkezinden yolcuya bağlayın",
-      target: "issues",
       attention: true,
     },
     urgentTasks.length > 0 && {
@@ -148,10 +148,10 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
 
   return (
     <div className="ops-page">
-      <section className="ops-page-heading">
+      <section className="ops-page-heading xb-home-hero">
         <div>
           <p className="ops-eyebrow">Bugün</p>
-          <h1>Günaydın, {user.name.split(" ")[0] || "Operasyon"}</h1>
+          <h1>{user.name.split(" ")[0] || "Operasyon"}</h1>
           <p>{todayLabel}. Veriler bu cihazda şifreli.</p>
         </div>
       </section>
@@ -196,6 +196,9 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
         <div className="ops-home-actions" style={{ marginTop: 12 }}>
           <button className="ops-primary" type="button" onClick={() => onNavigate("gate-visa-list")}>
             Yolcuları aç
+          </button>
+          <button className="ops-secondary" type="button" onClick={() => onNavigate("bulk-photos")}>
+            Toplu fotoğraf
           </button>
           <button className="ops-secondary" type="button" onClick={() => onNavigate("import")}>
             Toplu liste

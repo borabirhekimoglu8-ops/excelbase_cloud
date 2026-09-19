@@ -14,10 +14,10 @@ const AuthContext = createContext<AuthValue | null>(null);
 function AuthBrand() {
   return (
     <div className="brand-lockup auth-brand">
-      <BrandMark size={48} tone="on-light" />
+      <BrandMark size={52} tone="on-brand" />
       <div>
         <strong>Excelbase</strong>
-        <small>Çevrimdışı operasyon merkezi</small>
+        <small>Operasyon</small>
       </div>
     </div>
   );
