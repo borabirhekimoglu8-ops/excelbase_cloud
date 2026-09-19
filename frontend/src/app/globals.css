@@ -2989,3 +2989,91 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   border-color: rgba(255,107,116,.45);
 }
 .ido-frame { box-shadow: none !important; }
+
+/* İDO Ege ferry photo as real visual anchor */
+.aegean-stage-ferry {
+  background:
+    linear-gradient(180deg, rgba(6,21,37,.25), rgba(6,21,37,.55) 45%, rgba(6,21,37,.82)),
+    url("/brand/ido-ege-ferry.jpg") center 35% / cover no-repeat !important;
+  filter: saturate(1.05) contrast(1.02);
+}
+
+.xb-mark-wrap {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(244,119,33,.35), var(--glow-cyan);
+  background: rgba(255,255,255,.92);
+}
+.xb-mark-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 4%;
+  background: #fff;
+}
+.xb-mark-fallback { display: none; }
+
+.xb-photo-drop {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+  padding: 28px 18px;
+  border: 1.5px dashed rgba(79,209,232,.45);
+  border-radius: var(--ido-radius-lg);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  color: var(--ido-ink);
+  cursor: pointer;
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+.xb-photo-drop strong {
+  font-family: var(--font-display);
+  font-size: var(--type-17);
+}
+.xb-photo-drop span { color: var(--ido-muted); font-size: var(--type-13); max-width: 28ch; }
+.xb-photo-drop em { color: var(--ido-primary); font-style: normal; font-size: var(--type-11); font-weight: 700; }
+.xb-photo-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.xb-photo-drop.dragging,
+.xb-photo-drop:hover {
+  border-color: var(--ido-orange);
+  box-shadow: var(--glow-orange);
+  transform: translateY(-1px);
+}
+.xb-photo-drop.busy { opacity: .7; pointer-events: none; }
+.xb-photo-match-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.xb-photo-match-list li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--ido-radius-sm);
+  background: rgba(61,214,140,.1);
+}
+.xb-photo-match-list strong { color: var(--ido-ink); font-size: var(--type-13); }
+.xb-photo-match-list small { color: var(--ido-muted); font-size: var(--type-11); }
+.xb-photo-more { margin: 0; color: var(--ido-muted); font-size: var(--type-11); }
+.xb-photo-queue { display: grid; gap: 8px; }
+.xb-photo-queue select {
+  width: 100%;
+  margin-top: 4px;
+  min-height: 34px;
+  border: 1px solid var(--ido-border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.06);
+  color: var(--ido-ink);
+  font-size: 11px;
+}
+.xb-photo-queue-actions { display: flex; gap: 8px; flex: 0 0 auto; }

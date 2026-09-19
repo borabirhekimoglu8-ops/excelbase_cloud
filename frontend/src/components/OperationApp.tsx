@@ -17,6 +17,7 @@ import { DocumentsTab } from "@/components/tabs/DocumentsTab";
 import { ReportsTab, ReportDestination } from "@/components/tabs/ReportsTab";
 import { PassengerRosterTab } from "@/components/tabs/PassengerRosterTab";
 import { ImportTab } from "@/components/tabs/ImportTab";
+import { BulkPhotoMatchTab } from "@/components/tabs/BulkPhotoMatchTab";
 import { SettingsTab, SettingsSub } from "@/components/tabs/SettingsTab";
 import { IssuesTab } from "@/components/tabs/IssuesTab";
 import { GalleryTab } from "@/components/tabs/GalleryTab";
@@ -53,6 +54,7 @@ type Screen =
   | { kind: "new-work-file" }
   | { kind: "new-passenger" }
   | { kind: "import" }
+  | { kind: "bulk-photos" }
   | { kind: "records" }
   | { kind: "sales" }
   | { kind: "reports" }
@@ -150,7 +152,7 @@ function Shell() {
       goRoot(target);
       return;
     }
-    if (target === "records" || target === "import" || target === "sales" || target === "reports") {
+    if (target === "records" || target === "import" || target === "bulk-photos" || target === "sales" || target === "reports") {
       setScreen({ kind: target });
       return;
     }
@@ -188,7 +190,7 @@ function Shell() {
   // button and no tab bar, like settings.
   const bottomNavActive: PrimaryNavKey | null = screen.kind === "root"
     ? screen.tab
-    : screen.kind === "import" || screen.kind === "records"
+    : screen.kind === "import" || screen.kind === "records" || screen.kind === "bulk-photos"
       ? "gate-visa"
       : null;
   const showDateScope = (
@@ -215,7 +217,7 @@ function Shell() {
       setScreen(assistantReturnScreen.kind === "assistant" ? { kind: "root", tab: "home" } : assistantReturnScreen);
       return;
     }
-    if (screen.kind === "import" || screen.kind === "new-passenger" || screen.kind === "records") {
+    if (screen.kind === "import" || screen.kind === "new-passenger" || screen.kind === "records" || screen.kind === "bulk-photos") {
       goRoot("gate-visa", { gateView: screen.kind === "records" ? "folders" : "list" });
       return;
     }
@@ -283,6 +285,12 @@ function Shell() {
         {screen.kind === "import" && (
           <AppHeaderScreen
             title="Toplu Yolcu Yükleme"
+            onBack={() => goRoot("gate-visa", { gateView: "list" })}
+          />
+        )}
+        {screen.kind === "bulk-photos" && (
+          <AppHeaderScreen
+            title="Toplu Fotoğraf"
             onBack={() => goRoot("gate-visa", { gateView: "list" })}
           />
         )}
@@ -355,6 +363,7 @@ function Shell() {
               canCreate={user.role !== "viewer"}
               onImport={() => setScreen({ kind: "import" })}
               onCreate={() => setScreen({ kind: "new-passenger" })}
+              onBulkPhotos={() => setScreen({ kind: "bulk-photos" })}
               initialView={screen.gateView ?? "folders"}
               initialStatus={screen.passengerStatus ?? ""}
             />
@@ -378,6 +387,9 @@ function Shell() {
             />
           )}
           {screen.kind === "import" && <ImportTab onNavigate={navigate} />}
+          {screen.kind === "bulk-photos" && (
+            <BulkPhotoMatchTab onOpenPassengers={() => navigate("passengers-fotosuz")} />
+          )}
           {screen.kind === "assistant" && (
             <AssistantWorkspace
               conversation={assistantConversation}
@@ -414,6 +426,7 @@ function Shell() {
           onNewPassenger={() => setScreen({ kind: "new-passenger" })}
           onUploadDocument={() => goRoot("documents", { openDocumentUpload: true })}
           onBulkImport={() => setScreen({ kind: "import" })}
+          onBulkPhotos={() => setScreen({ kind: "bulk-photos" })}
         />
 
         <div className="toast-stack" aria-live="polite">

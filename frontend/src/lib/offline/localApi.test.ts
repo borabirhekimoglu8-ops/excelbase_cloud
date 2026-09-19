@@ -450,6 +450,26 @@ describe("local offline API", () => {
     expect(passenger.photo_url).toMatch(/^blob:/);
   });
 
+  it("isim veya voucher dosya adıyla toplu fotoğrafı otomatik eşleştirir", async () => {
+    await localQueueImportFile(workbookFile("ad.xlsx", "Ayşe Yılmaz", "NAME9988"), false, "skip", "n", "nj");
+    const byName = Object.assign(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], { type: "image/jpeg" }), {
+      name: "ayse_yilmaz.jpg",
+      lastModified: Date.now(),
+    }) as File;
+    const nameResult = await localMatchPhotos([byName]);
+    expect(nameResult.matched).toBe(1);
+    expect(nameResult.matches[0]?.method).toBe("name");
+
+    await localUpdatePassenger((await localPassengers())[0].id, { voucher: "VCH-7788" });
+    const byVoucher = Object.assign(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe1])], { type: "image/jpeg" }), {
+      name: "bilet-VCH-7788.jpeg",
+      lastModified: Date.now(),
+    }) as File;
+    const voucherResult = await localMatchPhotos([byVoucher]);
+    expect(voucherResult.matched).toBe(1);
+    expect(voucherResult.matches[0]?.method).toBe("voucher");
+  });
+
   it("yolcu biyometrik alanına yalnız gerçek görüntü dosyası kabul eder", async () => {
     await localQueueImportFile(workbookFile("bio.xlsx", "Bio Yolcu", "BIO12345"), false, "skip", "bio", "bio-job");
     const passengerId = (await localPassengers())[0].id;

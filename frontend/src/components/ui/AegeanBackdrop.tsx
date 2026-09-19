@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * Full-bleed holographic Aegean stage: photographic night sea + vector island HUD.
- * Fixed behind the app shell so every screen inherits the same cinematic plane.
+ * Full-bleed stage built from the user's İDO Ege ferry photo + island HUD.
+ * The ferry is the real visual anchor; the map and sun wash sit on top.
  */
 export function AegeanBackdrop() {
   return (
     <div className="aegean-stage" aria-hidden="true">
-      <div className="aegean-stage-photo" />
+      <div className="aegean-stage-photo aegean-stage-ferry" />
       <div className="aegean-stage-wash" />
       <img
         className="aegean-stage-map"

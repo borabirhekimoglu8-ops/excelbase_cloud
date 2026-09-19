@@ -132,7 +132,7 @@ const META_LAST_UNDO = "last-undo";
 const META_AUDIT = "audit-trail";
 const META_LAST_BACKUP = "last-backup-at";
 const META_BATCH_PREFIX = "import-batch:";
-const APP_VERSION = "8.0.0-offline";
+const APP_VERSION = "8.0.1-offline";
 const SOURCE_PREFIX = "source:";
 const PHOTO_PREFIX = "photo:";
 const DOCUMENT_PREFIX = "document:";
@@ -1674,18 +1674,40 @@ function photoMatch(filename: string, rows: StoredPassenger[]): { passenger: Sto
   const key = fold(stem);
   const tokens = stem.split(/[^\p{L}\p{N}]+/u).map(fold).filter(Boolean);
   if (!key) return null;
+
   const passportMatches = rows.filter((row) => {
     const passport = fold(row.passport_no);
     if (passport.length < 6) return false;
-    return tokens.includes(passport) || key === passport || key.startsWith(passport) || key.endsWith(passport);
+    return tokens.includes(passport) || key === passport || key.startsWith(passport) || key.endsWith(passport) || key.includes(passport);
   });
   if (passportMatches.length === 1) return { passenger: passportMatches[0], method: "passport", confidence: 1 };
   if (passportMatches.length > 1) return null;
 
+  const voucherMatches = rows.filter((row) => {
+    const voucher = fold(row.voucher);
+    if (voucher.length < 4) return false;
+    return tokens.includes(voucher) || key === voucher || key.includes(voucher);
+  });
+  if (voucherMatches.length === 1) return { passenger: voucherMatches[0], method: "voucher", confidence: 0.95 };
+  if (voucherMatches.length > 1) return null;
+
   const nameMatches = rows.filter((row) => {
-    const full = fold(row.full_name);
-    const joined = `${fold(row.first_name)}${fold(row.last_name)}`;
-    return Boolean((full && key.includes(full)) || (joined && key.includes(joined)));
+    const first = fold(row.first_name);
+    const last = fold(row.last_name);
+    const full = fold(row.full_name) || `${first}${last}`;
+    const joined = `${first}${last}`;
+    const reversed = `${last}${first}`;
+    const spaced = `${first} ${last}`;
+    const spacedRev = `${last} ${first}`;
+    if (!full && !joined) return false;
+    if (full && (key === full || key.includes(full) || full.includes(key))) return true;
+    if (joined && (key.includes(joined) || joined.includes(key))) return true;
+    if (reversed && key.includes(reversed)) return true;
+    if (first && last && tokens.includes(first) && tokens.includes(last)) return true;
+    const spacedKey = tokens.join(" ");
+    if (spaced && spacedKey === spaced) return true;
+    if (spacedRev && spacedKey === spacedRev) return true;
+    return false;
   });
   return nameMatches.length === 1 ? { passenger: nameMatches[0], method: "name", confidence: 0.85 } : null;
 }
