@@ -130,11 +130,18 @@ if (-not $SkipBuild -and (Test-FrontendStale)) {
 
 Write-Host ""
 Write-Host "  Excelbase calisiyor:  http://$bind`:$port" -ForegroundColor Green
-if (-not $env:ANTHROPIC_API_KEY) {
-    # Uygulamanin geri kalani anahtarsiz calisir; yalnizca asistan kapali olur.
-    # Dosyanin tam yolu yazilir: ayni depodan birden fazla klasor acilmissa
-    # "ama ben yazdim" ile "orada yazmiyor" ayni anda dogru olabilir.
+$provider = if ($env:EXCELBASE_ASSISTANT_PROVIDER) { $env:EXCELBASE_ASSISTANT_PROVIDER.Trim().ToLower() } else { "anthropic" }
+if ($provider -eq "ollama") {
+    $ollamaUrl = if ($env:EXCELBASE_OLLAMA_BASE_URL) { $env:EXCELBASE_OLLAMA_BASE_URL } else { "http://127.0.0.1:11434" }
+    $ollamaModel = if ($env:EXCELBASE_ASSISTANT_MODEL) { $env:EXCELBASE_ASSISTANT_MODEL } else { "llama3.2" }
+    Write-Host "  Yerel asistan (Ollama): $ollamaModel @ $ollamaUrl" -ForegroundColor Cyan
+    if (-not $env:EXCELBASE_WORKSTATION -or $env:EXCELBASE_WORKSTATION -in @("0", "false", "no", "off")) {
+        Write-Host "  Ipucu: is klasoru katalogu icin EXCELBASE_WORKSTATION=1 ve ROOT yolunu .env'e yazin." -ForegroundColor Yellow
+    }
+} elseif (-not $env:ANTHROPIC_API_KEY) {
+    # Uygulamanin geri kalani anahtarsiz calisir; yalnizca bulut asistani kapali olur.
     Write-Host "  Claude asistani kapali: ANTHROPIC_API_KEY bos." -ForegroundColor Yellow
+    Write-Host "  Yerel Ollama icin: EXCELBASE_ASSISTANT_PROVIDER=ollama" -ForegroundColor Yellow
     Write-Host "  Duzenlenecek dosya: $((Resolve-Path '.env').Path)" -ForegroundColor Yellow
     Write-Host "  Yazdiktan sonra bu pencereyi kapatip tekrar calistirin." -ForegroundColor Yellow
 }
