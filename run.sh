@@ -101,11 +101,17 @@ fi
 
 echo
 echo "  Excelbase çalışıyor:  http://$BIND:$PORT"
-if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-    # Uygulamanın geri kalanı anahtarsız çalışır; yalnızca asistan kapalı olur.
-    # Dosyanın tam yolu yazılır: aynı depodan birden fazla klasör açılmışsa
-    # "ama ben yazdım" ile "orada yazmıyor" aynı anda doğru olabilir.
+provider="$(printf '%s' "${EXCELBASE_ASSISTANT_PROVIDER:-anthropic}" | tr '[:upper:]' '[:lower:]')"
+if [ "$provider" = "ollama" ]; then
+    echo "  Yerel asistan (Ollama): ${EXCELBASE_ASSISTANT_MODEL:-llama3.2} @ ${EXCELBASE_OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
+    case "${EXCELBASE_WORKSTATION:-0}" in
+        1|true|yes|on) ;;
+        *) echo "  İpucu: iş klasörü kataloğu için EXCELBASE_WORKSTATION=1 ve ROOT yolunu .env'e yazın." ;;
+    esac
+elif [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+    # Uygulamanın geri kalanı anahtarsız çalışır; yalnızca bulut asistanı kapalı olur.
     echo "  Claude asistanı kapalı: ANTHROPIC_API_KEY boş."
+    echo "  Yerel Ollama için: EXCELBASE_ASSISTANT_PROVIDER=ollama"
     echo "  Düzenlenecek dosya: $(pwd)/.env"
     echo "  Yazdıktan sonra betiği yeniden çalıştırın."
 fi
