@@ -29,6 +29,7 @@ import type {
 } from "@/lib/assistant/client";
 import { DevAgentPanel } from "@/components/assistant/DevAgentPanel";
 import { DriveAuditPanel } from "@/components/assistant/DriveAuditPanel";
+import { WorkstationPanel } from "@/components/assistant/WorkstationPanel";
 import { describeToolCall, executeAssistantTool } from "@/lib/assistant/toolExecutor";
 import { memoryDigest } from "@/lib/assistant/memory";
 import { buildAssistantContext } from "@/lib/assistant/context";
@@ -471,9 +472,12 @@ export function AssistantWorkspace({
   );
   const scopeLabel = RANGE_LABELS[safeContext.scope.range] ?? "Tüm kayıtlar";
   const verifiedSonnet = status?.model_family === "sonnet";
-  const modelLabel = verifiedSonnet
-    ? "Asistan"
-    : "Çevrimiçi asistan";
+  const verifiedLocal = status?.model_family === "local" || status?.local_provider === true;
+  const modelLabel = verifiedLocal
+    ? "Yerel asistan"
+    : verifiedSonnet
+      ? "Asistan"
+      : "Çevrimiçi asistan";
   const configurationMessage = status?.configuration_state
     ? CONFIGURATION_MESSAGES[status.configuration_state]
     : {
@@ -806,6 +810,7 @@ export function AssistantWorkspace({
           deployment that never opened these doors shows neither. */}
       {signedIn && (
         <>
+          <WorkstationPanel csrfToken={session?.csrf_token ?? ""} />
           <DriveAuditPanel
             csrfToken={session?.csrf_token ?? ""}
             onDevelop={setHandedInstruction}
@@ -819,8 +824,12 @@ export function AssistantWorkspace({
 
       {!online && (
         <section className="assistant-state-card warning">
-          <h2>Sonnet çevrimiçi çalışır</h2>
-          <p>İnternet geldiğinde bağlantı otomatik yenilenecek. Yerel verileriniz cihazda kullanılabilir.</p>
+          <h2>{status?.local_provider ? "Yerel model bekleniyor" : "Sonnet çevrimiçi çalışır"}</h2>
+          <p>
+            {status?.local_provider
+              ? "Ollama çalıştığında bağlantı yenilenecek. Katalog ve yerel danışman çevrimdışı da kullanılabilir."
+              : "İnternet geldiğinde bağlantı otomatik yenilenecek. Yerel verileriniz cihazda kullanılabilir."}
+          </p>
         </section>
       )}
     </main>

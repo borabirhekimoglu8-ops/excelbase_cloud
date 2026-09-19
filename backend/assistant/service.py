@@ -22,6 +22,7 @@ from backend.config import (
 )
 
 from .anthropic_provider import AnthropicProvider
+from .ollama_provider import OllamaProvider, _is_loopback
 from .provider import (
     AssistantProvider,
     AssistantProviderError,
@@ -358,6 +359,18 @@ def assistant_configuration_state(settings: AssistantSettings) -> str:
     """Return a bounded, non-secret reason suitable for public diagnostics."""
     if not settings.enabled:
         return "disabled"
+    if settings.pii_mode != "strict" or settings.allow_raw_documents:
+        return "privacy_mismatch"
+
+    if settings.provider == "ollama":
+        # Local provider: no Anthropic key, but the daemon must stay on loopback
+        # so prompts cannot leave the machine through a mis-set base URL.
+        if not settings.model.strip():
+            return "model_mismatch"
+        if not _is_loopback(settings.ollama_base_url):
+            return "privacy_mismatch"
+        return "ready"
+
     if settings.provider != "anthropic":
         return "provider_mismatch"
     if settings.model not in SUPPORTED_SONNET_MODELS:
@@ -368,8 +381,6 @@ def assistant_configuration_state(settings: AssistantSettings) -> str:
         if misnamed_anthropic_key_variables():
             return "api_key_misnamed"
         return "api_key_missing"
-    if settings.pii_mode != "strict" or settings.allow_raw_documents:
-        return "privacy_mismatch"
     return "ready"
 
 
@@ -405,11 +416,13 @@ def get_assistant_provider(
     resolved = settings or assistant_settings()
     configuration_state = assistant_configuration_state(resolved)
     if configuration_state == "ready":
+        if resolved.provider == "ollama":
+            return OllamaProvider(resolved)
         return AnthropicProvider(resolved)
     messages = {
         "disabled": "Asistan sunucu tarafından devre dışı bırakıldı.",
         "provider_mismatch": "Desteklenen asistan sağlayıcısı yapılandırılmadı.",
-        "model_mismatch": "Desteklenen Claude Sonnet modeli yapılandırılmadı.",
+        "model_mismatch": "Desteklenen model yapılandırılmadı.",
         "api_key_missing": "Anthropic API anahtarı yapılandırılmadı.",
         "api_key_misnamed": "Anthropic API anahtarı beklenen değişken adında değil.",
         "privacy_mismatch": "Asistan gizlilik ayarları güvenli değil.",
@@ -421,25 +434,30 @@ def assistant_status() -> AssistantStatusResponse:
     settings = assistant_settings()
     configuration_state = assistant_configuration_state(settings)
     provider = get_assistant_provider(settings)
+    local = settings.provider == "ollama"
     return AssistantStatusResponse(
         available=provider.available,
         configuration_state=configuration_state,
-        online_required=True,
+        online_required=not local,
         privacy_mode="aggregate_context_only",
-        model_family="sonnet",
-        model_label="Claude Sonnet",
+        model_family="local" if local else "sonnet",
+        model_label="Yerel Model" if local else "Claude Sonnet",
         capabilities=list(ACTIVE_CAPABILITIES),
         open_access=settings.open_access,
         autonomy=autonomy_state(settings),
         network_scoped=bool(assistant_allowed_networks()),
+        local_provider=local,
     )
 
 
 _CONFIGURATION_STATE_DETAILS: dict[str, str] = {
     "disabled": "Asistan sunucu tarafından devre dışı bırakıldı.",
-    "provider_mismatch": "EXCELBASE_ASSISTANT_PROVIDER değeri 'anthropic' olmalı.",
+    "provider_mismatch": (
+        "EXCELBASE_ASSISTANT_PROVIDER değeri 'anthropic' veya 'ollama' olmalı."
+    ),
     "model_mismatch": (
-        "EXCELBASE_ASSISTANT_MODEL desteklenen bir Claude Sonnet modeli olmalı."
+        "EXCELBASE_ASSISTANT_MODEL desteklenen bir model olmalı "
+        "(Claude Sonnet veya yerel Ollama model adı)."
     ),
     "api_key_missing": "ANTHROPIC_API_KEY ortam değişkeni tanımlı değil.",
     "privacy_mismatch": "Asistan gizlilik ayarları güvenli değil.",

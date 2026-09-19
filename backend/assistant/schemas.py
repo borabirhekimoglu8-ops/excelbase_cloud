@@ -66,8 +66,8 @@ class AssistantStatusResponse(BaseModel):
     ]
     online_required: bool = True
     privacy_mode: Literal["aggregate_context_only"] = "aggregate_context_only"
-    model_family: Literal["sonnet"] = "sonnet"
-    model_label: Literal["Claude Sonnet"] = "Claude Sonnet"
+    model_family: Literal["sonnet", "local"] = "sonnet"
+    model_label: Literal["Claude Sonnet", "Yerel Model"] = "Claude Sonnet"
     capabilities: list[AssistantCapability]
     # True when this deployment answers without an access code. Not a secret:
     # any visitor discovers it by loading the page, and the owner needs to see
@@ -78,6 +78,8 @@ class AssistantStatusResponse(BaseModel):
     autonomy: Literal["read_only", "full", "blocked_open_network"] = "read_only"
     # True when an IP allowlist scopes who can reach the assistant.
     network_scoped: bool = False
+    # True when the provider is a loopback-only local model (Ollama).
+    local_provider: bool = False
 
 
 class AssistantDiagnosticsResponse(BaseModel):
