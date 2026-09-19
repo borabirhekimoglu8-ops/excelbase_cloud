@@ -490,7 +490,6 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   display: grid;
   place-items: center;
 }
-/* xb-mark base; header chip styled later with living stage tokens */
 .ido-header-identity { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
 .ido-header-brand {
   margin: 0;
@@ -2979,35 +2978,33 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 }
 .ido-frame { box-shadow: none !important; }
 
-/* Mark blends into glass header — no white sticker */
-.xb-mark-wrap {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 auto;
-  border-radius: 0;
-  overflow: visible;
-  background: transparent;
-  box-shadow: none;
-  filter: drop-shadow(0 0 10px rgba(244,119,33,.35));
-}
-.xb-mark {
+/* Exact user logo — no frame, no XB, no glow that alters the mark */
+.ido-logo-exact {
   display: block;
-  filter: drop-shadow(0 2px 6px rgba(0,0,0,.35));
+  flex: 0 0 auto;
+  object-fit: contain;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
 }
 .ido-header-mark {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: linear-gradient(160deg, rgba(255,255,255,.08), rgba(79,209,232,.06));
-  border: 1px solid rgba(244,119,33,.28);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.1);
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
-.auth-brand .xb-mark-wrap {
-  filter: drop-shadow(0 0 14px rgba(244,119,33,.4));
+.auth-brand .ido-logo-exact {
+  width: 52px;
+  height: 52px;
 }
 
 .xb-photo-drop {

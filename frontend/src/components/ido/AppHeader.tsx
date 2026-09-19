@@ -53,7 +53,7 @@ export function AppHeaderHome({
 }) {
   return (
     <header className="ido-header">
-      <span className="ido-header-mark" aria-hidden="true"><BrandMark size={36} /></span>
+      <span className="ido-header-mark" aria-hidden="true"><BrandMark size={40} /></span>
       <div className="ido-header-identity">
         <p className="ido-header-brand">Excelbase</p>
         <p className="ido-header-sub">Operasyon</p>
@@ -85,7 +85,7 @@ export function AppHeaderScreen({
           ‹
         </button>
       ) : (
-        <span className="ido-header-mark" aria-hidden="true"><BrandMark size={36} /></span>
+        <span className="ido-header-mark" aria-hidden="true"><BrandMark size={40} /></span>
       )}
       <p className="ido-header-title">{title}</p>
       <HeaderUtilities onAssistant={onAssistant} onSettings={onSettings} />
