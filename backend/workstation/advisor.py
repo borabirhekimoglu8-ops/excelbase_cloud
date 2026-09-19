@@ -52,15 +52,16 @@ def advise_from_stats(stats: dict, *, question: str = "") -> dict:
         )
     else:
         gb = total_bytes / (1024 ** 3)
+        files_label = f"{files_seen:,}".replace(",", ".")
         items.append(
             AdviceItem(
                 kind="inventory",
                 title="Arşiv envanteri hazır",
                 detail=(
-                    f"{files_seen:,} dosya indekslendi ({gb:.2f} GB). "
+                    f"{files_label} dosya indekslendi ({gb:.2f} GB). "
                     f"Tablo {by_kind.get('tablo', 0)}, belge {by_kind.get('belge', 0)}, "
                     f"görsel {by_kind.get('gorsel', 0)}, diğer {by_kind.get('diger', 0)}."
-                ).replace(",", "."),
+                ),
                 weight=90,
                 evidence=[root] if root else [],
             )
