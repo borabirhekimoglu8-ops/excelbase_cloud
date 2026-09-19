@@ -17,7 +17,7 @@ function AuthBrand() {
       <BrandMark size={52} tone="on-brand" />
       <div>
         <strong>Excelbase</strong>
-        <small>Ege Operasyon</small>
+        <small>Operasyon</small>
       </div>
     </div>
   );
