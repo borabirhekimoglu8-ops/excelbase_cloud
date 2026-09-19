@@ -1067,6 +1067,10 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   flex-wrap: wrap;
   gap: 8px 14px;
   margin-top: -4px;
+  padding: 8px 12px;
+  border: 1px solid var(--ido-border);
+  border-radius: 8px;
+  background: rgba(4, 14, 26, 0.72);
 }
 .ic-stats-meta span {
   color: var(--ido-muted);
