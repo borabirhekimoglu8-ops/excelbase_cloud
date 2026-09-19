@@ -150,9 +150,9 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
     <div className="ops-page">
       <section className="ops-page-heading xb-home-hero">
         <div>
-          <p className="ops-eyebrow">Ege hattı · Bugün</p>
+          <p className="ops-eyebrow">Bugün</p>
           <h1>{user.name.split(" ")[0] || "Operasyon"}</h1>
-          <p>{todayLabel}. Şifreli yerel kasa · holografik sefer masası.</p>
+          <p>{todayLabel}. Veriler bu cihazda şifreli.</p>
         </div>
       </section>
 
