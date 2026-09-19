@@ -56,7 +56,7 @@ export function AppHeaderHome({
       <span className="ido-header-mark" aria-hidden="true"><BrandMark size={36} /></span>
       <div className="ido-header-identity">
         <p className="ido-header-brand">Excelbase</p>
-        <p className="ido-header-sub">Operasyon</p>
+        <p className="ido-header-sub">Ege Operasyon</p>
       </div>
       <HeaderUtilities onAssistant={onAssistant} onSettings={onSettings} />
     </header>
