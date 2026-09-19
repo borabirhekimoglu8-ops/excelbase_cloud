@@ -9,8 +9,8 @@
   --blue-100: rgba(79, 209, 232, 0.14);
   --ink: #e8f4f8;
   --muted: #8fb4c4;
-  --line: rgba(79, 209, 232, 0.18);
-  --line-strong: rgba(79, 209, 232, 0.32);
+  --line: rgba(255, 255, 255, 0.12);
+  --line-strong: rgba(255, 255, 255, 0.18);
   --surface: rgba(10, 31, 51, 0.55);
   --surface-soft: #061525;
   --surface-blue: rgba(79, 209, 232, 0.08);
@@ -27,7 +27,7 @@
   --ido-primary-deep: #0a1f33;
   --ido-orange: #f47721;
   --ido-bg: transparent;
-  --ido-border: rgba(79, 209, 232, 0.22);
+  --ido-border: rgba(255, 255, 255, 0.12);
   --ido-ink: #e8f4f8;
   --ido-muted: #8fb4c4;
   --ido-faint: #6a8fa0;
@@ -49,7 +49,7 @@
   --font-display: var(--font-syne), var(--font-outfit), sans-serif;
   --glass: rgba(5, 14, 26, 0.58);
   --glass-strong: rgba(4, 12, 22, 0.82);
-  --glass-edge: rgba(127, 231, 245, 0.28);
+  --glass-edge: rgba(255, 255, 255, 0.14);
   --glow-cyan: 0 0 24px rgba(79, 209, 232, 0.28);
   --glow-orange: 0 0 20px rgba(244, 119, 33, 0.35);
   --type-11: 11px;
