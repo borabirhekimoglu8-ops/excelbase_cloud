@@ -96,27 +96,28 @@ export function GateVisaTab({
 
   return (
     <div className="ic-gatevisa-page">
-      {/* Only the upload lives here. Adding a single passenger is already
-          offered by the folder view below, and two stacked buttons for it read
-          as two different actions. */}
-      <section className="ic-gatevisa-actions">
-        <button type="button" className="ic-gatevisa-primary" onClick={onImport}>
-          <span aria-hidden="true">⇪</span>
-          <span>
-            <strong>Excel ile liste yükle</strong>
-            <small>Kapı vizesi listesi · ZIP veya Excel</small>
-          </span>
-        </button>
-        {onBulkPhotos ? (
-          <button type="button" className="ic-gatevisa-primary" onClick={onBulkPhotos}>
-            <span aria-hidden="true">▣</span>
+      {/* Upload actions belong with the folder workspace, not on top of the
+          statistics readout — stacking them there buried the numbers. */}
+      {view === "folders" && (
+        <section className="ic-gatevisa-actions">
+          <button type="button" className="ic-gatevisa-primary" onClick={onImport}>
+            <span aria-hidden="true">⇪</span>
             <span>
-              <strong>Toplu fotoğraf eşleştir</strong>
-              <small>Vesikalık / ZIP · isim veya pasaport ile otomatik</small>
+              <strong>Excel ile liste yükle</strong>
+              <small>Kapı vizesi listesi · ZIP veya Excel</small>
             </span>
           </button>
-        ) : null}
-      </section>
+          {onBulkPhotos ? (
+            <button type="button" className="ic-gatevisa-primary" onClick={onBulkPhotos}>
+              <span aria-hidden="true">▣</span>
+              <span>
+                <strong>Toplu fotoğraf eşleştir</strong>
+                <small>Vesikalık / ZIP · isim veya pasaport ile otomatik</small>
+              </span>
+            </button>
+          ) : null}
+        </section>
+      )}
 
       <div className="ic-subtabs" role="tablist" aria-label="Görünüm">
         <button
