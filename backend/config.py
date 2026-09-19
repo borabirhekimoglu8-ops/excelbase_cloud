@@ -179,6 +179,35 @@ def drive_audit_settings() -> DriveAuditSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkstationSettings:
+    """Local closed-circuit work-folder catalogue and deterministic advisor.
+
+    Off by default. Same closed-deployment rule as drive audit: an endpoint that
+    indexes arbitrary folders is file disclosure on a public host.
+    """
+
+    enabled: bool
+    closed_deployment: bool
+    default_root: str
+
+
+def workstation_settings() -> WorkstationSettings:
+    assistant = assistant_settings()
+    # Prefer the workstation root; fall back to the drive-audit root so one
+    # folder path configures both local inventory features.
+    default_root = os.environ.get("EXCELBASE_WORKSTATION_ROOT", "").strip()[:400]
+    if not default_root:
+        default_root = os.environ.get("EXCELBASE_DRIVE_AUDIT_ROOT", "").strip()[:400]
+    return WorkstationSettings(
+        enabled=_env_bool("EXCELBASE_WORKSTATION", default=False),
+        closed_deployment=(
+            not assistant.open_access or bool(assistant_allowed_networks())
+        ),
+        default_root=default_root,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class AssistantSettings:
     enabled: bool
     provider: str
@@ -203,6 +232,9 @@ class AssistantSettings:
     requests_per_day: int = 100
     global_requests_per_day: int = 200
     max_concurrency: int = 2
+    # Loopback-only Ollama base URL. Non-loopback values are refused so a typo
+    # cannot ship prompts to another host.
+    ollama_base_url: str = "http://127.0.0.1:11434"
 
 
 def assistant_settings() -> AssistantSettings:
@@ -212,17 +244,21 @@ def assistant_settings() -> AssistantSettings:
     only required Sonnet variable. Every override remains fail-closed: an
     explicit disable, an unsupported provider/model, or unsafe privacy setting
     still prevents provider initialization.
+
+    ``ollama`` selects a local model daemon on loopback — no Anthropic key and
+    no outbound cloud call.
     """
     provider = os.environ.get("EXCELBASE_ASSISTANT_PROVIDER", "anthropic").strip().lower()
-    if provider not in {"disabled", "anthropic"}:
+    if provider not in {"disabled", "anthropic", "ollama"}:
         provider = "disabled"
     pii_mode = os.environ.get("EXCELBASE_ASSISTANT_PII_MODE", "strict").strip().lower()
     if pii_mode != "strict":
         pii_mode = "strict"
+    default_model = "claude-sonnet-5" if provider != "ollama" else "llama3.2"
     return AssistantSettings(
         enabled=_env_bool("EXCELBASE_ASSISTANT_ENABLED", default=True),
         provider=provider,
-        model=os.environ.get("EXCELBASE_ASSISTANT_MODEL", "claude-sonnet-5").strip()[:200],
+        model=os.environ.get("EXCELBASE_ASSISTANT_MODEL", default_model).strip()[:200],
         api_key=_read_api_key(ANTHROPIC_API_KEY_VARIABLE),
         open_access=_env_bool("EXCELBASE_ASSISTANT_OPEN_ACCESS", default=False),
         allow_writes=_env_bool("EXCELBASE_ASSISTANT_ALLOW_WRITES", default=False),
@@ -238,7 +274,12 @@ def assistant_settings() -> AssistantSettings:
             8 * 1024,
             256 * 1024,
         ),
-        timeout_seconds=_bounded_env_int("EXCELBASE_ASSISTANT_TIMEOUT_SECONDS", 35, 5, 120),
+        timeout_seconds=_bounded_env_int(
+            "EXCELBASE_ASSISTANT_TIMEOUT_SECONDS",
+            35 if provider != "ollama" else 120,
+            5,
+            600,
+        ),
         requests_per_minute=_bounded_env_int("EXCELBASE_ASSISTANT_REQUESTS_PER_MINUTE", 6, 1, 120),
         requests_per_day=_bounded_env_int("EXCELBASE_ASSISTANT_REQUESTS_PER_DAY", 100, 1, 10_000),
         global_requests_per_day=_bounded_env_int(
@@ -248,6 +289,11 @@ def assistant_settings() -> AssistantSettings:
             100_000,
         ),
         max_concurrency=_bounded_env_int("EXCELBASE_ASSISTANT_MAX_CONCURRENCY", 2, 1, 20),
+        ollama_base_url=os.environ.get(
+            "EXCELBASE_OLLAMA_BASE_URL",
+            "http://127.0.0.1:11434",
+        ).strip()[:300]
+        or "http://127.0.0.1:11434",
     )
 
 

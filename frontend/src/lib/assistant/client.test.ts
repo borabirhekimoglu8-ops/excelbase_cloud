@@ -16,6 +16,32 @@ describe("fetchAssistantStatus", () => {
     vi.unstubAllGlobals();
   });
 
+  it("accepts a local Ollama provider status without requiring the public internet", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        available: true,
+        configuration_state: "ready",
+        online_required: false,
+        privacy_mode: "aggregate_context_only",
+        model_family: "local",
+        model_label: "Yerel Model",
+        capabilities: ["dashboard_summary"],
+        local_provider: true,
+        open_access: false,
+        autonomy: "read_only",
+        network_scoped: false,
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const status = await fetchAssistantStatus();
+
+    expect(status.model_family).toBe("local");
+    expect(status.online_required).toBe(false);
+    expect(status.local_provider).toBe(true);
+  });
+
   it("fetches safe public status without sending vault data or an API key", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

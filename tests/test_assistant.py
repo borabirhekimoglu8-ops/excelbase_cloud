@@ -95,6 +95,7 @@ def test_public_status_reports_readiness_and_never_leaks_provider_configuration(
         "open_access": False,
         "autonomy": "read_only",
         "network_scoped": False,
+        "local_provider": False,
     }
     serialized = response.text.lower()
     assert secret not in serialized

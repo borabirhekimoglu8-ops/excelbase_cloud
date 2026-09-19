@@ -29,11 +29,11 @@ export type AssistantConfigurationState =
 export type AssistantStatus = {
   available: boolean;
   configuration_state?: AssistantConfigurationState;
-  online_required: true;
+  online_required: boolean;
   privacy_mode: "aggregate_context_only";
   capabilities: AssistantCapability[];
   /** Server-attested family; the UI must not claim Sonnet without this value. */
-  model_family: "sonnet";
+  model_family: "sonnet" | "local";
   /** Safe display label only; provider model IDs and secrets remain server-side. */
   model_label: string;
   /** True when the server connects Sonnet without asking for an access code. */
@@ -42,6 +42,8 @@ export type AssistantStatus = {
   autonomy?: "read_only" | "full" | "blocked_open_network";
   /** True when an IP allowlist scopes who can reach the assistant. */
   network_scoped?: boolean;
+  /** True when the provider is loopback-only Ollama. */
+  local_provider?: boolean;
 };
 
 export type AssistantSessionStatus = {
@@ -152,7 +154,7 @@ function isAssistantStatus(value: unknown): value is AssistantStatus {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const status = value as Record<string, unknown>;
   const validModelMetadata = (
-    status.model_family === "sonnet"
+    (status.model_family === "sonnet" || status.model_family === "local")
     && typeof status.model_label === "string"
     && status.model_label.trim().length > 0
     && status.model_label.length <= 80
@@ -168,13 +170,14 @@ function isAssistantStatus(value: unknown): value is AssistantStatus {
     typeof status.available === "boolean"
     && (status.open_access === undefined || typeof status.open_access === "boolean")
     && (status.network_scoped === undefined || typeof status.network_scoped === "boolean")
+    && (status.local_provider === undefined || typeof status.local_provider === "boolean")
     && (
       status.autonomy === undefined
       || (typeof status.autonomy === "string"
         && ["read_only", "full", "blocked_open_network"].includes(status.autonomy))
     )
     && validConfigurationState
-    && status.online_required === true
+    && typeof status.online_required === "boolean"
     && status.privacy_mode === "aggregate_context_only"
     && validModelMetadata
     && Array.isArray(status.capabilities)

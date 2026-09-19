@@ -85,6 +85,15 @@ kurulum anahtarı” alanına bu ikinci değer girilir; ilk hesap açıldıktan 
 Render'daki değer kaldırılabilir veya döndürülebilir. Gizli değerler repoya ya
 da istemci paketine yazılmaz.
 
+## Kapalı yerel iş istasyonu (KVKK)
+
+Kişisel makinede buluta veri göndermeden çalışmak için:
+
+1. `BIND_ADDRESS=127.0.0.1` ve asistan için PIN veya IP kısıtı kullanın.
+2. `EXCELBASE_WORKSTATION=1` ve `EXCELBASE_WORKSTATION_ROOT` (veya drive-audit kökü) ile iş klasörü kataloğunu açın. Katalog yalnız dosya adı/yol indeksler; hücre, PDF ve JPEG içeriği okunmaz.
+3. İsteğe bağlı yerel model: `EXCELBASE_ASSISTANT_PROVIDER=ollama`, `EXCELBASE_ASSISTANT_MODEL=llama3.2`, `EXCELBASE_OLLAMA_BASE_URL=http://127.0.0.1:11434`. Loopback dışı Ollama adresleri reddedilir.
+4. Asistan ekranındaki **İş klasörü kataloğu** paneli indeks, arama ve modelsiz düzen önerilerini sunar.
+
 `render.yaml` şu güvenli varsayılanları tanımlar:
 
 - sağlayıcı: `anthropic`
