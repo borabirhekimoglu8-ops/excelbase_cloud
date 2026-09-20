@@ -1708,7 +1708,11 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 }
 
 .ops-export-grid button,
-.ops-secondary { border: 1px solid var(--ido-border); background: transparent; color: var(--ido-ink); }
+.ops-secondary {
+  border: 1px solid var(--ido-border);
+  background: rgba(10, 28, 42, 0.92);
+  color: var(--ido-ink);
+}
 .ops-primary {
   border: 0;
   background: var(--ido-orange);
@@ -2005,12 +2009,12 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .ops-gate-progress div:last-child { border-right: 0; }
 .ops-gate-progress strong { color: var(--ido-ink); font-size: 17px; }
 .ops-gate-progress span { color: var(--ido-muted); font-size: 8px; font-weight: 750; }
-.ops-home-actions { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 6px; }
-.ops-home-actions button { min-width: 0; padding: 0 7px; font-size: 8px; }
+.ops-home-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ops-home-actions button { min-width: 0; padding: 0 10px; font-size: 11px; }
 .ops-home-links { display: grid; gap: 6px; }
 
 .ops-empty-inline { padding: 12px; border: 1px dashed var(--ido-border); background: rgba(8,24,40,.45); color: var(--ido-muted); font-size: 10px; line-height: 1.45; }
-.ops-section-link { min-height: 36px; padding: 0 5px; border: 0; background: transparent; color: var(--ido-primary); font-size: 9px; font-weight: 800; cursor: pointer; }
+.ops-section-link { min-height: 36px; padding: 0 5px; border: 0; background: transparent; color: var(--ido-sea); font-size: 11px; font-weight: 700; cursor: pointer; }
 
 /* Claude Sonnet — bağımsız uygulama içi çalışma alanı */
 .ido-frame.assistant-mode {
@@ -2869,35 +2873,28 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   backdrop-filter: blur(16px);
 }
 .ic-search,
-.ic-row,
-.xb-queue-item {
-  background: var(--glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-color: var(--glass-edge);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
-  transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+.ic-row {
+  background: var(--ido-surface);
+  border-color: var(--ido-border);
+  transition: border-color .2s ease, transform .2s ease;
 }
 .ic-row.as-btn:hover,
 .xb-queue-item:hover {
-  border-color: var(--ido-primary);
-  box-shadow: var(--glow-cyan);
+  border-color: var(--ido-orange);
   transform: translateY(-1px);
 }
 .xb-queue-item.attention {
   border-color: var(--ido-amber-line);
-  background: linear-gradient(90deg, rgba(244,119,33,.18), var(--glass));
+  background: var(--ido-amber-tint);
 }
 .xb-empty,
 .xb-recovery-key {
-  background: var(--glass);
+  background: var(--ido-surface);
   color: var(--ido-ink);
-  border-color: var(--glass-edge);
-  backdrop-filter: blur(12px);
+  border-color: var(--ido-border);
 }
 .ic-chip.active {
-  background: linear-gradient(120deg, var(--ido-orange), var(--ido-primary));
-  box-shadow: var(--glow-cyan);
+  background: var(--ido-orange);
 }
 .ic-pill-solid {
   background: linear-gradient(120deg, var(--ido-primary), #2eb8d4);
