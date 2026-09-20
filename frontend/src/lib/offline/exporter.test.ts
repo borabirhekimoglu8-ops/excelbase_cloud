@@ -12,6 +12,7 @@ import {
   createDeliveryZipBlob,
   createDocumentsZipBlob,
   createGateVisaTemplateXlsxBlob,
+  createGateVisaPaxListXlsxBlob,
   createIdoDailyPassengerListHtmlBlob,
   createManifestHtmlBlob,
   createPassengerCsvBlob,
@@ -143,6 +144,26 @@ describe("passenger exports", () => {
     expect(worksheet.H4.v).toBe("ADULT");
     expect(worksheet.I4.v).toBe("CHILD");
     expect(worksheet["!merges"]).toHaveLength(8);
+  });
+
+  it("fills a Gate Visa PAX LIST from scanned passport rows", async () => {
+    const blob = createGateVisaPaxListXlsxBlob([
+      {
+        firstName: "ANNA MARIA",
+        lastName: "ERIKSSON",
+        passportNo: "L898902C3",
+        departureDate: "2026-07-16",
+        arrivalDate: "2026-07-20",
+      },
+    ]);
+    const workbook = XLSX.read(await blob.arrayBuffer(), { type: "array" });
+    const worksheet = workbook.Sheets["PAX LIST"];
+    expect(worksheet.A5.v).toBe("1");
+    expect(worksheet.B5.v).toBe("ANNA MARIA");
+    expect(worksheet.C5.v).toBe("ERIKSSON");
+    expect(worksheet.D5.v).toBe("L898902C3");
+    expect(worksheet.F5.v).toBe("2026-07-16");
+    expect(worksheet.G5.v).toBe("2026-07-20");
   });
 
   it("creates a self-contained escaped HTML manifest", async () => {

@@ -39,6 +39,7 @@ export function GateVisaTab({
   onImport,
   onCreate,
   onBulkPhotos,
+  onPassportScan,
   canCreate,
   initialView = "folders",
   initialStatus = "",
@@ -46,6 +47,7 @@ export function GateVisaTab({
   onImport: () => void;
   onCreate: () => void;
   onBulkPhotos?: () => void;
+  onPassportScan?: () => void;
   canCreate: boolean;
   initialView?: View;
   initialStatus?: string;
@@ -131,6 +133,15 @@ export function GateVisaTab({
             <span>
               <strong>Toplu fotoğraf eşleştir</strong>
               <small>Vesikalık / ZIP · isim veya pasaport ile otomatik</small>
+            </span>
+          </button>
+        ) : null}
+        {onPassportScan ? (
+          <button type="button" className="ic-gatevisa-primary" onClick={onPassportScan}>
+            <span aria-hidden="true">▤</span>
+            <span>
+              <strong>Pasaport JPG → Excel</strong>
+              <small>Toplu pasaport fotoğrafından Gate Visa listesi</small>
             </span>
           </button>
         ) : null}

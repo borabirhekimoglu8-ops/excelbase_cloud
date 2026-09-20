@@ -18,6 +18,7 @@ import { ReportsTab, ReportDestination } from "@/components/tabs/ReportsTab";
 import { PassengerRosterTab } from "@/components/tabs/PassengerRosterTab";
 import { ImportTab } from "@/components/tabs/ImportTab";
 import { BulkPhotoMatchTab } from "@/components/tabs/BulkPhotoMatchTab";
+import { PassportScanTab } from "@/components/tabs/PassportScanTab";
 import { SettingsTab, SettingsSub } from "@/components/tabs/SettingsTab";
 import { IssuesTab } from "@/components/tabs/IssuesTab";
 import { GalleryTab } from "@/components/tabs/GalleryTab";
@@ -55,6 +56,7 @@ type Screen =
   | { kind: "new-passenger" }
   | { kind: "import" }
   | { kind: "bulk-photos" }
+  | { kind: "passport-scan" }
   | { kind: "records" }
   | { kind: "sales" }
   | { kind: "reports" }
@@ -152,7 +154,7 @@ function Shell() {
       goRoot(target);
       return;
     }
-    if (target === "records" || target === "import" || target === "bulk-photos" || target === "sales" || target === "reports") {
+    if (target === "records" || target === "import" || target === "bulk-photos" || target === "passport-scan" || target === "sales" || target === "reports") {
       setScreen({ kind: target });
       return;
     }
@@ -190,7 +192,7 @@ function Shell() {
   // button and no tab bar, like settings.
   const bottomNavActive: PrimaryNavKey | null = screen.kind === "root"
     ? screen.tab
-    : screen.kind === "import" || screen.kind === "records" || screen.kind === "bulk-photos"
+    : screen.kind === "import" || screen.kind === "records" || screen.kind === "bulk-photos" || screen.kind === "passport-scan"
       ? "gate-visa"
       : null;
   const showDateScope = (
@@ -217,7 +219,7 @@ function Shell() {
       setScreen(assistantReturnScreen.kind === "assistant" ? { kind: "root", tab: "home" } : assistantReturnScreen);
       return;
     }
-    if (screen.kind === "import" || screen.kind === "new-passenger" || screen.kind === "records" || screen.kind === "bulk-photos") {
+    if (screen.kind === "import" || screen.kind === "new-passenger" || screen.kind === "records" || screen.kind === "bulk-photos" || screen.kind === "passport-scan") {
       goRoot("gate-visa", { gateView: screen.kind === "records" ? "folders" : "list" });
       return;
     }
@@ -294,6 +296,12 @@ function Shell() {
             onBack={() => goRoot("gate-visa", { gateView: "list" })}
           />
         )}
+        {screen.kind === "passport-scan" && (
+          <AppHeaderScreen
+            title="Pasaport → Excel"
+            onBack={() => goRoot("gate-visa", { gateView: "folders" })}
+          />
+        )}
         {screen.kind === "assistant" && (
           <AppHeaderScreen
             title="Asistan"
@@ -364,6 +372,7 @@ function Shell() {
               onImport={() => setScreen({ kind: "import" })}
               onCreate={() => setScreen({ kind: "new-passenger" })}
               onBulkPhotos={() => setScreen({ kind: "bulk-photos" })}
+              onPassportScan={() => setScreen({ kind: "passport-scan" })}
               initialView={screen.gateView ?? "folders"}
               initialStatus={screen.passengerStatus ?? ""}
             />
@@ -389,6 +398,9 @@ function Shell() {
           {screen.kind === "import" && <ImportTab onNavigate={navigate} />}
           {screen.kind === "bulk-photos" && (
             <BulkPhotoMatchTab onOpenPassengers={() => navigate("passengers-fotosuz")} />
+          )}
+          {screen.kind === "passport-scan" && (
+            <PassportScanTab onOpenImport={() => setScreen({ kind: "import" })} />
           )}
           {screen.kind === "assistant" && (
             <AssistantWorkspace
@@ -427,6 +439,7 @@ function Shell() {
           onUploadDocument={() => goRoot("documents", { openDocumentUpload: true })}
           onBulkImport={() => setScreen({ kind: "import" })}
           onBulkPhotos={() => setScreen({ kind: "bulk-photos" })}
+          onPassportScan={() => setScreen({ kind: "passport-scan" })}
         />
 
         <div className="toast-stack" aria-live="polite">

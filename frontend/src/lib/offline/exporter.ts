@@ -239,6 +239,68 @@ export function createGateVisaTemplateXlsxBlob(): Blob {
   return blobFromBytes(workbookBytes(workbook), XLSX_MIME);
 }
 
+export type GateVisaPaxInput = {
+  no?: string;
+  firstName: string;
+  lastName: string;
+  passportNo: string;
+  voucher?: string;
+  departureDate?: string;
+  arrivalDate?: string;
+  adultFee?: string;
+  childFee?: string;
+};
+
+/**
+ * A filled Gate Visa PAX LIST workbook — the same shape operators already
+ * import, with one data row per scanned passport starting at row 5.
+ */
+export function createGateVisaPaxListXlsxBlob(rows: readonly GateVisaPaxInput[]): Blob {
+  const header = [
+    ["GATE VISA PAX LIST", "", "", "", "", "", "", "", ""],
+    ["", "", "", "", "", "", "", "", ""],
+    ["NO", "NAME", "SURNAME", "PASSPORT NUMBER", "VOUCHER", "DATE", "", "VISA FEE", ""],
+    ["", "", "", "", "", "DEPARTURE", "ARRIVAL", "ADULT", "CHILD"],
+  ];
+  const data = rows.map((row, index) => [
+    row.no?.trim() || String(index + 1),
+    text(row.firstName).toLocaleUpperCase("tr-TR"),
+    text(row.lastName).toLocaleUpperCase("tr-TR"),
+    text(row.passportNo).toLocaleUpperCase("tr-TR"),
+    text(row.voucher),
+    text(row.departureDate),
+    text(row.arrivalDate),
+    text(row.adultFee),
+    text(row.childFee),
+  ]);
+  const worksheet = XLSX.utils.aoa_to_sheet([...header, ...data]);
+  worksheet["!merges"] = [
+    XLSX.utils.decode_range("A1:I1"),
+    XLSX.utils.decode_range("A3:A4"),
+    XLSX.utils.decode_range("B3:B4"),
+    XLSX.utils.decode_range("C3:C4"),
+    XLSX.utils.decode_range("D3:D4"),
+    XLSX.utils.decode_range("E3:E4"),
+    XLSX.utils.decode_range("F3:G3"),
+    XLSX.utils.decode_range("H3:I3"),
+  ];
+  worksheet["!cols"] = [
+    { wch: 8 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 22 },
+    { wch: 18 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 13 },
+    { wch: 13 },
+  ];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "PAX LIST");
+  workbook.Props = { Title: "GATE VISA PAX LIST", Company: "İDO" };
+  return blobFromBytes(workbookBytes(workbook), XLSX_MIME);
+}
+
 function escapeHtml(value: unknown): string {
   return text(value)
     .replaceAll("&", "&amp;")
