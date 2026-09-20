@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Living ferry stage: the vessel drifts in atmosphere — not a flat wallpaper.
- * No map lines, no ship name overlays.
+ * Living ferry stage: vessel drifts in dusk atmosphere.
+ * No map lines, no neon HUD, no ship-name overlays.
  */
 export function AegeanBackdrop() {
   return (

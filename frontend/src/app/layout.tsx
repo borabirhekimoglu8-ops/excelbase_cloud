@@ -1,19 +1,19 @@
 import type { Metadata, Viewport } from "next";
-import { Outfit, Syne } from "next/font/google";
+import { Figtree, Fraunces } from "next/font/google";
 import { PwaBootstrap } from "@/components/pwa/PwaBootstrap";
 import { AegeanBackdrop } from "@/components/ui/AegeanBackdrop";
 import "./globals.css";
 
-const outfit = Outfit({
+const figtree = Figtree({
   subsets: ["latin", "latin-ext"],
   display: "swap",
-  variable: "--font-outfit",
+  variable: "--font-figtree",
 });
 
-const syne = Syne({
+const fraunces = Fraunces({
   subsets: ["latin", "latin-ext"],
   display: "swap",
-  variable: "--font-syne",
+  variable: "--font-fraunces",
 });
 
 export const metadata: Metadata = {
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a1f33",
+  themeColor: "#0c2233",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -46,8 +46,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="tr" className={`${outfit.variable} ${syne.variable}`}>
-      <body className={outfit.className}>
+    <html lang="tr" className={`${figtree.variable} ${fraunces.variable}`}>
+      <body className={figtree.className}>
         <AegeanBackdrop />
         {children}
         <PwaBootstrap />
