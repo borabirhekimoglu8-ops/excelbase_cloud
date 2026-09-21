@@ -1,306 +1,169 @@
 ---
-description: Full model pins + Fable auto-activation + mandatory per-operation model disclosure
+description: Hardened model pins — best∩fit, narrow Fable auto-ON, cost caps, mandatory Model log
 alwaysApply: true
 ---
 
-# Model pin matrix — full catalog + Fable auto-activation + visibility
+# Model pinning (hardened)
 
-**Goal:** Pin the **strongest model that fits the job**. Prefer quality over habit. Never silently use `-fast` / low-effort for merge-critical work.
+**Intent:** best model that **fits** the job — not the most expensive by default, not cheap Auto habit.
 
-When launching `Task` / subagents, **always set `model`** to an explicit slug from this file (or `inherit`).
+**Always:** explicit Task `model` · §6 Model log every turn · user-named model wins.
 
-**Visibility (mandatory for every session):** the user must see **which model ran and why** for **every** parent turn and **every** child operation. See **§10**.
-
-**User override wins** for named models. Signals:
-- up: `en iyi` / `kalite` / `ciddi` / `production` / `max` / `fable`
-- down: `ucuz` / `hızlı` / `maliyet` / `draft`
+**Signals:** up = `en iyi|kalite|ciddi|production|max|fable` · down = `ucuz|hızlı|maliyet|draft`
 
 ---
 
-## 0. Decision order (every Task)
+## 1. Decide (strict order)
 
-1. Does §3 **Fable auto-activate** match? → pin Fable (§3 tier).  
-2. Else match §5 job row → primary pin.  
-3. Apply §7 quality bias (tier ±1).  
-4. If slug rejected → §6 fallback (same family first).  
-5. Never leave `model` unset when a pin exists.  
-6. Record the pin for §10 disclosure (model + reason + job).
+1. **Hard gate Fable?** → §3 (narrow). If yes, pin Fable once for that decision/review Task.  
+2. Else **lane** from §2.  
+3. Apply §4 bias (±1 tier max unless user names a model).  
+4. Cap check §5 — if over cap, downgrade before launch.  
+5. On slug reject → §7 fallback.  
+6. Log for §6.
 
----
-
-## 1. Effort tiers
-
-| Suffix | When |
-|--------|------|
-| `minimal` / `none` | Tiny classify / yes-no (Muse / GPT only) |
-| `low` | Trivial edits, low-stakes |
-| `medium` | Competent mid work; routine CI |
-| `high` | **Default for serious Excelbase work** |
-| `xhigh` | Hard multi-step / ambiguous product |
-| `max` | Peak reasoning — Fable/Opus/Sol crises |
-
-**`*-fast`:** only if user wants speed **and** job is time-boxed UI driving or explore swarm. Fast ≠ better. **Banned** for architecture, security, OCR, auth, KVKK, Fable-tier work.
+Do **not** re-read a giant matrix for routine work. Lanes first; Fable only on hard gates.
 
 ---
 
-## 2. Full pinable catalog
+## 2. Default lanes (90% of work)
 
-Only these Task slugs (plus `inherit`). Do not invent ids.
+| Lane | Job | Pin | Notes |
+|------|-----|-----|-------|
+| E0 | Trivial path/symbol find | `composer-2.5-fast` | needles only |
+| E1 | Codebase explore / map | `composer-2.5` | **all** explore; never frontier swarm |
+| I1 | Small patch / typo / config | `gpt-5.6-terra-medium` | or Composer |
+| I2 | Mid feature / CI triage | `gpt-5.6-sol-medium` | Terra-high OK if Sol tight |
+| I3 | Multi-file feature impl | `gpt-5.6-sol-high` | default implementation |
+| I4 | Hard impl / OCR logic (no Fable gate) | `gpt-5.6-sol-xhigh` | one Task, then reassess |
+| R1 | Architecture / design (no trust/PII gate) | `claude-opus-5-thinking-high` | not Fable by default |
+| R2 | Normal bugbot / non-sensitive review | `claude-opus-5-thinking-high` | |
+| B1 | Browser / GUI QA | `claude-sonnet-5-thinking-high` | xhigh if flaky |
+| V1 | Video / screenshot review | `gemini-3.8-flash-high` | |
+| L1 | Huge transcript/log first pass | `muse-spark-1.3-high` | then lane for decisions |
+| P1 | Parent everyday serious | Auto **Intelligence** or `cursor-grok-4.6-high` | |
+| P2 | Parent hardest multi-PR | `cursor-grok-4.6-xhigh` | |
+| X1 | `inherit` | parent model | only if parent ≥ needed lane |
 
-### `inherit`
-Same as parent — use when parent is already ≥ the job’s recommended tier.
+**Banned in explore:** Opus, Fable, Sol-max, Grok-xhigh. Breadth = Composer; one frontier synthesizer after.
 
-### Cursor Grok 4.6 (Cursor pool — flagship agent)
-`cursor-grok-4.6-{low,medium,high,xhigh}` and `*-fast`  
-- **high:** strong everyday parent / generalPurpose  
-- **xhigh:** hardest multi-PR / ambiguous orchestration  
+**Banned as implementers:** Gemini, Muse. **Banned as browser primary:** Fable, Composer, Muse.
 
-### Cursor Composer 2.5 (Cursor pool — explore / coding sweep)
-`composer-2.5` — default explore / breadth  
-`composer-2.5-fast` — trivial needle only (path/symbol)
+### Catalog (allowed Task slugs only)
 
-### OpenAI GPT-5.6 Sol (frontier implementer)
-`gpt-5.6-sol-{none,low,medium,high,xhigh,max}` and `*-fast`  
-- **high:** default multi-file features  
-- **xhigh / max:** OCR correctness, crisis refactors  
+`inherit` · `cursor-grok-4.6-{low,medium,high,xhigh}[-fast]` · `composer-2.5[-fast]` · `gpt-5.6-sol-{none,low,medium,high,xhigh,max}[-fast]` · `gpt-5.6-terra-{none,low,medium,high,xhigh,max}[-fast]` · `claude-opus-5-thinking-{low,medium,high,xhigh,max}[-fast]` · `claude-sonnet-5-thinking-{low,medium,high,xhigh,max}` · `claude-fable-5-1-thinking-{low,medium,high,xhigh,max}` · `gemini-3.8-flash-{low,medium,high}` · `muse-spark-1.3-{minimal,low,medium,high,xhigh,max}`
 
-### OpenAI GPT-5.6 Terra (mid GPT-5.6)
-`gpt-5.6-terra-{none,low,medium,high,xhigh,max}` and `*-fast`  
-- Sol substitute when pool/cost tight; **medium/high** for mid work  
-
-### Anthropic Claude Opus 5 (deep reasoning)
-`claude-opus-5-thinking-{low,medium,high,xhigh,max}` and `*-fast`  
-- **high:** default architecture / review when Fable not auto-on  
-- **xhigh/max:** hard tradeoffs short of Fable triggers  
-
-### Anthropic Claude Sonnet 5 (browser / UI)
-`claude-sonnet-5-thinking-{low,medium,high,xhigh,max}`  
-- **high:** default `computerUse`  
-- **xhigh/max:** flaky / long GUI flows  
-
-### Anthropic Claude Fable 5.1 (premium — **auto on triggers**)
-`claude-fable-5-1-thinking-{low,medium,high,xhigh,max}`  
-See **§3** — do **not** wait for the user to say “Fable”.
-
-### Google Gemini 3.8 Flash (vision / video)
-`gemini-3.8-flash-{low,medium,high}`  
-- **high:** default `videoReview` / media / screenshot critique  
-
-### Meta Muse Spark 1.3 (long-context helper)
-`muse-spark-1.3-{minimal,low,medium,high,xhigh,max}`  
-- **high+:** huge transcripts / logs first pass  
+Effort: `high` = serious default · `xhigh` = hard multi-step · `max` = crisis only · `*-fast` only if user wants speed **and** lane is B1 time-box or E0/E1 swarm — **never** on Fable gates / auth / OCR / KVKK.
 
 ---
 
-## 3. Claude Fable 5.1 — automatic activation
+## 3. Fable 5.1 — narrow auto-ON (hard gates)
 
-**Policy:** When a trigger below matches, **automatically pin Fable** for that Task (and prefer Fable/`inherit`-from-Fable for tightly coupled follow-ups in the same turn). Do not ask permission first. Briefly note in the final user summary that Fable was used and why (one short clause).
+Auto-pin Fable **without waiting for the user** only if **all** of:
 
-### 3.1 Auto-ON triggers (any one is enough)
+- **A.** Concrete work touches one of: auth/sessions/secrets/encryption · KVKK/GDPR/PII/passenger personal data · passport/OCR/visa-gate **correctness bug after a failed fix** · irreversible migration / silent corruption risk · explicit `security-review` · bugbot **on those same paths** · user said `fable`  
+- **B.** The Task is **decision, design, review, or correctness-critical edit** — not explore, not browser, not video, not log-summarize-only  
+- **C.** §5 caps allow another Fable Task this turn  
 
-| # | Trigger | Pin |
-|---|---------|-----|
-| F1 | **Security review** (`security-review`) or user asks security/pentest-style review of code | `claude-fable-5-1-thinking-high` |
-| F2 | **Auth / sessions / secrets / credentials / encryption** implementation or review | `claude-fable-5-1-thinking-high` |
-| F3 | **KVKK / GDPR / PII / passenger personal data** handling, retention, export, deletion | `claude-fable-5-1-thinking-xhigh` |
-| F4 | **Passport / OCR / biyometrik / visa gate** correctness-critical logic or bugfix after prior failure | `claude-fable-5-1-thinking-xhigh` |
-| F5 | **Data-integrity crisis** — silent corruption risk, merge of passenger/ops records, irreversible migration | `claude-fable-5-1-thinking-max` |
-| F6 | **Architecture + policy** together (system redesign that changes trust boundaries, tenancy, or local-vs-cloud data flow) | `claude-fable-5-1-thinking-xhigh` |
-| F7 | **Bugbot / adversarial review** on auth, PII, OCR, payments, or import pipelines | `claude-fable-5-1-thinking-high` |
-| F8 | User quality bias (`en iyi` / `kalite` / `ciddi` / `production`) **and** job is architecture, security, OCR, or KVKK | bump to Fable: `high` → use `xhigh`; already xhigh → `max` |
-| F9 | Prior non-Fable attempt on the **same hard problem** failed / user rejected quality | escalate to `claude-fable-5-1-thinking-xhigh` (or `max` if already tried xhigh Opus/Sol) |
-| F10 | Explicit user says `fable` / `Fable 5.1` | honor named tier or default `thinking-high` |
+| Id | Gate | Pin |
+|----|------|-----|
+| F1 | `security-review` or security-asked review of code | `claude-fable-5-1-thinking-high` |
+| F2 | Auth / secrets / encryption impl or review | `claude-fable-5-1-thinking-high` |
+| F3 | KVKK / PII / passenger data handling | `claude-fable-5-1-thinking-high` |
+| F4 | OCR/passport **retry after failed fix** | `claude-fable-5-1-thinking-xhigh` |
+| F5 | Irreversible migration / corruption risk | `claude-fable-5-1-thinking-xhigh` |
+| F6 | Trust-boundary redesign **and** data residency/tenancy/local-cloud | `claude-fable-5-1-thinking-xhigh` |
+| F7 | Bugbot on F2–F5 paths | `claude-fable-5-1-thinking-high` |
+| F8 | User said `fable` / `Fable 5.1` | named tier or `thinking-high` |
+| F9 | Same hard gate failed on Opus/Sol-xhigh already | escalate **one** step (high→xhigh or xhigh→max) |
 
-### 3.2 Auto-OFF (do **not** use Fable)
+**Not Fable (use Opus R1 / Sol I3–I4 instead):**
+- Generic “architecture” or UI redesign without trust/PII  
+- First-pass OCR feature build (use Sol-xhigh; Fable only on F4 retry)  
+- Quality words alone (`en iyi`) without an A-clause path  
+- Explore, CI flake, browser smoke, video, docs/typos  
 
-- Trivial explore needles, parallel explore swarms  
-- Routine CI flake triage  
-- Browser smoke / click-path QA (keep Sonnet)  
-- Video/screenshot review (keep Gemini)  
-- Typos, copy, CSS-only polish, docs-only  
-- Cost-down user mode (`ucuz` / `maliyet` / `draft`) — unless F2–F5 still apply (safety overrides cost)  
-- “Just summarize this log” first pass (Muse first; Fable only if summary drives a F1–F7 decision)
+**Pairing:** Composer explore → **one** Fable/Opus synthesis → Sol impl. Never 2+ Fable explores. Browser/video stay B1/V1 after Fable design.
 
-### 3.3 Fable pairing rules
+**Fable blocked:** fable-max→xhigh→high → `claude-opus-5-thinking-max`→xhigh→high → `gpt-5.6-sol-max`. Say so in Model log.
 
-- **Explore first (Composer) → Fable synthesis** when F6/F8: cheap breadth, Fable for the plan.  
-- **Implementation after Fable plan:** prefer `gpt-5.6-sol-high` / `xhigh` or `inherit` if parent is Fable; do not run 3× Fable explores.  
-- **Browser QA after Fable-designed UI:** Sonnet-high (+ Gemini for video), not Fable.  
-- **Security trigger + coding:** Fable for review/design Task; Sol-xhigh for the implementing Task unless the implement Task itself touches F2–F5 (then Fable or Opus-max).
-
-### 3.4 Fable unavailable
-
-If Fable slug rejected (allowlist / privacy / region):  
-`fable-max` → `fable-xhigh` → `fable-high` → **`claude-opus-5-thinking-max`** → `opus-xhigh` → `opus-high` → `gpt-5.6-sol-max`.  
-Tell the user Fable was blocked and which fallback ran.
-
-### 3.5 Cost note (do not skip triggers)
-
-Fable is ~2× Opus-class cost and may involve provider retention rules. **Still auto-on for §3.1** — that is an explicit product preference for this repo. Cost-down mode only suppresses F6/F8/F9 niceties, not F2–F5 safety triggers.
+**Cost-down mode:** still honor F1–F5/F7; suppress F6 niceties and F9 unless user insists.
 
 ---
 
-## 4. Parent (Cloud Agent / chat)
-
-1. Default serious parent: **Auto → Optimize For: Intelligence**, or pin `cursor-grok-4.6-high`.  
-2. Hardest product orchestration: `cursor-grok-4.6-xhigh`.  
-3. If the **user’s ask itself** matches §3.1 (e.g. “KVKK’ya uygun auth tasarla”): prefer parent pin `claude-fable-5-1-thinking-high` / `xhigh` when the UI allows selecting Fable; otherwise keep Intelligence Auto and **force Fable on child Tasks**.  
-4. Heavy coding parent without Fable trigger: `gpt-5.6-sol-high`.  
-5. Avoid Auto Cost/Balance unless user asks to save spend.
-
----
-
-## 5. Job → pin matrix
-
-| Job | `subagent_type` | Primary | Alt | Avoid |
-|-----|-----------------|---------|-----|-------|
-| Ambiguous multi-PR orchestration | `generalPurpose` | `cursor-grok-4.6-xhigh` | Sol-xhigh, Opus-xhigh | Composer, `-fast` |
-| Architecture / design tradeoffs | `generalPurpose` | Opus-high **or Fable if F6/F8** | Opus-xhigh, Fable-high | Sonnet, Composer-fast |
-| Trust-boundary / tenancy / local-cloud data redesign | `generalPurpose` | **`claude-fable-5-1-thinking-xhigh` (auto)** | Fable-high, Opus-max | Terra, Composer |
-| Multi-file feature impl | `generalPurpose` | `gpt-5.6-sol-high` | Sol-xhigh, Grok-high, `inherit` | Composer-fast |
-| Mid feature / focused refactor | `generalPurpose` | `gpt-5.6-sol-medium` | Terra-high, Grok-medium | `*-low` |
-| Small patch / typo / config | `generalPurpose` | `gpt-5.6-terra-medium` | Composer, Sol-low | Opus/Fable |
-| Codebase map / how-it-works | `explore` | `composer-2.5` | Terra-medium, Muse-high | Opus/Fable swarm |
-| Trivial path/symbol needle | `explore` | `composer-2.5-fast` | Composer | Frontier |
-| Parallel explore swarm (N≥3) | `explore` | Composer / Composer-fast | Terra-medium | Opus/Sol/Fable |
-| Synthesis after explore | `generalPurpose` | Opus-high or Sol-high **or Fable if §3** | Grok-high | Composer-fast |
-| Browser / GUI QA | `computerUse` | `claude-sonnet-5-thinking-high` | Sonnet-xhigh/max | Composer, Muse, Fable |
-| Flaky / long browser flows | `computerUse` | Sonnet-xhigh | Sonnet-max; Sonnet-high-fast if time-boxed | Grok-fast primary |
-| Demo / screen video review | `videoReview` / `mediaReview` | `gemini-3.8-flash-high` | Gemini-medium | Composer, GPT-none, Fable |
-| Screenshot / visual critique | `generalPurpose` + images | Gemini-high | Sonnet-high | Composer-fast |
-| CI failure diagnosis | `ci-investigator` | `gpt-5.6-sol-medium` | Terra-high, `inherit` | Fable (unless failure is auth/PII) |
-| Security review | `security-review` | **`claude-fable-5-1-thinking-high` (auto)** | Fable-xhigh/max, Opus-max | Composer, Gemini |
-| Bugbot on sensitive paths | `bugbot` | **`claude-fable-5-1-thinking-high` (auto)** | Opus-xhigh, Sol-high | `-fast` |
-| Bugbot on normal UI/docs | `bugbot` | `claude-opus-5-thinking-high` | Sol-high | Composer-fast |
-| Cursor product how-to | `cursor-guide` | `inherit` or Composer | Terra-medium | Opus/Fable-max |
-| Env setup / migrate-to-builds | `generalPurpose` + skills | Grok-high | Sol-high | Muse-minimal |
-| Large transcript / log summary | `generalPurpose` | Muse-high | Muse-xhigh, Gemini-high | Fable first pass |
-| Decision from huge transcript (security/KVKK) | `generalPurpose` | Muse then **Fable-high (auto)** | Opus-max | Composer-fast alone |
-| OCR / passport / visa gate logic | `generalPurpose` | Sol-xhigh **or Fable-xhigh if F4** | Sol-max, Opus-xhigh | Composer-fast, Terra-low |
-| OCR bug after failed fix | `generalPurpose` | **`claude-fable-5-1-thinking-xhigh` (auto)** | Fable-max, Sol-max | Mid-tier |
-| Auth / secrets / encryption code | `generalPurpose` | **`claude-fable-5-1-thinking-high` (auto)** | Fable-xhigh, Opus-max | Any `-fast` |
-| KVKK / PII / passenger data paths | `generalPurpose` | **`claude-fable-5-1-thinking-xhigh` (auto)** | Fable-max, Opus-max | Terra, Composer |
-| Irreversible migration / merge integrity | `generalPurpose` | **`claude-fable-5-1-thinking-max` (auto)** | Opus-max, Sol-max | Fast anything |
-| UI visual redesign impl | `generalPurpose` | Sol-high | Grok-high; pair Sonnet QA | Explore-fast alone |
-| Operon / workstation / local-AI architecture | `generalPurpose` | Opus-high **or Fable-xhigh if trust/PII (F3/F6)** | Grok-xhigh | Composer-fast |
-| Isolated best-of-n experiment | `best-of-n-runner` | `inherit` or Sol-high | Grok-high | Random mix |
-| Cloud subagent (user-asked) | + `environment: cloud` | Same row as job | `inherit` | Downgrade because cloud |
-| Walkthrough / demo evidence packaging | `generalPurpose` | Grok-high or Sol-medium | Composer | Fable |
-| Dependency / supply-chain risk review | `generalPurpose` / security | **Fable-high (auto if F1)** | Opus-high | Gemini |
-| Prompt/agent skill authoring for production agents | `generalPurpose` | Opus-high | Sol-high, Grok-high | Composer-fast |
-| Hostile input / prompt-injection hardening | `generalPurpose` | **Fable-high (auto)** | Opus-xhigh | Terra |
-
----
-
-## 6. Fallback chains
-
-1. **Fable:** max → xhigh → high → medium → **Opus max** → Opus xhigh → Opus high → Sol max  
-2. **Grok:** xhigh → high → medium → (then) high-fast  
-3. **Sol:** max → xhigh → high → medium → Terra high → Terra medium  
-4. **Opus:** max → xhigh → high → medium → Sol high (code) / Sonnet high (UI only)  
-5. **Sonnet:** max → xhigh → high → medium  
-6. **Composer:** `composer-2.5` → `composer-2.5-fast` (needles) → Terra medium  
-7. **Gemini:** high → medium → low → Sonnet high (still images)  
-8. **Muse:** max → xhigh → high → medium → Composer 2.5  
-9. **Terra:** max → xhigh → high → medium → Sol medium  
-
-Hard-work last resort cross-family: Fable → Opus ↔ Sol ↔ Grok. Never end on `*-fast` / `none` / `minimal` / `low` for merge-critical or §3 triggers.
-
----
-
-## 7. Quality / cost bias
+## 4. Bias (max ±1 unless named model)
 
 | Signal | Effect |
 |--------|--------|
-| `en iyi` / `kalite` / `ciddi` / `production` / `merge` | +1 effort tier; ban `-fast`; enable F8 (Fable on arch/security/OCR/KVKK) |
-| `fable` named | Force §3.1 F10 |
-| `hızlı` / `ucuz` / `maliyet` / `draft` | Allow Composer-fast, Terra, medium; **keep F2–F5 Fable auto-on** |
-| Named other model | That model for turn + children unless unsafe vs F2–F5 (then Fable still for the sensitive Task) |
-| Silence | §5 primaries at **high**; Fable still auto on §3.1 |
+| Quality words | +1 tier within **same family/lane** (Sol-high→xhigh). Does **not** alone open Fable |
+| Cost/speed words | Allow E0, Terra, medium; **keep** F1–F5 |
+| Named model | That slug for turn + children, except F1–F5 still win on sensitive Tasks |
+| Silence | Lanes at §2 defaults |
 
 ---
 
-## 8. Anti-patterns
+## 5. Hard caps (anti-bloat)
 
-- Skipping Fable when §3.1 matches because it is “expensive” or “user didn’t say Fable”.  
-- Leaving Task `model` unset.  
-- Fable (or Opus) explore swarms — Composer for breadth.  
-- Fable for browser smoke or video review.  
-- Gemini/Muse as backend implementers.  
-- `composer-2.5-fast` on OCR, auth, KVKK, UI redesign, migrations.  
-- Downgrading because old Auto habit used Sonnet/Composer.  
-- Using Fable-low/medium for §3 triggers — minimum **high**.  
-- **Hiding or omitting model identity** — no silent Tasks; no “I used a subagent” without naming the model and reason.  
-- Bundling many operations under one vague “Auto” line when concrete Task pins exist.
+Per **user turn**:
 
----
+| Cap | Limit |
+|-----|-------|
+| Fable Tasks | **≤ 2** (prefer 1). Extra sensitive work → Opus-max, note in log |
+| Frontier synthesizers (Fable/Opus-xhigh+/Sol-xhigh+) | **≤ 3** total |
+| Explore Tasks | Composer only; **≤ 4** parallel |
+| `max` effort | Only F5/F9 or user-named max |
+| `*-fast` on merge-critical / F-gates | **0** |
 
-## 9. Launch checklist
+If a lane wants more, **finish current Task and report** — do not silently spawn another Fable.
 
-1. Run §3 Fable triggers → if hit, pin Fable tier.  
-2. Else §5 job row primary.  
-3. Apply §7 bias.  
-4. Pass `model` explicitly.  
-5. On rejection → §6; report Fable block if relevant.  
-6. Append the operation to the §10 model log (required).  
-7. End-of-turn: publish the full §10 block to the user.
+Escalate **once** per problem (F9); then stop and ask or ship with best fallback.
 
 ---
 
-## 10. Mandatory model visibility (every session, every turn)
+## 6. Model log (mandatory every turn)
 
-The user asked to **see which model was used and why for every operation**. This section is **always on** for this repo — do not wait to be asked again.
-
-### 10.1 What must be disclosed
-
-For **each** of the following, name the model slug (or best-known identity) and a one-line reason:
-
-| Operation | What to show |
-|-----------|----------------|
-| Parent / this agent turn | Selected or effective model if known (`Auto/Intelligence`, pinned slug, or `default` + note if routed identity hidden) |
-| Every `Task` / subagent | Exact `model` arg passed + `subagent_type` + job reason (cite §5 row or §3 trigger id, e.g. `F3`) |
-| Fallback | Requested slug → actual slug + why rejected |
-| Fable auto-ON | Trigger id (`F1`…`F10`) + tier |
-| Tools without Task model (Shell, Edit, etc.) | Attribute to **parent** model line (“parent: …”) — do not invent a child model |
-| Parallel Tasks | One row per Task, not a single merged line |
-
-If Cursor hides Auto’s routed underlying model, write: `parent: Auto (Optimize=Intelligence; routed id hidden)` — still disclose every **explicit Task pin**.
-
-### 10.2 When to show it
-
-1. **Before or as Tasks launch** (brief is OK): e.g. `Pin: composer-2.5 · explore · codebase map`.  
-2. **Required at end of every user-facing turn** that did any work: a **Model log** section.  
-3. Turns that only answer with no tools: still one line for the parent model/identity.
-
-### 10.3 Required end-of-turn format
-
-Use this block (Turkish or English; keep slugs exact). Place near the end of the reply, after the main answer:
+End every user-facing reply with:
 
 ```markdown
 ### Model log
 | # | Operation | Model | Why |
 |---|-----------|-------|-----|
 | 0 | parent | `…` | … |
-| 1 | explore · map auth | `composer-2.5` | §5 codebase map |
-| 2 | generalPurpose · KVKK review | `claude-fable-5-1-thinking-xhigh` | §3 F3 auto |
+| 1 | … | `slug` | lane E1 / gate F3 / user … |
 ```
 
-Rules for the table:
-- Include **every** Task from this turn, in launch order.  
-- `Why` ≤ ~12 words; must reference §3 trigger and/or §5 job (or user override).  
-- If nothing but parent: one row is enough.  
-- Never skip because the turn was “small”.
+- One row per Task + parent. Shell/Edit/etc. → parent row only.  
+- `Why`: lane id (`I3`) or gate id (`F2`) or `user:…` — ≤12 words.  
+- Fallbacks: `requested → actual`.  
+- Auto parent with hidden route: `Auto (Intelligence; routed id hidden)`.  
+- This turn only (unless user asks for session aggregate).  
+- **Never omit.**
 
-### 10.4 Multi-turn / session continuity
+Inline OK when launching: `Pin: composer-2.5 · E1`.
 
-- Each turn’s Model log covers **that turn only** (do not dump the whole session every time unless asked).  
-- If the user asks “hangi modeller?”, aggregate from prior turns’ logs you still have in context.  
-- PR / walkthrough summaries that list agent work must include a Model log for the work being described.
+---
 
-### 10.5 Anti-omit examples
+## 7. Fallbacks
 
-Bad: “Alt ajanla baktım.”  
-Good: “`composer-2.5` (explore) — passport import paths.”
+Same family first:  
+Fable → Opus-max chain · Sol max→…→Terra · Grok xhigh→high→medium · Sonnet max→…→medium · Composer → Terra-medium · Gemini → Sonnet-high · Muse → Composer  
 
-Bad: “Fable kullandım.”  
-Good: “`claude-fable-5-1-thinking-xhigh` — §3 F3 KVKK/PII.”
+Cross-family last resort for hard work: Opus ↔ Sol ↔ Grok. Never land on fast/none/minimal/low for F-gates or merge-critical.
+
+---
+
+## 8. Anti-patterns
+
+- Fable because “premium default” or quality words alone  
+- Frontier explore swarms  
+- Skipping Model log  
+- Unset Task `model`  
+- Second Fable on the same question without new evidence  
+- Gemini/Muse implementing backend  
+- Downgrading F1–F5 for cost  
+
+---
+
+## 9. Mini checklist
+
+`[ ]` F-gate? `[ ]` else lane `[ ]` caps OK `[ ]` model set `[ ]` logged
