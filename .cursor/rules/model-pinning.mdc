@@ -1,43 +1,211 @@
 ---
-description: Task/subagent model pin matrix — best model that fits the job, not blindly the strongest
+description: Full model catalog + best∩appropriate pin matrix for parent and all Task/subagent types
 alwaysApply: true
 ---
 
-# Model pin matrix (best ∩ appropriate)
+# Model pin matrix — full catalog (best ∩ appropriate)
 
-When launching `Task` / subagents, **pin explicitly**. Do not leave model unset unless the tool forbids it. Prefer the **strongest model that fits the job**; do not default to `-fast` or mid-tier when the work is hard.
+**Goal:** For every job, pin the **strongest model that fits that job** — not blindly the most expensive, and not silently `-fast` / low-effort.
 
-## Parent (this Cloud Agent / chat)
+When launching `Task` / subagents, **always set `model`** unless the tool forbids it. Prefer explicit slugs from this file over unset/`null`.
 
-- Prefer **Auto** with **Optimize For → Intelligence**, or pin a frontier parent:
-  - `gpt-5.6-sol-high` / `gpt-5.6-sol-xhigh` — complex multi-step product work
-  - `claude-opus-5-thinking-high` / `claude-opus-5-thinking-xhigh` — deep reasoning, architecture, careful refactors
-  - `cursor-grok-4.6-high` / `cursor-grok-4.6-xhigh` — hardest end-to-end agent runs
-- Avoid Cost/Balance Auto for Excelbase feature work unless the user asks to save spend.
+User override wins: if the user names a model or says “en iyi / max / kalite”, bias **up**; if they say “ucuz / hızlı / maliyet”, bias **down**.
 
-## Subagent pins (required)
+---
 
-| Job | `subagent_type` | Pin `model` | Why |
-|-----|-----------------|-------------|-----|
-| Architecture, design decisions, long plans | `generalPurpose` | `claude-opus-5-thinking-high` | Depth over speed |
-| Multi-file feature implementation | `generalPurpose` | `gpt-5.6-sol-high` or `inherit` if parent is already frontier | Strong coding + follow-through |
-| Codebase search / “where is X?” | `explore` | `composer-2.5` | Fast enough; use non-`-fast` for non-trivial maps |
-| Trivial path/filename lookup only | `explore` | `composer-2.5-fast` | Cheap needle search |
-| Browser / GUI / manual QA | `computerUse` | `claude-sonnet-5-thinking-high` | Proven for UI control; high effort |
-| Demo / screen video review | `videoReview` / `mediaReview` | `gemini-3.8-flash-high` | Vision/video fit |
-| CI failure diagnosis | `ci-investigator` | `gpt-5.6-sol-medium` or `inherit` | Enough depth; not max spend |
-| Security review (user-asked) | `security-review` | `claude-opus-5-thinking-high` | Careful adversarial reading |
-| Bugbot-style review (user-asked) | `bugbot` | `claude-opus-5-thinking-high` | Thorough diff review |
+## 1. Effort tiers (suffix)
 
-If a listed slug is rejected by the tool, fall back one step in the same family (e.g. `xhigh` → `high` → `medium`), never silently to `-fast` for hard work.
+Use the highest effort that still fits latency/budget for the job.
 
-## Anti-patterns
+| Suffix | When |
+|--------|------|
+| `minimal` / `none` | Tiny classification, trivial yes/no (Muse / GPT only) |
+| `low` | Simple edits, short answers, low-stakes |
+| `medium` | Default competent work; CI triage; mid features |
+| `high` | **Default for serious Excelbase work** |
+| `xhigh` | Hard multi-step, ambiguous product/architecture |
+| `max` | Highest reasoning; rare — security, data integrity, OCR correctness crises |
 
-- Do **not** pin `composer-2.5-fast` or `*-fast` for UI redesign, OCR correctness, auth, data integrity, or multi-PR product work.
-- Do **not** use mid-tier Sonnet for architecture when Opus / GPT-5.6 Sol / Grok xhigh is available.
-- Do **not** launch parallel explore swarms on frontier models — use Composer for breadth, one frontier agent for synthesis.
-- When the user says “en iyi / kalite / ciddi iş”, bias every pin upward (Intelligence / `high` / `xhigh`).
+**Fast variants** (`*-fast`): only when the user wants speed **and** the job is interactive UI driving or time-boxed swarm work. Fast ≈ higher $/token; not “better”. Do **not** use fast for architecture, security, OCR, auth, or merge-critical logic.
 
-## User override
+---
 
-If the user names a model, that wins for that turn and its child Tasks unless they say otherwise.
+## 2. Full pinable catalog (Task `model` slugs)
+
+Only pass slugs from this list (or `inherit`). If a slug is rejected, fall back **within the same family** (see §5), never jump to `-fast` for hard work.
+
+### Inherit
+| Slug | Role |
+|------|------|
+| `inherit` | Same model as parent. Use when parent is already frontier and the child should match quality. |
+
+### Cursor — Grok 4.6 (Cursor Models pool; flagship agent)
+| Slug | Role |
+|------|------|
+| `cursor-grok-4.6-xhigh` | Hardest end-to-end Cloud Agent runs; ambiguous multi-PR product work |
+| `cursor-grok-4.6-high` | Strong default parent / generalPurpose for Excelbase features |
+| `cursor-grok-4.6-medium` | Capable everyday agent when cost-sensitive but still solid |
+| `cursor-grok-4.6-low` | Light agent chores only |
+| `cursor-grok-4.6-xhigh-fast` | Same as xhigh when wall-clock matters (expensive) |
+| `cursor-grok-4.6-high-fast` | Fast strong parent |
+| `cursor-grok-4.6-medium-fast` | Fast mid agent |
+| `cursor-grok-4.6-low-fast` | Fast light chores |
+
+### Cursor — Composer 2.5 (Cursor Models pool; coding / explore)
+| Slug | Role |
+|------|------|
+| `composer-2.5` | **Default explore** and interactive coding sweeps; breadth search |
+| `composer-2.5-fast` | Trivial needle search only (filename, symbol, one-path) |
+
+### OpenAI — GPT-5.6 Sol (frontier coding / multi-step)
+| Slug | Role |
+|------|------|
+| `gpt-5.6-sol-max` | Peak Sol — crisis refactors, correctness-critical multi-file |
+| `gpt-5.6-sol-xhigh` | Very hard multi-step implementation |
+| `gpt-5.6-sol-high` | **Default feature implementation** generalPurpose |
+| `gpt-5.6-sol-medium` | CI investigator; mid features |
+| `gpt-5.6-sol-low` | Small patches |
+| `gpt-5.6-sol-none` | Minimal reasoning Sol (almost never) |
+| `gpt-5.6-sol-max-fast` … `gpt-5.6-sol-none-fast` | Same tiers when latency > cost |
+
+### OpenAI — GPT-5.6 Terra (mid GPT-5.6; cost/quality middle)
+| Slug | Role |
+|------|------|
+| `gpt-5.6-terra-max` / `xhigh` / `high` | Strong mid-tier when Sol pool is tight; solid impl |
+| `gpt-5.6-terra-medium` | Balanced mid work; cheaper Sol substitute |
+| `gpt-5.6-terra-low` / `none` | Light Terra only |
+| `gpt-5.6-terra-*-fast` | Latency-biased Terra |
+
+### Anthropic — Claude Opus 5 (deep reasoning)
+| Slug | Role |
+|------|------|
+| `claude-opus-5-thinking-max` | Peak Opus — security, irreversible design, legal/KVKK-sensitive logic |
+| `claude-opus-5-thinking-xhigh` | Architecture, long plans, hard tradeoffs |
+| `claude-opus-5-thinking-high` | **Default architecture / review / security / bugbot** |
+| `claude-opus-5-thinking-medium` | Thoughtful mid reasoning |
+| `claude-opus-5-thinking-low` | Light Opus (rarely worth it vs Sonnet) |
+| `claude-opus-5-thinking-*-fast` | Same effort, faster/more costly |
+
+### Anthropic — Claude Sonnet 5 (UI / browser / balanced)
+| Slug | Role |
+|------|------|
+| `claude-sonnet-5-thinking-max` | Hardest browser/UI flows; flaky GUI |
+| `claude-sonnet-5-thinking-xhigh` | Complex multi-page QA |
+| `claude-sonnet-5-thinking-high` | **Default computerUse / browser QA** |
+| `claude-sonnet-5-thinking-medium` | Routine UI smoke |
+| `claude-sonnet-5-thinking-low` | Trivial UI click-paths only |
+
+### Anthropic — Claude Fable 5.1 (premium; guarded)
+| Slug | Role |
+|------|------|
+| `claude-fable-5-1-thinking-max` / `xhigh` / `high` | Highest-stakes reasoning when Fable is allowed (privacy/retention may apply) |
+| `claude-fable-5-1-thinking-medium` / `low` | Only if user explicitly asks for Fable |
+
+Use Fable only when the user requests it or the task is exceptional (security + architecture + policy). Prefer Opus/Sol/Grok otherwise.
+
+### Google — Gemini 3.8 Flash (vision / video / media)
+| Slug | Role |
+|------|------|
+| `gemini-3.8-flash-high` | **Default videoReview / mediaReview / screenshot critique** |
+| `gemini-3.8-flash-medium` | Routine visual checks |
+| `gemini-3.8-flash-low` | Trivial image yes/no |
+
+### Meta — Muse Spark 1.3 (efficient long-context helper)
+| Slug | Role |
+|------|------|
+| `muse-spark-1.3-max` / `xhigh` / `high` | Long-doc synthesis, large transcript summarization |
+| `muse-spark-1.3-medium` | Standard long-context helper |
+| `muse-spark-1.3-low` / `minimal` | Tiny extract/classify on big text |
+
+---
+
+## 3. Parent (Cloud Agent / chat) policy
+
+1. Prefer **Auto → Optimize For: Intelligence**, **or** pin parent:
+   - Everyday serious: `cursor-grok-4.6-high`
+   - Hardest product: `cursor-grok-4.6-xhigh`
+   - Deep reasoning chat: `claude-opus-5-thinking-high`
+   - Heavy coding chat: `gpt-5.6-sol-high`
+2. Avoid Auto **Cost** / **Balance** for Excelbase product work unless user asks to save spend.
+3. Children: use §4 pins; use `inherit` only when parent is already ≥ the job’s recommended tier.
+
+---
+
+## 4. Job → pin matrix (comprehensive)
+
+| Job | `subagent_type` | Primary pin | Alt (if primary unavailable) | Avoid |
+|-----|-----------------|-------------|------------------------------|-------|
+| Ambiguous product / multi-PR orchestration | `generalPurpose` | `cursor-grok-4.6-xhigh` | `gpt-5.6-sol-xhigh`, `claude-opus-5-thinking-xhigh` | Composer, Terra-low, any `-fast` |
+| Architecture / design tradeoffs | `generalPurpose` | `claude-opus-5-thinking-high` | `claude-opus-5-thinking-xhigh`, `claude-fable-5-1-thinking-high` (user-asked) | Sonnet, Composer-fast |
+| Multi-file feature implementation | `generalPurpose` | `gpt-5.6-sol-high` | `gpt-5.6-sol-xhigh`, `cursor-grok-4.6-high`, `inherit` | `composer-2.5-fast` |
+| Mid feature / focused refactor | `generalPurpose` | `gpt-5.6-sol-medium` | `gpt-5.6-terra-high`, `cursor-grok-4.6-medium` | `*-low` |
+| Small patch / typo / config | `generalPurpose` | `gpt-5.6-terra-medium` | `composer-2.5`, `gpt-5.6-sol-low` | Opus-max |
+| Codebase map / “how does X work?” | `explore` | `composer-2.5` | `gpt-5.6-terra-medium`, `muse-spark-1.3-high` (huge trees) | Opus/Fable |
+| Trivial path/symbol needle | `explore` | `composer-2.5-fast` | `composer-2.5` | Frontier |
+| Parallel explore swarm (N≥3) | `explore` | `composer-2.5` or `composer-2.5-fast` | Terra-medium | Do not swarm Opus/Sol-max |
+| Synthesis after explore | `generalPurpose` | `claude-opus-5-thinking-high` or `gpt-5.6-sol-high` | Grok-high | Composer-fast |
+| Browser / GUI / manual QA | `computerUse` | `claude-sonnet-5-thinking-high` | `claude-sonnet-5-thinking-xhigh`, `claude-sonnet-5-thinking-max` | Composer, Muse |
+| Flaky / long browser flows | `computerUse` | `claude-sonnet-5-thinking-xhigh` | `claude-sonnet-5-thinking-max`, Sonnet-high-fast if time-boxed | Grok-fast as primary |
+| Demo / screen video review | `videoReview` / `mediaReview` | `gemini-3.8-flash-high` | `gemini-3.8-flash-medium` | Composer, GPT-none |
+| Screenshot / visual design critique | `generalPurpose` + images | `gemini-3.8-flash-high` | `claude-sonnet-5-thinking-high` | Composer-fast |
+| CI failure diagnosis | `ci-investigator` | `gpt-5.6-sol-medium` | `gpt-5.6-terra-high`, `inherit` | Fable |
+| Security review (user-asked) | `security-review` | `claude-opus-5-thinking-high` | `claude-opus-5-thinking-xhigh` / `max`, Fable if asked | Composer, Gemini |
+| Bugbot-style review (user-asked) | `bugbot` | `claude-opus-5-thinking-high` | `gpt-5.6-sol-high`, Opus-xhigh | `-fast` |
+| Cursor product “how do I…?” | `cursor-guide` | `inherit` or `composer-2.5` | Terra-medium | Opus-max |
+| Env setup / migrate-to-builds | `generalPurpose` + skills | `cursor-grok-4.6-high` | `gpt-5.6-sol-high` | Muse-minimal |
+| Large transcript / log summarization | `generalPurpose` | `muse-spark-1.3-high` | `muse-spark-1.3-xhigh`, `gemini-3.8-flash-high` | Opus-max first pass |
+| OCR / passport / data-integrity logic | `generalPurpose` | `gpt-5.6-sol-xhigh` | `claude-opus-5-thinking-xhigh`, Sol-max | Composer-fast, Terra-low |
+| Auth / KVKK / secrets handling code | `generalPurpose` | `claude-opus-5-thinking-high` | Opus-xhigh, Sol-high | Any `-fast` |
+| UI visual redesign implementation | `generalPurpose` | `gpt-5.6-sol-high` | Grok-high, Sonnet-high (impl+QA pair) | Explore-fast alone |
+| Isolated experiment / best-of-n | `best-of-n-runner` | `inherit` or `gpt-5.6-sol-high` | Grok-high | Mixed random models |
+| Cloud subagent (user-asked cloud) | any + `environment: cloud` | Same as job row above | `inherit` | Downgrade because cloud |
+
+---
+
+## 5. Fallback chains (same family first)
+
+If primary slug fails availability/allowlist:
+
+1. **Grok:** `xhigh` → `high` → `medium` → (only then) `high-fast`
+2. **Sol:** `max` → `xhigh` → `high` → `medium` → Terra `high` → `medium`
+3. **Opus:** `max` → `xhigh` → `high` → `medium` → Sonnet `high` (UI only) / Sol `high` (code)
+4. **Sonnet:** `max` → `xhigh` → `high` → `medium`
+5. **Fable:** `max` → `xhigh` → `high` → **Opus** `high` (do not invent other Fable ids)
+6. **Composer:** `composer-2.5` → `composer-2.5-fast` (only for needles) → Terra `medium`
+7. **Gemini:** `high` → `medium` → `low` → Sonnet `high` (static images)
+8. **Muse:** `max` → `xhigh` → `high` → `medium` → Composer `2.5`
+
+Cross-family last resort for hard work: Grok-high ↔ Sol-high ↔ Opus-high. Never last-resort to `*-fast` or `none`/`minimal`/`low` for merge-critical work.
+
+---
+
+## 6. Quality bias modes
+
+| User signal | Bias |
+|-------------|------|
+| “en iyi / kalite / ciddi / production / merge” | Every pin +1 tier (high→xhigh, xhigh→max); ban `-fast` |
+| “hızlı / ucuz / maliyet / draft” | Allow Composer-fast, Terra, medium effort; keep security/OCR elevated |
+| Named model | That model for the turn + children unless told otherwise |
+| Silence (Excelbase default) | §4 primary pins at **high** (not medium, not fast) |
+
+---
+
+## 7. Anti-patterns
+
+- Leaving `model` unset on Task when a pin exists in §4.
+- `composer-2.5-fast` or any `*-fast` for UI redesign, OCR, auth, KVKK, payments, migrations, security.
+- Opus/Fable swarm for N parallel explores — Composer for breadth, one frontier for synthesis.
+- Gemini as primary implementer of backend logic.
+- Muse as primary browser driver.
+- Downgrading because “Auto used to pick Sonnet/Composer” — this rule supersedes old habit.
+- Using Fable by default (cost + retention constraints) without user ask.
+
+---
+
+## 8. Checklist before each Task launch
+
+1. Match job row in §4 → primary slug.  
+2. If user quality-biased → bump tier (§6).  
+3. If parallel explores → Composer family only.  
+4. Pass `model: "<slug>"` explicitly.  
+5. On rejection → §5 fallback, re-pin, do not drop to unset.
