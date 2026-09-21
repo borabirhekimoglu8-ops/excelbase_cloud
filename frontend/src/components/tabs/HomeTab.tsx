@@ -148,12 +148,14 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
 
   return (
     <div className="ops-page">
-      <section className="ops-page-heading xb-home-hero">
-        <div>
-          <p className="xb-home-brand">Excelbase · İDO</p>
-          <h1>{user.name.split(" ")[0] || "Operasyon"}</h1>
-          <p>{todayLabel}. Veriler bu cihazda şifreli kalır.</p>
-        </div>
+      <section className="xb-home-stage" aria-label="Excelbase ana ekran">
+        <h1 className="xb-home-stage-brand">Excelbase</h1>
+        <p className="xb-home-stage-title">
+          {user.name.split(" ")[0] || "Operasyon"} · {todayLabel}
+        </p>
+        <p className="xb-home-stage-copy">
+          Veriler bu cihazda şifreli kalır. Kapı listesini açın veya yeni liste yükleyin.
+        </p>
         <div className="xb-home-actions-strip">
           <button className="ops-primary" type="button" onClick={() => onNavigate("gate-visa-list")}>
             Yolcuları aç
@@ -169,8 +171,8 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
       <section className="ops-module-card" aria-labelledby="home-queue-title">
         <div className="ops-section-heading">
           <div>
-            <p className="ops-eyebrow">İş kuyruğu</p>
             <h2 id="home-queue-title">Şimdi ne yapılacak</h2>
+            <p>Öncelikli işler ve uyarılar</p>
           </div>
         </div>
         {queue.length ? (
@@ -217,8 +219,8 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
       <section className="ops-module-card">
         <div className="ops-section-heading">
           <div>
-            <p className="ops-eyebrow">Açık işler</p>
             <h2>Aktif iş dosyaları</h2>
+            <p>Açık, bekleyen veya bloke kayıtlar</p>
           </div>
           <button className="ops-section-link" type="button" onClick={() => onNavigate("work-files")}>
             Tümünü gör
@@ -256,8 +258,8 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
       <section className="ops-module-card" aria-labelledby="home-more-title">
         <div className="ops-section-heading">
           <div>
-            <p className="ops-eyebrow">Analiz</p>
             <h2 id="home-more-title">Satış ve raporlar</h2>
+            <p>Özet ve dışa aktarım</p>
           </div>
         </div>
         <div className="ops-home-links">

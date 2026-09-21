@@ -14,10 +14,10 @@ const AuthContext = createContext<AuthValue | null>(null);
 function AuthBrand() {
   return (
     <div className="brand-lockup auth-brand">
-      <BrandMark size={52} tone="on-brand" />
+      <BrandMark size={64} tone="on-brand" />
       <div>
         <strong>Excelbase</strong>
-        <small>Operasyon</small>
+        <small>İDO liman masası</small>
       </div>
     </div>
   );
@@ -98,7 +98,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <section className="auth-panel">
           <AuthBrand />
           <div className="auth-copy">
-            <p className="overline">Kurtarma kodu</p>
             <h1>Bu kodu bir yere yazın</h1>
             <p>
               Erişim kodunu unutursanız kasayı yalnız bu kod açar. Sunucuda kopyası yoktur.
@@ -125,7 +124,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <section className="auth-panel">
           <AuthBrand />
           <div className="auth-copy">
-            <p className="overline">{setup ? "İlk kurulum" : recovering ? "Kurtarma" : "Güvenli erişim"}</p>
             <h1>
               {setup
                 ? "Bu cihazdaki kasayı oluşturun"
