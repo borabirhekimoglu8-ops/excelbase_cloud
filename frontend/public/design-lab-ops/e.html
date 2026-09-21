@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Excelbase · Konsept E — Köprü masası</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #e8eef2;
+      --surface: #f4f7f9;
+      --surface-2: #ffffff;
+      --ink: #1a2330;
+      --muted: #5a6a7a;
+      --line: #c5d0da;
+      --navy: #005596;
+      --orange: #f58220;
+      --ok: #1f7a4c;
+      --warn: #a15c00;
+      --alarm: #b42318;
+      --font: "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #d5dee6; color: var(--ink); font-family: var(--font); }
+    .frame {
+      width: min(430px, 100%);
+      min-height: 100dvh;
+      margin: 0 auto;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid #b8c4ce;
+      border-right: 1px solid #b8c4ce;
+    }
+    .inst {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 12px;
+      background: #0f2740;
+      color: #d7e6f2;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .02em;
+    }
+    .inst b { font-family: var(--mono); font-weight: 600; color: #fff; }
+    .inst .dot { width: 8px; height: 8px; border-radius: 1px; background: #3dd68c; display: inline-block; margin-right: 6px; vertical-align: middle; }
+    .top {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; background: var(--surface-2);
+      border-bottom: 1px solid var(--line);
+    }
+    .top img { width: 28px; height: 28px; object-fit: contain; }
+    .top h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+    .top small { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
+    .role {
+      margin-left: auto; font-size: 10px; font-weight: 700; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--navy);
+      border: 1px solid var(--line); padding: 5px 8px; background: var(--surface);
+    }
+    .body { flex: 1; padding: 12px; display: grid; gap: 10px; align-content: start; }
+    .section-label {
+      margin: 2px 0 0; font-size: 10px; font-weight: 700; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .panel {
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      padding: 0;
+    }
+    .panel-h {
+      display: flex; justify-content: space-between; align-items: baseline;
+      padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--surface);
+    }
+    .panel-h strong { font-size: 12px; font-weight: 700; }
+    .panel-h span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    .kv {
+      display: grid; grid-template-columns: 1fr auto; gap: 8px;
+      padding: 10px; border-bottom: 1px solid #e4ebf0;
+    }
+    .kv:last-child { border-bottom: 0; }
+    .kv strong { font-size: 14px; font-weight: 650; }
+    .kv small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+    .state {
+      font-family: var(--mono); font-size: 11px; font-weight: 600;
+      padding: 4px 7px; border: 1px solid currentColor; align-self: center;
+    }
+    .state.ok { color: var(--ok); }
+    .state.warn { color: var(--warn); }
+    .state.run { color: var(--navy); }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .metric {
+      background: var(--surface-2); border: 1px solid var(--line); padding: 10px;
+    }
+    .metric label { display: block; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    .metric b { display: block; margin-top: 4px; font-family: var(--mono); font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+    .metric em { font-style: normal; font-size: 11px; color: var(--muted); font-weight: 500; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    button {
+      font: inherit; font-weight: 650; font-size: 13px; min-height: 44px;
+      border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); cursor: pointer;
+    }
+    button.primary { background: var(--navy); color: #fff; border-color: var(--navy); }
+    button.accent { background: var(--orange); color: #fff; border-color: var(--orange); }
+    .nav {
+      display: grid; grid-template-columns: repeat(5, 1fr);
+      border-top: 1px solid var(--line); background: var(--surface-2);
+    }
+    .nav button {
+      border: 0; border-right: 1px solid var(--line); min-height: 52px;
+      font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--muted); background: transparent; display: grid; place-items: center; gap: 2px;
+    }
+    .nav button:last-child { border-right: 0; }
+    .nav button.active { color: var(--navy); background: #eef4f8; }
+    .caption-out {
+      max-width: 430px; margin: 16px auto; padding: 0 14px;
+      font-size: 13px; line-height: 1.5; color: #334;
+    }
+    .caption-out strong { display: block; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="inst">
+      <span><span class="dot"></span>SİSTEM NORMAL · OFFLINE HAZIR</span>
+      <span>14:28:06</span>
+      <b>YNK-3</b>
+    </div>
+    <header class="top">
+      <img src="./ido-logo.png" alt="" />
+      <div>
+        <h1>Excelbase</h1>
+        <small>İDO köprü / saha HMI</small>
+      </div>
+      <div class="role">Operatör</div>
+    </header>
+    <main class="body">
+      <p class="section-label">Aktif sefer</p>
+      <section class="panel">
+        <div class="panel-h"><strong>YNK → BND</strong><span>ETD 14:40</span></div>
+        <div class="kv">
+          <div><strong>Kapı 3</strong><small>Biniş · araç rampası açık</small></div>
+          <span class="state run">BINIS</span>
+        </div>
+        <div class="kv">
+          <div><strong>Gemi</strong><small>İDO Ege</small></div>
+          <span class="state ok">HAZIR</span>
+        </div>
+        <div class="kv">
+          <div><strong>Yolcu akışı</strong><small>Yoğunluk eşiği aşıldı</small></div>
+          <span class="state warn">DIKKAT</span>
+        </div>
+      </section>
+
+      <div class="grid2">
+        <div class="metric"><label>Kalan</label><b>12</b><em>dakika</em></div>
+        <div class="metric"><label>Kapı listesi</label><b>184</b><em>kayıt</em></div>
+      </div>
+
+      <p class="section-label">Sıradaki</p>
+      <section class="panel">
+        <div class="kv">
+          <div><strong>Bostancı → Adalar</strong><small>15:10 · Kapı 1</small></div>
+          <span class="state">PLAN</span>
+        </div>
+        <div class="kv">
+          <div><strong>Kadıköy → Beşiktaş</strong><small>15:25 · Kapı 2</small></div>
+          <span class="state ok">ACIK</span>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button class="accent" type="button">Kapı listesi</button>
+        <button class="primary" type="button">Sefer aç</button>
+      </div>
+    </main>
+    <nav class="nav" aria-label="Ana">
+      <button class="active" type="button">Ana</button>
+      <button type="button">Sefer</button>
+      <button type="button">Kapı</button>
+      <button type="button">Araç</button>
+      <button type="button">Daha</button>
+    </nav>
+  </div>
+  <p class="caption-out">
+    <strong>E · Köprü masası (OpenBridge Day)</strong>
+    Endüstriyel HMI dili: enstrüman şeridi, durum kodları, mono metrikler. Oyun / cam / 3D yok — okunabilirlik ve operasyon güvenliği.
+  </p>
+</body>
+</html>

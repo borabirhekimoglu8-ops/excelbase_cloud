@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Excelbase · Konsept G — Saha atölyesi</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Source+Sans+3:wght@450;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --paper: #f3f6f8;
+      --ink: #1c2430;
+      --mute: #667486;
+      --line: #d3dce4;
+      --navy: #005596;
+      --orange: #f58220;
+      --surface: #ffffff;
+      --font: "Source Sans 3", system-ui, sans-serif;
+      --serif: "Instrument Serif", Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; min-height: 100%;
+      background: #dfe6ec; color: var(--ink); font-family: var(--font);
+    }
+    .frame {
+      width: min(430px, 100%);
+      min-height: 100dvh;
+      margin: 0 auto;
+      background: var(--paper);
+      display: flex;
+      flex-direction: column;
+    }
+    .band {
+      height: 148px;
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid var(--line);
+    }
+    .band img {
+      width: 100%; height: 100%; object-fit: cover; object-position: center 40%;
+      display: block; filter: grayscale(.15) contrast(1.05);
+    }
+    .band::after {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(28,36,48,.15), rgba(28,36,48,.55));
+    }
+    .band-meta {
+      position: absolute; left: 16px; right: 16px; bottom: 12px; z-index: 1;
+      color: #fff; display: flex; justify-content: space-between; align-items: end;
+    }
+    .band-meta strong {
+      font-family: var(--serif); font-size: 28px; font-weight: 400; letter-spacing: -.02em;
+    }
+    .band-meta span { font-size: 12px; font-weight: 650; opacity: .9; }
+
+    .chrome {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px; background: var(--surface);
+      border-bottom: 1px solid var(--line);
+    }
+    .chrome img { width: 26px; height: 26px; object-fit: contain; }
+    .chrome .who { font-size: 13px; font-weight: 700; }
+    .chrome .who small { display: block; font-weight: 600; color: var(--mute); font-size: 11px; }
+    .chrome .date {
+      margin-left: auto; font-size: 11px; font-weight: 700; color: var(--mute);
+      letter-spacing: .04em; text-transform: uppercase;
+    }
+
+    .body { flex: 1; padding: 18px 16px 20px; display: grid; gap: 18px; align-content: start; }
+    .intro h2 {
+      margin: 0; font-family: var(--serif); font-size: 30px; font-weight: 400;
+      letter-spacing: -.03em; line-height: 1.1;
+    }
+    .intro p {
+      margin: 8px 0 0; color: var(--mute); font-size: 14px; line-height: 1.45; font-weight: 600;
+      max-width: 34ch;
+    }
+    .cta { display: grid; grid-template-columns: 1.2fr 1fr; gap: 8px; }
+    button {
+      min-height: 46px; border: 1px solid var(--line); background: var(--surface);
+      font: inherit; font-weight: 700; font-size: 13px; color: var(--ink); cursor: pointer;
+    }
+    button.primary { background: var(--navy); border-color: var(--navy); color: #fff; }
+    button.soft { background: transparent; }
+
+    .block h3 {
+      margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--mute);
+    }
+    .list { border-top: 1px solid var(--line); }
+    .row {
+      display: grid; grid-template-columns: 1fr auto; gap: 10px;
+      padding: 12px 0; border-bottom: 1px solid var(--line);
+      cursor: pointer;
+    }
+    .row strong { display: block; font-size: 14px; font-weight: 700; }
+    .row small { display: block; margin-top: 2px; color: var(--mute); font-size: 12px; font-weight: 600; }
+    .tag {
+      align-self: center; font-size: 11px; font-weight: 800;
+      color: var(--navy); letter-spacing: .04em;
+    }
+    .tag.warn { color: #9a4e00; }
+
+    .focus {
+      padding: 14px; background: var(--surface);
+      border: 1px solid var(--line);
+    }
+    .focus .kicker {
+      font-size: 10px; font-weight: 800; letter-spacing: .14em;
+      text-transform: uppercase; color: var(--orange); margin-bottom: 6px;
+    }
+    .focus h4 {
+      margin: 0; font-family: var(--serif); font-size: 22px; font-weight: 400;
+      letter-spacing: -.02em;
+    }
+    .focus p { margin: 6px 0 0; color: var(--mute); font-size: 13px; font-weight: 600; }
+
+    .nav {
+      display: grid; grid-template-columns: repeat(5, 1fr);
+      border-top: 1px solid var(--line); background: var(--surface);
+    }
+    .nav button {
+      border: 0; border-right: 1px solid var(--line); min-height: 50px;
+      font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--mute); background: transparent;
+    }
+    .nav button:last-child { border-right: 0; }
+    .nav button.active { color: var(--navy); }
+
+    .caption-out {
+      max-width: 430px; margin: 16px auto; padding: 0 14px;
+      font-size: 13px; line-height: 1.5; color: #445;
+    }
+    .caption-out strong { display: block; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="band" aria-hidden="true">
+      <img src="./ferry-live.jpg" alt="" />
+      <div class="band-meta">
+        <strong>Excelbase</strong>
+        <span>İDO · saha</span>
+      </div>
+    </div>
+    <header class="chrome">
+      <img src="./ido-logo.png" alt="" />
+      <div class="who">Operasyon<small>Yenikapı vardiyası</small></div>
+      <div class="date">Pzt · 21 Eyl</div>
+    </header>
+    <main class="body">
+      <div class="intro">
+        <h2>Bugünün işi net.</h2>
+        <p>Kapı listeleri, yolcu evrakları ve iş dosyaları — aynı atölyede, gürültüsüz.</p>
+      </div>
+      <div class="cta">
+        <button class="primary" type="button">Kapı listesi aç</button>
+        <button class="soft" type="button">İş dosyası</button>
+      </div>
+
+      <section class="focus">
+        <div class="kicker">Şimdi</div>
+        <h4>Yenikapı → Bandırma</h4>
+        <p>Kapı 3 · 14:40 · 184 kayıt · biniş sürüyor</p>
+      </section>
+
+      <section class="block">
+        <h3>Dikkat</h3>
+        <div class="list">
+          <div class="row">
+            <div><strong>12 fotosuz yolcu</strong><small>Kapı listesinde tamamlanacak</small></div>
+            <span class="tag warn">Eksik</span>
+          </div>
+          <div class="row">
+            <div><strong>3 eşleşmemiş fotoğraf</strong><small>Toplu fotoğraftan bağla</small></div>
+            <span class="tag warn">Bekliyor</span>
+          </div>
+          <div class="row">
+            <div><strong>Teslim paketi</strong><small>Gün sonu için hazır değil</small></div>
+            <span class="tag">Rutin</span>
+          </div>
+        </div>
+      </section>
+    </main>
+    <nav class="nav" aria-label="Ana">
+      <button class="active" type="button">Ana</button>
+      <button type="button">Sefer</button>
+      <button type="button">Kapı</button>
+      <button type="button">Araç</button>
+      <button type="button">Daha</button>
+    </nav>
+  </div>
+  <p class="caption-out">
+    <strong>G · Saha atölyesi</strong>
+    Ürün yazılımı dili: sessiz tipografi, ince ayırıcılar, fotoğraf yalnızca üst bantta.
+    Cam yığınları / parallax / “holo” yok — sahadaki gerçek iş akışı.
+  </p>
+</body>
+</html>
