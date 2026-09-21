@@ -147,18 +147,23 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
   ].filter(Boolean) as Array<{ key: string; title: string; detail: string; target: string; attention: boolean }>;
 
   return (
-    <div className="ops-page">
+    <div className="ops-page xb-spatial-home">
       <section className="xb-home-stage" aria-label="Excelbase ana ekran">
+        <div className="xb-home-sys">
+          <span className="xb-home-sys-ok">SİSTEM NORMAL</span>
+          <span>{todayLabel}</span>
+        </div>
+        <p className="xb-home-eyebrow">İDO · Operasyon</p>
         <h1 className="xb-home-stage-brand">Excelbase</h1>
         <p className="xb-home-stage-title">
-          {user.name.split(" ")[0] || "Operasyon"} · {todayLabel}
+          {user.name.split(" ")[0] || "Operatör"} · uzamsal köprü
         </p>
         <p className="xb-home-stage-copy">
           Veriler bu cihazda şifreli kalır. Kapı listesini açın veya yeni liste yükleyin.
         </p>
         <div className="xb-home-actions-strip">
           <button className="ops-primary" type="button" onClick={() => onNavigate("gate-visa-list")}>
-            Yolcuları aç
+            Kapı listesi
           </button>
           <button className="ops-secondary" type="button" onClick={() => onNavigate("import")}>
             Liste yükle
