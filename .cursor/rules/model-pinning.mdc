@@ -1,0 +1,43 @@
+---
+description: Task/subagent model pin matrix — best model that fits the job, not blindly the strongest
+alwaysApply: true
+---
+
+# Model pin matrix (best ∩ appropriate)
+
+When launching `Task` / subagents, **pin explicitly**. Do not leave model unset unless the tool forbids it. Prefer the **strongest model that fits the job**; do not default to `-fast` or mid-tier when the work is hard.
+
+## Parent (this Cloud Agent / chat)
+
+- Prefer **Auto** with **Optimize For → Intelligence**, or pin a frontier parent:
+  - `gpt-5.6-sol-high` / `gpt-5.6-sol-xhigh` — complex multi-step product work
+  - `claude-opus-5-thinking-high` / `claude-opus-5-thinking-xhigh` — deep reasoning, architecture, careful refactors
+  - `cursor-grok-4.6-high` / `cursor-grok-4.6-xhigh` — hardest end-to-end agent runs
+- Avoid Cost/Balance Auto for Excelbase feature work unless the user asks to save spend.
+
+## Subagent pins (required)
+
+| Job | `subagent_type` | Pin `model` | Why |
+|-----|-----------------|-------------|-----|
+| Architecture, design decisions, long plans | `generalPurpose` | `claude-opus-5-thinking-high` | Depth over speed |
+| Multi-file feature implementation | `generalPurpose` | `gpt-5.6-sol-high` or `inherit` if parent is already frontier | Strong coding + follow-through |
+| Codebase search / “where is X?” | `explore` | `composer-2.5` | Fast enough; use non-`-fast` for non-trivial maps |
+| Trivial path/filename lookup only | `explore` | `composer-2.5-fast` | Cheap needle search |
+| Browser / GUI / manual QA | `computerUse` | `claude-sonnet-5-thinking-high` | Proven for UI control; high effort |
+| Demo / screen video review | `videoReview` / `mediaReview` | `gemini-3.8-flash-high` | Vision/video fit |
+| CI failure diagnosis | `ci-investigator` | `gpt-5.6-sol-medium` or `inherit` | Enough depth; not max spend |
+| Security review (user-asked) | `security-review` | `claude-opus-5-thinking-high` | Careful adversarial reading |
+| Bugbot-style review (user-asked) | `bugbot` | `claude-opus-5-thinking-high` | Thorough diff review |
+
+If a listed slug is rejected by the tool, fall back one step in the same family (e.g. `xhigh` → `high` → `medium`), never silently to `-fast` for hard work.
+
+## Anti-patterns
+
+- Do **not** pin `composer-2.5-fast` or `*-fast` for UI redesign, OCR correctness, auth, data integrity, or multi-PR product work.
+- Do **not** use mid-tier Sonnet for architecture when Opus / GPT-5.6 Sol / Grok xhigh is available.
+- Do **not** launch parallel explore swarms on frontier models — use Composer for breadth, one frontier agent for synthesis.
+- When the user says “en iyi / kalite / ciddi iş”, bias every pin upward (Intelligence / `high` / `xhigh`).
+
+## User override
+
+If the user names a model, that wins for that turn and its child Tasks unless they say otherwise.
