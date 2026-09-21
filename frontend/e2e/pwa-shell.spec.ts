@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { completeSetup } from "./helpers";
+import { completeSetup, openGateVisa } from "./helpers";
 import * as XLSX from "@e965/xlsx";
 import { BlobReader, ZipReader } from "@zip.js/zip.js";
 import { readFile } from "node:fs/promises";
@@ -23,18 +23,14 @@ async function openBulkImport(page: Page): Promise<void> {
 
 /** Kapı Vizesi sekmesi: klasörler varsayılan görünümdür. */
 async function openRecordFolders(page: Page): Promise<void> {
-  await page.getByRole("navigation", { name: "Ana gezinme" })
-    .getByRole("button", { name: "KAPI", exact: true })
-    .click();
+  await openGateVisa(page);
   await page.getByRole("tab", { name: "KLASÖRLER" }).click();
 }
 
 /** Kapı vizeli yolcu listesi Kapı sekmesinin bir alt görünümüdür; ana
  * gezinmedeki YOLCULAR artık cihaza yüklenen tüm listelerin ana kaydıdır. */
 async function openGatePassengers(page: Page): Promise<void> {
-  await page.getByRole("navigation", { name: "Ana gezinme" })
-    .getByRole("button", { name: "KAPI", exact: true })
-    .click();
+  await openGateVisa(page);
   await page.getByRole("tab", { name: "YOLCULAR" }).click();
 }
 

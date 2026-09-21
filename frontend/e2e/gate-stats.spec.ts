@@ -1,13 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { completeSetup } from "./helpers";
+import { completeSetup, openGateVisa } from "./helpers";
 
 test("kapı vizesi istatistik özeti sade ve yükleme butonlarından arınmış", async ({ page }) => {
   await page.goto("/");
   await completeSetup(page, "Test Operatör");
 
-  await page.getByRole("navigation", { name: "Ana gezinme" })
-    .getByRole("button", { name: "KAPI", exact: true })
-    .click();
+  await openGateVisa(page);
   await page.getByRole("tab", { name: "İSTATİSTİK" }).click();
 
   await expect(page.getByLabel("Operasyon özeti")).toBeVisible();
@@ -27,9 +25,7 @@ test("klasör görünümünde yükleme butonları durur", async ({ page }) => {
   await page.goto("/");
   await completeSetup(page, "Test Operatör 2");
 
-  await page.getByRole("navigation", { name: "Ana gezinme" })
-    .getByRole("button", { name: "KAPI", exact: true })
-    .click();
+  await openGateVisa(page);
   await page.getByRole("tab", { name: "KLASÖRLER" }).click();
   await expect(page.getByRole("button", { name: /Excel ile liste yükle/i })).toBeVisible();
 });

@@ -1,14 +1,12 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
 
-import { completeSetup } from "./helpers";
+import { completeSetup, openGateVisa } from "./helpers";
 
 test("pasaport tarama ekranı açılır", async ({ page }) => {
   await page.goto("/");
   await completeSetup(page, "Pasaport Operatör");
-  await page.getByRole("navigation", { name: "Ana gezinme" })
-    .getByRole("button", { name: "KAPI", exact: true })
-    .click();
+  await openGateVisa(page);
   await page.getByRole("button", { name: /Pasaport JPG/i }).click();
   await expect(page.getByRole("heading", { name: /Pasaport JPG → Excel/i })).toBeVisible();
   await expect(page.getByText(/Pasaport JPG veya ZIP bırakın/i)).toBeVisible();
@@ -18,9 +16,7 @@ test("pasaport JPG MRZ okur", async ({ page }) => {
   test.setTimeout(180_000);
   await page.goto("/");
   await completeSetup(page, "Pasaport OCR");
-  await page.getByRole("navigation", { name: "Ana gezinme" })
-    .getByRole("button", { name: "KAPI", exact: true })
-    .click();
+  await openGateVisa(page);
   await page.getByRole("button", { name: /Pasaport JPG/i }).click();
   await expect(page.getByRole("heading", { name: /Pasaport JPG → Excel/i })).toBeVisible();
 
