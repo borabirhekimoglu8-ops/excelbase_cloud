@@ -1,13 +1,15 @@
 ---
-description: Full model catalog + best∩appropriate pins; auto-activate Claude Fable 5.1 on high-stakes jobs
+description: Full model pins + Fable auto-activation + mandatory per-operation model disclosure
 alwaysApply: true
 ---
 
-# Model pin matrix — full catalog + Fable auto-activation
+# Model pin matrix — full catalog + Fable auto-activation + visibility
 
 **Goal:** Pin the **strongest model that fits the job**. Prefer quality over habit. Never silently use `-fast` / low-effort for merge-critical work.
 
 When launching `Task` / subagents, **always set `model`** to an explicit slug from this file (or `inherit`).
+
+**Visibility (mandatory for every session):** the user must see **which model ran and why** for **every** parent turn and **every** child operation. See **§10**.
 
 **User override wins** for named models. Signals:
 - up: `en iyi` / `kalite` / `ciddi` / `production` / `max` / `fable`
@@ -21,7 +23,8 @@ When launching `Task` / subagents, **always set `model`** to an explicit slug fr
 2. Else match §5 job row → primary pin.  
 3. Apply §7 quality bias (tier ±1).  
 4. If slug rejected → §6 fallback (same family first).  
-5. Never leave `model` unset when a pin exists.
+5. Never leave `model` unset when a pin exists.  
+6. Record the pin for §10 disclosure (model + reason + job).
 
 ---
 
@@ -226,7 +229,9 @@ Hard-work last resort cross-family: Fable → Opus ↔ Sol ↔ Grok. Never end o
 - Gemini/Muse as backend implementers.  
 - `composer-2.5-fast` on OCR, auth, KVKK, UI redesign, migrations.  
 - Downgrading because old Auto habit used Sonnet/Composer.  
-- Using Fable-low/medium for §3 triggers — minimum **high**.
+- Using Fable-low/medium for §3 triggers — minimum **high**.  
+- **Hiding or omitting model identity** — no silent Tasks; no “I used a subagent” without naming the model and reason.  
+- Bundling many operations under one vague “Auto” line when concrete Task pins exist.
 
 ---
 
@@ -237,4 +242,65 @@ Hard-work last resort cross-family: Fable → Opus ↔ Sol ↔ Grok. Never end o
 3. Apply §7 bias.  
 4. Pass `model` explicitly.  
 5. On rejection → §6; report Fable block if relevant.  
-6. In user-facing summary, if Fable auto-ran: one clause (“Fable 5.1 used for KVKK/auth review”).
+6. Append the operation to the §10 model log (required).  
+7. End-of-turn: publish the full §10 block to the user.
+
+---
+
+## 10. Mandatory model visibility (every session, every turn)
+
+The user asked to **see which model was used and why for every operation**. This section is **always on** for this repo — do not wait to be asked again.
+
+### 10.1 What must be disclosed
+
+For **each** of the following, name the model slug (or best-known identity) and a one-line reason:
+
+| Operation | What to show |
+|-----------|----------------|
+| Parent / this agent turn | Selected or effective model if known (`Auto/Intelligence`, pinned slug, or `default` + note if routed identity hidden) |
+| Every `Task` / subagent | Exact `model` arg passed + `subagent_type` + job reason (cite §5 row or §3 trigger id, e.g. `F3`) |
+| Fallback | Requested slug → actual slug + why rejected |
+| Fable auto-ON | Trigger id (`F1`…`F10`) + tier |
+| Tools without Task model (Shell, Edit, etc.) | Attribute to **parent** model line (“parent: …”) — do not invent a child model |
+| Parallel Tasks | One row per Task, not a single merged line |
+
+If Cursor hides Auto’s routed underlying model, write: `parent: Auto (Optimize=Intelligence; routed id hidden)` — still disclose every **explicit Task pin**.
+
+### 10.2 When to show it
+
+1. **Before or as Tasks launch** (brief is OK): e.g. `Pin: composer-2.5 · explore · codebase map`.  
+2. **Required at end of every user-facing turn** that did any work: a **Model log** section.  
+3. Turns that only answer with no tools: still one line for the parent model/identity.
+
+### 10.3 Required end-of-turn format
+
+Use this block (Turkish or English; keep slugs exact). Place near the end of the reply, after the main answer:
+
+```markdown
+### Model log
+| # | Operation | Model | Why |
+|---|-----------|-------|-----|
+| 0 | parent | `…` | … |
+| 1 | explore · map auth | `composer-2.5` | §5 codebase map |
+| 2 | generalPurpose · KVKK review | `claude-fable-5-1-thinking-xhigh` | §3 F3 auto |
+```
+
+Rules for the table:
+- Include **every** Task from this turn, in launch order.  
+- `Why` ≤ ~12 words; must reference §3 trigger and/or §5 job (or user override).  
+- If nothing but parent: one row is enough.  
+- Never skip because the turn was “small”.
+
+### 10.4 Multi-turn / session continuity
+
+- Each turn’s Model log covers **that turn only** (do not dump the whole session every time unless asked).  
+- If the user asks “hangi modeller?”, aggregate from prior turns’ logs you still have in context.  
+- PR / walkthrough summaries that list agent work must include a Model log for the work being described.
+
+### 10.5 Anti-omit examples
+
+Bad: “Alt ajanla baktım.”  
+Good: “`composer-2.5` (explore) — passport import paths.”
+
+Bad: “Fable kullandım.”  
+Good: “`claude-fable-5-1-thinking-xhigh` — §3 F3 KVKK/PII.”
