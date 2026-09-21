@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Excelbase · Holo A — Ege hologram sahnesi</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --cyan: #4fd1e8;
+      --cyan-hot: #7ee7f5;
+      --orange: #f47721;
+      --navy: #041018;
+      --glass: rgba(8, 28, 48, 0.42);
+      --line: rgba(79, 209, 232, 0.35);
+      --text: #e8f7ff;
+      --muted: rgba(200, 230, 240, 0.72);
+      --ease: cubic-bezier(.22, 1, .36, 1);
+      --font: "Source Sans 3", system-ui, sans-serif;
+      --hud: "Orbitron", var(--font);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #02080f;
+      color: var(--text);
+      font-family: var(--font);
+      overflow-x: hidden;
+    }
+
+    .world {
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      padding: 24px 14px 48px;
+      perspective: 1400px;
+      background: radial-gradient(60% 50% at 50% 20%, rgba(79,209,232,.12), transparent 60%), #02080f;
+    }
+
+    .phone {
+      width: min(390px, 100%);
+      height: min(844px, 92dvh);
+      border-radius: 34px;
+      position: relative;
+      transform-style: preserve-3d;
+      overflow: hidden;
+      box-shadow:
+        0 0 0 1px rgba(79,209,232,.25),
+        0 0 60px rgba(79,209,232,.18),
+        0 40px 90px rgba(0,0,0,.65);
+      animation: phone-in 1s var(--ease) both;
+    }
+
+    /* YOUR holographic Aegean reference — full bleed 3D stage */
+    .holo-stage {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      background: #041018;
+    }
+    .holo-photo {
+      position: absolute;
+      inset: -6%;
+      background: url("./aegean-holographic-bg.png") center / cover no-repeat;
+      transform: scale(1.08) translateZ(0);
+      animation: stage-drift 22s ease-in-out infinite alternate;
+      filter: saturate(1.15) contrast(1.05);
+    }
+    .holo-map {
+      position: absolute;
+      inset: 8% -10% -5%;
+      background: url("./aegean-map.svg") center 30% / 120% no-repeat;
+      opacity: .55;
+      mix-blend-mode: screen;
+      animation: map-float 14s ease-in-out infinite alternate;
+      filter: drop-shadow(0 0 12px rgba(79,209,232,.55));
+      pointer-events: none;
+    }
+    .holo-scan {
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        180deg,
+        transparent 0 3px,
+        rgba(79,209,232,.035) 3px 4px
+      );
+      animation: scan 8s linear infinite;
+      pointer-events: none;
+      mix-blend-mode: soft-light;
+    }
+    .holo-vignette {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(70% 55% at 50% 35%, transparent 20%, rgba(2,8,15,.55) 100%),
+        linear-gradient(180deg, rgba(2,8,15,.2), rgba(2,8,15,.75) 88%);
+      pointer-events: none;
+    }
+
+    .ui {
+      position: relative;
+      z-index: 2;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 14px 12px 12px;
+      transform-style: preserve-3d;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(10,30,48,.55), rgba(10,30,48,.28));
+      border: 1px solid var(--line);
+      backdrop-filter: blur(18px) saturate(1.4);
+      -webkit-backdrop-filter: blur(18px) saturate(1.4);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.12),
+        0 10px 30px rgba(0,0,0,.25),
+        0 0 24px rgba(79,209,232,.12);
+      transform: translateZ(40px);
+      animation: float-panel .9s var(--ease) .1s both;
+    }
+    .topbar img { width: 32px; height: 32px; object-fit: contain; filter: drop-shadow(0 0 8px rgba(244,119,33,.45)); }
+    .topbar strong {
+      font-family: var(--hud);
+      font-size: 14px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      text-shadow: 0 0 18px rgba(79,209,232,.45);
+    }
+    .topbar small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: .04em;
+    }
+    .chip {
+      margin-left: auto;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(244,119,33,.5);
+      color: var(--orange);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      box-shadow: 0 0 16px rgba(244,119,33,.25);
+    }
+
+    .hero-brand {
+      margin: 28px 8px 18px;
+      transform: translateZ(60px);
+      animation: float-panel 1s var(--ease) .2s both;
+    }
+    .hero-brand h1 {
+      margin: 0;
+      font-family: var(--hud);
+      font-size: clamp(28px, 8vw, 34px);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      line-height: 1.05;
+      text-shadow:
+        0 0 20px rgba(79,209,232,.55),
+        0 0 40px rgba(79,209,232,.25);
+    }
+    .hero-brand p {
+      margin: 10px 0 0;
+      max-width: 30ch;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .cta-row {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 10px;
+      margin: 0 4px 16px;
+      transform: translateZ(70px);
+      animation: float-panel 1s var(--ease) .3s both;
+    }
+    .btn {
+      min-height: 48px;
+      border-radius: 14px;
+      border: 1px solid transparent;
+      font: inherit;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: .04em;
+      cursor: pointer;
+      transition: transform .2s var(--ease), box-shadow .2s ease, filter .2s ease;
+    }
+    .btn:active { transform: scale(.97) translateZ(70px); }
+    .btn-holo {
+      color: #041018;
+      background: linear-gradient(135deg, #7ee7f5, #4fd1e8 55%, #2eb8d4);
+      box-shadow: 0 0 28px rgba(79,209,232,.45), inset 0 1px 0 rgba(255,255,255,.5);
+    }
+    .btn-holo:hover { filter: brightness(1.08); box-shadow: 0 0 36px rgba(79,209,232,.65); }
+    .btn-ghost {
+      color: var(--text);
+      background: rgba(8,28,48,.35);
+      border-color: rgba(244,119,33,.55);
+      box-shadow: 0 0 18px rgba(244,119,33,.18), inset 0 0 12px rgba(244,119,33,.08);
+      backdrop-filter: blur(12px);
+    }
+
+    .stack {
+      flex: 1;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      overflow: auto;
+      padding-bottom: 8px;
+      scrollbar-width: none;
+      transform-style: preserve-3d;
+    }
+    .stack::-webkit-scrollbar { display: none; }
+
+    .panel {
+      position: relative;
+      border-radius: 18px;
+      padding: 14px;
+      background:
+        linear-gradient(145deg, rgba(20,50,72,.55), rgba(8,24,40,.28));
+      border: 1px solid var(--line);
+      backdrop-filter: blur(20px) saturate(1.5);
+      -webkit-backdrop-filter: blur(20px) saturate(1.5);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.14),
+        0 16px 40px rgba(0,0,0,.28),
+        0 0 30px rgba(79,209,232,.1);
+      transform: translateZ(48px) rotateX(4deg);
+      transform-origin: center bottom;
+      animation: panel-rise .85s var(--ease) both;
+    }
+    .panel:nth-child(1) { animation-delay: .38s; }
+    .panel:nth-child(2) { animation-delay: .48s; }
+    .panel:nth-child(3) { animation-delay: .58s; }
+    .panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background: linear-gradient(120deg, rgba(255,255,255,.12), transparent 35%, transparent 65%, rgba(79,209,232,.08));
+    }
+    .panel h2 {
+      margin: 0 0 10px;
+      font-family: var(--hud);
+      font-size: 11px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: var(--cyan-hot);
+      text-shadow: 0 0 12px rgba(79,209,232,.4);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 0;
+      border-top: 1px solid rgba(79,209,232,.15);
+      cursor: pointer;
+      transition: background .2s ease, transform .2s var(--ease);
+    }
+    .row:first-of-type { border-top: 0; padding-top: 0; }
+    .row:hover {
+      background: rgba(79,209,232,.06);
+      transform: translateX(4px);
+    }
+    .row strong { display: block; font-size: 14px; }
+    .row small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+    .row .tag {
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      border: 1px solid rgba(244,119,33,.55);
+      color: var(--orange);
+      box-shadow: 0 0 12px rgba(244,119,33,.2);
+    }
+    .row .tag.ok {
+      border-color: rgba(79,209,232,.55);
+      color: var(--cyan-hot);
+      box-shadow: 0 0 12px rgba(79,209,232,.2);
+    }
+
+    .dock {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+      padding: 8px 6px;
+      border-radius: 20px;
+      background: rgba(4,16,28,.55);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 0 28px rgba(79,209,232,.15), inset 0 1px 0 rgba(255,255,255,.1);
+      transform: translateZ(80px);
+      animation: float-panel 1s var(--ease) .5s both;
+    }
+    .dock button {
+      border: 0;
+      background: transparent;
+      color: rgba(200,230,240,.55);
+      font: inherit;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      display: grid;
+      justify-items: center;
+      gap: 4px;
+      padding: 6px 0;
+      cursor: pointer;
+    }
+    .dock button.active {
+      color: var(--cyan-hot);
+      text-shadow: 0 0 10px rgba(79,209,232,.5);
+    }
+    .dock .dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: transparent;
+      box-shadow: none;
+    }
+    .dock button.active .dot {
+      background: var(--orange);
+      box-shadow: 0 0 10px var(--orange);
+    }
+
+    .caption {
+      width: min(390px, 100%);
+      margin-top: 18px;
+      text-align: center;
+      color: rgba(200,230,240,.75);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .caption strong {
+      display: block;
+      color: #fff;
+      font-family: var(--hud);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      font-size: 14px;
+      margin-bottom: 6px;
+      text-shadow: 0 0 16px rgba(79,209,232,.4);
+    }
+
+    .refs {
+      width: min(920px, 100%);
+      margin: 28px auto 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+    }
+    .ref {
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(79,209,232,.25);
+      background: rgba(8,24,40,.55);
+      color: #fff;
+      backdrop-filter: blur(10px);
+    }
+    .ref img { width: 100%; height: 120px; object-fit: cover; display: block; }
+    .ref div { padding: 12px; }
+    .ref h3 { margin: 0 0 4px; font-size: 13px; font-family: var(--hud); letter-spacing: .06em; text-transform: uppercase; }
+    .ref p { margin: 0; font-size: 11px; color: rgba(200,230,240,.7); line-height: 1.4; }
+    .ref a { color: var(--cyan-hot); }
+
+    @keyframes phone-in {
+      from { opacity: 0; transform: rotateX(12deg) translateY(40px) scale(.94); }
+      to { opacity: 1; transform: rotateX(0) translateY(0) scale(1); }
+    }
+    @keyframes stage-drift {
+      from { transform: scale(1.08) translate3d(-1%, .5%, 0); }
+      to { transform: scale(1.14) translate3d(1.5%, -1%, 0); }
+    }
+    @keyframes map-float {
+      from { transform: translate3d(0, 0, 0) scale(1); opacity: .45; }
+      to { transform: translate3d(2%, -2%, 0) scale(1.04); opacity: .7; }
+    }
+    @keyframes scan {
+      from { transform: translateY(-20%); }
+      to { transform: translateY(20%); }
+    }
+    @keyframes float-panel {
+      from { opacity: 0; transform: translateY(18px) translateZ(40px); }
+      to { opacity: 1; transform: translateY(0) translateZ(40px); }
+    }
+    @keyframes panel-rise {
+      from { opacity: 0; transform: translateY(24px) translateZ(48px) rotateX(10deg); }
+      to { opacity: 1; transform: translateY(0) translateZ(48px) rotateX(4deg); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .holo-photo, .holo-map, .holo-scan, .phone, .panel, .topbar, .hero-brand, .cta-row, .dock {
+        animation: none !important;
+      }
+      .panel { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="world">
+    <div class="phone" id="phone">
+      <div class="holo-stage" aria-hidden="true">
+        <div class="holo-photo"></div>
+        <div class="holo-map"></div>
+        <div class="holo-scan"></div>
+        <div class="holo-vignette"></div>
+      </div>
+
+      <div class="ui">
+        <header class="topbar">
+          <img src="./ido-logo.png" alt="İDO" />
+          <div>
+            <strong>Excelbase</strong>
+            <small>Holo liman · Ege katmanı</small>
+          </div>
+          <span class="chip">LIVE</span>
+        </header>
+
+        <section class="hero-brand">
+          <h1>Excelbase</h1>
+          <p>3D holografik Ege sahnesi üzerinde yüzen cam paneller. Kapı operasyonu — sinematik HUD.</p>
+        </section>
+
+        <div class="cta-row">
+          <button class="btn btn-holo" type="button">Yolcuları aç</button>
+          <button class="btn btn-ghost" type="button">Liste yükle</button>
+        </div>
+
+        <div class="stack">
+          <article class="panel">
+            <h2>İş sırası</h2>
+            <div class="row">
+              <span>
+                <strong>Şifreli yedek alınmadı</strong>
+                <small>Cihaz kasası · güvenlik katmanı</small>
+              </span>
+              <span class="tag">ACİL</span>
+            </div>
+            <div class="row">
+              <span>
+                <strong>Kapı listesi hazırlığı</strong>
+                <small>Bugünkü sefer hologramı</small>
+              </span>
+              <span class="tag ok">HAZIR</span>
+            </div>
+          </article>
+
+          <article class="panel">
+            <h2>Aktif iş dosyaları</h2>
+            <div class="row">
+              <span>
+                <strong>C-1042 · İDO Ege</strong>
+                <small>3 görev · 2 evrak bekliyor</small>
+              </span>
+              <span class="tag">AÇIK</span>
+            </div>
+          </article>
+
+          <article class="panel">
+            <h2>Hazırlık</h2>
+            <div class="row">
+              <span>
+                <strong>Operasyon hazırlığı</strong>
+                <small>Cam paneller · 3D derinlik</small>
+              </span>
+              <span class="tag ok">87%</span>
+            </div>
+          </article>
+        </div>
+
+        <nav class="dock" aria-label="Nav">
+          <button class="active" type="button"><span class="dot"></span>Ana</button>
+          <button type="button"><span class="dot"></span>Kapı</button>
+          <button type="button"><span class="dot"></span>İşler</button>
+          <button type="button"><span class="dot"></span>Yolcular</button>
+          <button type="button"><span class="dot"></span>Evrak</button>
+        </nav>
+      </div>
+    </div>
+
+    <p class="caption">
+      <strong>Holo A · Ege hologram sahnesi</strong>
+      Sizin `aegean-holographic-bg.png` + `aegean-map.svg`. Beyaz masa yok — tamamen 3D cam / cyan glow / yüzen paneller.
+    </p>
+
+    <section class="refs">
+      <article class="ref">
+        <img src="./aegean-holographic-bg.png" alt="Sizin holografik Ege referansı" />
+        <div>
+          <h3>Sizin referans</h3>
+          <p>aegean-holographic-bg — 3D Ege haritası + turuncu ufuk. Bu önerinin ana sahnesi.</p>
+        </div>
+      </article>
+      <article class="ref">
+        <img src="./aegean-map.svg" alt="Ege SVG harita katmanı" style="background:#041018;object-fit:contain;padding:8px" />
+        <div>
+          <h3>Sizin harita katmanı</h3>
+          <p>aegean-map.svg — glow stroke ile hologram mesh overlay.</p>
+        </div>
+      </article>
+      <article class="ref">
+        <img src="./ido-ege-ferry.jpg" alt="İDO Ege" />
+        <div>
+          <h3>İDO Ege</h3>
+          <p>Lacivert / beyaz / turuncu şerit — sinyal rengi hologramda CTA ve LIVE chip.</p>
+        </div>
+      </article>
+      <article class="ref">
+        <div style="height:120px;display:grid;place-items:center;background:linear-gradient(135deg,#05070a,#0a1a28);color:#00e5ff;font-size:12px;text-align:center;padding:12px;letter-spacing:.06em">
+          visionOS glass · spatial depth<br/>cyan #00E5FF / glass panels
+        </div>
+        <div>
+          <h3>İnternet teması</h3>
+          <p>Spatial / liquid-glass HUD dili.
+            <a href="https://dribbble.com/shots/27128781-visionOS-Travel-App-UI-Spatial-Travel-App-Dashboard-Design" target="_blank" rel="noreferrer">visionOS glass</a>
+            ·
+            <a href="https://www.openbridge.no/design" target="_blank" rel="noreferrer">OpenBridge</a>
+          </p>
+        </div>
+      </article>
+    </section>
+  </div>
+
+  <script>
+    const phone = document.getElementById("phone");
+    const world = document.querySelector(".world");
+    world.addEventListener("pointermove", (e) => {
+      const r = phone.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5;
+      const y = (e.clientY - r.top) / r.height - 0.5;
+      phone.style.transform = `rotateY(${x * 8}deg) rotateX(${-y * 6}deg)`;
+    });
+    world.addEventListener("pointerleave", () => {
+      phone.style.transform = "";
+    });
+    document.querySelectorAll(".dock button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".dock button").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+      });
+    });
+  </script>
+</body>
+</html>
