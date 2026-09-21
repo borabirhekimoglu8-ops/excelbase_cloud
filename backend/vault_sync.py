@@ -3,6 +3,10 @@
 The server never sees a PIN, recovery key or data-encryption key. A random
 sync token is hashed and used as the filename; the body is the same
 `.excelbase-backup` package the device already produces.
+
+Auth is deliberately token-only (no session): anyone who knows the token can
+read or overwrite the ciphertext. An in-process per-IP rate limit slows
+token guessing without changing the sync contract for legitimate clients.
 """
 
 from __future__ import annotations
@@ -10,10 +14,38 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import time
+from collections import defaultdict, deque
 from pathlib import Path
 
 MAX_VAULT_BYTES = 80 * 1024 * 1024
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9]{16,64}$")
+
+# Soft ceiling: enough for retries, too low for a dictionary sweep.
+_RATE_WINDOW_SECONDS = 60.0
+_RATE_MAX_HITS = 30
+_rate_hits: dict[str, deque[float]] = defaultdict(deque)
+
+
+class VaultSyncRateLimitError(RuntimeError):
+    """Raised when one client IP exceeds the vault-sync request budget."""
+
+
+def check_rate_limit(client_key: str) -> None:
+    """Refuse when ``client_key`` has exceeded the rolling window budget."""
+    key = (client_key or "unknown").strip()[:200] or "unknown"
+    now = time.monotonic()
+    bucket = _rate_hits[key]
+    while bucket and now - bucket[0] > _RATE_WINDOW_SECONDS:
+        bucket.popleft()
+    if len(bucket) >= _RATE_MAX_HITS:
+        raise VaultSyncRateLimitError("Çok fazla eşleme isteği; bir dakika sonra yeniden deneyin.")
+    bucket.append(now)
+
+
+def reset_rate_limits() -> None:
+    """Test helper."""
+    _rate_hits.clear()
 
 
 def _root() -> Path:

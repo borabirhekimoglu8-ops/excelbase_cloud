@@ -42,6 +42,7 @@ import {
 } from "@/lib/assistant/conversation";
 import { useStore } from "@/lib/store";
 import { setPendingImportFiles } from "@/lib/pendingImport";
+import { PRODUCT, productAssistantLabel } from "@/lib/product";
 
 const SUGGESTIONS = [
   "Bugünkü operasyon durumunu yönetici özeti olarak çıkar.",
@@ -68,15 +69,15 @@ const CONFIGURATION_MESSAGES: Record<
   },
   disabled: {
     title: "Asistan sunucuda kapalı",
-    body: "Excelbase servisinde EXCELBASE_ASSISTANT_ENABLED değerini 1 olarak tanımlayın.",
+    body: `${PRODUCT.shortName} servisinde EXCELBASE_ASSISTANT_ENABLED değerini 1 olarak tanımlayın.`,
   },
   provider_mismatch: {
     title: "Sağlayıcı ayarı uyuşmuyor",
-    body: "Excelbase servisinde EXCELBASE_ASSISTANT_PROVIDER değerini anthropic olarak tanımlayın.",
+    body: `${PRODUCT.shortName} servisinde EXCELBASE_ASSISTANT_PROVIDER değerini anthropic veya ollama olarak tanımlayın.`,
   },
   model_mismatch: {
     title: "Asistan model ayarı uyuşmuyor",
-    body: "Excelbase servisinde EXCELBASE_ASSISTANT_MODEL değerini claude-sonnet-5 olarak tanımlayın.",
+    body: `${PRODUCT.shortName} servisinde EXCELBASE_ASSISTANT_MODEL değerini geçerli bir model olarak tanımlayın.`,
   },
   api_key_missing: {
     title: "Anthropic anahtarı bu serviste görünmüyor",
@@ -490,7 +491,7 @@ export function AssistantWorkspace({
       ref={workspaceRef}
       className={`assistant-workspace${ready ? " ready" : ""}`}
       tabIndex={-1}
-      aria-label="Excelbase asistanı"
+      aria-label={productAssistantLabel()}
     >
       <section className="assistant-connection" role="status" aria-live="polite">
         <span className={`assistant-live-dot${ready && online ? " ready" : ""}`} aria-hidden="true" />
@@ -584,7 +585,7 @@ export function AssistantWorkspace({
           <p>İLK BAĞLANTI</p>
           <h2>{session.setup_required ? "Çevrimiçi asistan hesabını oluşturun" : "Sonnet oturumunu açın"}</h2>
           <p>
-            Bu çevrimiçi Excelbase Sonnet oturumu yalnız ücretli asistan çağrılarını korur. Cihaz
+            Bu çevrimiçi {PRODUCT.shortName} asistan oturumu yalnız ücretli asistan çağrılarını korur. Cihaz
             kasasının PIN’i otomatik gönderilmez; burada ayrı bir erişim kodu kullanabilirsiniz.
           </p>
           <form className="assistant-pair-form" onSubmit={pairSession}>
@@ -680,7 +681,7 @@ export function AssistantWorkspace({
             {messages.length === 0 && (
               <div className="assistant-welcome">
                 <span className="assistant-sonnet-mark" aria-hidden="true">S</span>
-                <p>{verifiedSonnet ? "Excelbase asistanı" : "Excelbase çevrimiçi asistan"}</p>
+                <p>{verifiedSonnet || verifiedLocal ? productAssistantLabel() : `${PRODUCT.shortName} çevrimiçi asistan`}</p>
                 <h1>Operasyonu birlikte netleştirelim.</h1>
                 <p>
                   Asistan yalnız ekrandaki toplu operasyon özetini otomatik alır.

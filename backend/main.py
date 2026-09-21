@@ -1325,6 +1325,12 @@ async def vault_sync_put(
 ) -> dict:
     from . import vault_sync
 
+    client = request.client.host if request.client else "unknown"
+    try:
+        vault_sync.check_rate_limit(client)
+    except vault_sync.VaultSyncRateLimitError as error:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(error)) from error
+
     token = x_vault_sync_token or ""
     body = await request.body()
     try:
@@ -1334,8 +1340,17 @@ async def vault_sync_put(
 
 
 @app.get("/api/vault/sync")
-async def vault_sync_get(x_vault_sync_token: str | None = Header(default=None)) -> Response:
+async def vault_sync_get(
+    request: Request,
+    x_vault_sync_token: str | None = Header(default=None),
+) -> Response:
     from . import vault_sync
+
+    client = request.client.host if request.client else "unknown"
+    try:
+        vault_sync.check_rate_limit(client)
+    except vault_sync.VaultSyncRateLimitError as error:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(error)) from error
 
     try:
         blob = vault_sync.get_blob(x_vault_sync_token or "")

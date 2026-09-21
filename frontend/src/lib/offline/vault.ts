@@ -1,4 +1,5 @@
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
+import { PRODUCT } from "@/lib/product";
 
 const DATABASE_NAME = "excelbase-offline-vault";
 const DATABASE_VERSION = 2;
@@ -779,7 +780,7 @@ export async function restoreEncryptedVault(file: Blob): Promise<void> {
     || (parsed.version !== 1 && parsed.version !== 2)
     || !parsed.stores
   ) {
-    throw new Error("Bu dosya desteklenen bir Excelbase Operations şifreli yedeği değil.");
+    throw new Error(`Bu dosya desteklenen bir ${PRODUCT.fullName} şifreli yedeği değil.`);
   }
   const decoded = {} as Record<BackupStoreName, Array<{ key: string | number; value: unknown }>>;
   for (const name of ["config", "passengers", "binaries", "jobs", "meta", "entities"] as const) {

@@ -1,0 +1,12 @@
+---
+description: Sentetik veriyle geliştirme — gerçek PII yok
+globs: frontend/**/*,backend/**/*,tests/**/*
+alwaysApply: true
+---
+
+# Sentetik veri
+
+- Gerçek yolcu, pasaport, müşteri listesi, canlı DB veya sır dosyası açma / loglama.
+- Test ve ekran görüntüsü için uydurma adlar (`Ada Yılmaz`, `U1000001`) kullan.
+- Araç çıktısına belge içeriği, kimlik veya API anahtarı yazma.
+- Silme, canlı DB değişikliği, dışa aktarım veya harici aktarım öncesi işlemi açıkla ve onay bekle.

@@ -517,12 +517,47 @@ export async function localClearAll(): Promise<SimpleResult> {
 
 export async function localMergeDuplicates(passportKey = ""): Promise<{ removed: number; passenger_count: number }> {
   const rows = await storedPassengerRows();
+  const needle = fold(passportKey).toUpperCase();
   const groups = new Map<string, StoredPassenger[]>();
   for (const row of rows) {
     const identity = passengerIdentity(row);
-    if (!identity || (passportKey && !identity.startsWith(fold(passportKey).toUpperCase()))) continue;
+    if (!identity) continue;
+    if (needle) {
+      // Exact passport segment only — prefix match ("U12") must not pull in U123/U124.
+      const passportPart = identity.split("|", 1)[0] ?? "";
+      if (passportPart !== needle && identity !== needle) continue;
+    }
     groups.set(identity, [...(groups.get(identity) ?? []), row]);
   }
+  return mergeDuplicateGroups(groups, rows.length);
+}
+
+/**
+ * Merge duplicates that share the same identity as one passenger id.
+ * Used by the assistant so the model never sends a passport string.
+ */
+export async function localMergeDuplicatesForPassengerId(
+  passengerId: number,
+): Promise<{ removed: number; passenger_count: number }> {
+  const rows = await storedPassengerRows();
+  const target = rows.find((row) => row.id === passengerId);
+  if (!target) {
+    throw new Error("Yolcu kaydı bulunamadı.");
+  }
+  const identity = passengerIdentity(target);
+  if (!identity) {
+    throw new Error("Birleştirme için pasaport numarası ve gidiş tarihi gerekli.");
+  }
+  const groups = new Map<string, StoredPassenger[]>();
+  const peers = rows.filter((row) => passengerIdentity(row) === identity);
+  groups.set(identity, peers);
+  return mergeDuplicateGroups(groups, rows.length);
+}
+
+async function mergeDuplicateGroups(
+  groups: Map<string, StoredPassenger[]>,
+  totalBefore: number,
+): Promise<{ removed: number; passenger_count: number }> {
   let removed = 0;
   for (const group of groups.values()) {
     if (group.length < 2) continue;
@@ -552,7 +587,7 @@ export async function localMergeDuplicates(passportKey = ""): Promise<{ removed:
       removed += 1;
     }
   }
-  return { removed, passenger_count: rows.length - removed };
+  return { removed, passenger_count: totalBefore - removed };
 }
 
 export async function localSaveOperationMeta(meta: OperationMeta): Promise<SimpleResult> {

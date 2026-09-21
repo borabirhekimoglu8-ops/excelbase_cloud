@@ -53,7 +53,7 @@ test("PWA manifesti ve çevrimdışı uygulama kabuğu hazır", async ({ context
   expect(manifestResponse.ok()).toBeTruthy();
   const manifest = await manifestResponse.json();
   expect(manifest.name).toBe("Excelbase Operations");
-  expect(manifest.short_name).toBe("Excelbase Operations");
+  expect(manifest.short_name).toBe("Excelbase");
   expect(manifest.display).toBe("standalone");
   expect(manifest.icons).toEqual(expect.arrayContaining([
     expect.objectContaining({ src: "/icon-192.png", sizes: "192x192", type: "image/png" }),

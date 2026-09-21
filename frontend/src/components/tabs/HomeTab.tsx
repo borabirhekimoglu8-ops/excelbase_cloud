@@ -12,6 +12,7 @@ import {
 import { downloadLocal } from "@/lib/offline/downloads";
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
+import { PRODUCT } from "@/lib/product";
 import type { OfficeDocument, WorkFile, WorkspaceTask } from "@/lib/workspace";
 
 type HomeTabProps = {
@@ -148,15 +149,15 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
 
   return (
     <div className="ops-page xb-spatial-home">
-      <section className="xb-home-stage" aria-label="Excelbase ana ekran">
+      <section className="xb-home-stage" aria-label={`${PRODUCT.shortName} ana ekran`}>
         <div className="xb-home-sys">
           <span className="xb-home-sys-ok">SİSTEM NORMAL</span>
           <span>{todayLabel}</span>
         </div>
-        <p className="xb-home-eyebrow">İDO · Operasyon</p>
-        <h1 className="xb-home-stage-brand">Excelbase</h1>
+        <p className="xb-home-eyebrow">{PRODUCT.partnerLine ? `${PRODUCT.partnerLine} · Operasyon` : "Operasyon"}</p>
+        <h1 className="xb-home-stage-brand">{PRODUCT.shortName}</h1>
         <p className="xb-home-stage-title">
-          {user.name.split(" ")[0] || "Operatör"} · uzamsal köprü
+          {user.name.split(" ")[0] || "Operatör"} · {PRODUCT.tagline.toLocaleLowerCase("tr-TR")}
         </p>
         <p className="xb-home-stage-copy">
           Veriler bu cihazda şifreli kalır. Kapı listesini açın veya yeni liste yükleyin.

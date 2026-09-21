@@ -18,3 +18,17 @@ def test_vault_sync_rejects_short_token(tmp_path, monkeypatch):
         assert "geçersiz" in str(error)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_vault_sync_rate_limit_trips_after_budget(monkeypatch):
+    vault_sync.reset_rate_limits()
+    for _ in range(vault_sync._RATE_MAX_HITS):
+        vault_sync.check_rate_limit("203.0.113.9")
+    try:
+        vault_sync.check_rate_limit("203.0.113.9")
+    except vault_sync.VaultSyncRateLimitError:
+        pass
+    else:
+        raise AssertionError("expected rate limit")
+    # Another client is unaffected.
+    vault_sync.check_rate_limit("203.0.113.10")

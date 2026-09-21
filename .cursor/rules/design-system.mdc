@@ -1,0 +1,13 @@
+---
+description: Tasarım sistemi — token ve ANA kompozisyonu
+globs: frontend/src/**/*.{tsx,css}
+alwaysApply: false
+---
+
+# Tasarım
+
+- Sözleşme: `frontend/DESIGN.md`. Tokenlar: `globals.css` `:root`.
+- Sıradan mor/cream AI dashboard kopyalama. Bu ürün liman/operasyon kimliğidir.
+- Önce bir ekranda (ANA) tutarlılık; sonra yay.
+- Yeni animasyon kütüphanesi ekleme; CSS geçişleri yeter.
+- Odak halkası, kontrast ve `prefers-reduced-motion` korunur.

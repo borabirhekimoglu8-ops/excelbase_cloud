@@ -151,18 +151,17 @@ _MEMORY_TOOLS: tuple[ProviderTool, ...] = (
 _WRITE_TOOLS: tuple[ProviderTool, ...] = (
     _tool(
         "update_passenger_flags",
-        "Bir yolcunun evrak durum bayraklarını günceller. Yalnızca durum "
-        "alanlarını değiştirir; ad, pasaport ve iletişim alanlarına dokunamaz.",
+        "Bir yolcunun evrak durum bayraklarını günceller. Yalnızca pasaport veya "
+        "voucher alanını temizleyebilir (false). Fotoğraf ve ücret uygulama "
+        "üzerinden değiştirilir; true ile numara uydurulamaz.",
         {
             "ref": _REF,
             "flags": {
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "has_photo": {"type": "boolean"},
                     "has_passport": {"type": "boolean"},
                     "has_voucher": {"type": "boolean"},
-                    "fee_paid": {"type": "boolean"},
                 },
             },
         },
@@ -207,8 +206,10 @@ _WRITE_TOOLS: tuple[ProviderTool, ...] = (
     ),
     _tool(
         "merge_duplicates",
-        "Yinelenen yolcu kayıtlarını birleştirir. Geri alınamaz; operatör onayı gerekir.",
-        {"passport_key": {"type": "string", "maxLength": 64}},
+        "Verilen yolcu referansıyla aynı kimlikteki yinelenen kayıtları birleştirir. "
+        "Pasaport numarası gönderilmez; geri alınamaz, operatör onayı gerekir.",
+        {"ref": _REF},
+        ["ref"],
         writes=True,
         confirm=True,
     ),

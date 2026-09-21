@@ -1,0 +1,13 @@
+---
+description: Mimari ve kod düzeni — mevcut PWA + FastAPI üzerine inşa
+globs: frontend/**/*,backend/**/*,*.py
+alwaysApply: false
+---
+
+# Mimari
+
+- Ana ürün: `frontend/` statik Next PWA + IndexedDB kasası. Operasyon verisi tarayıcıda kalır.
+- `backend/`: kabuk sunumu, asistan vekili, workstation/drive-audit, vault-sync. Gerekçesiz framework değişimi yok.
+- Yeni özellik önce mevcut `localApi` / vault / sekmeler üzerine eklenir; paralel veri düzlemi açma.
+- Ürün adı yalnız `frontend/src/lib/product.ts` üzerinden değişir.
+- Büyük yeniden yazım yasak; küçük, geri alınabilir PR’lar.
