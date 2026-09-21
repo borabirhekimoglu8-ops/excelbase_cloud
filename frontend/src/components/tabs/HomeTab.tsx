@@ -200,6 +200,9 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
           <button className="ops-secondary" type="button" onClick={() => onNavigate("bulk-photos")}>
             Toplu fotoğraf
           </button>
+          <button className="ops-secondary" type="button" onClick={() => onNavigate("passport-scan")}>
+            Pasaport → Excel
+          </button>
           <button className="ops-secondary" type="button" onClick={() => onNavigate("import")}>
             Toplu liste
           </button>
