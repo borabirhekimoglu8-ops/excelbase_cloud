@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Excelbase · Holo C — Gündüz Ege camı</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ido-orange: #f58220;
+      --ido-navy: #005596;
+      --ido-sky: #00aeef;
+      --ink: #0c2740;
+      --ink-soft: rgba(12, 39, 64, 0.72);
+      --pearl: rgba(255, 255, 255, 0.58);
+      --pearl-strong: rgba(255, 255, 255, 0.78);
+      --line: rgba(255, 255, 255, 0.55);
+      --line-soft: rgba(12, 39, 64, 0.08);
+      --ease: cubic-bezier(.22, 1, .36, 1);
+      --display: "Bricolage Grotesque", Georgia, serif;
+      --font: "Source Sans 3", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      color: var(--ink);
+      font-family: var(--font);
+      overflow-x: hidden;
+      background:
+        radial-gradient(80% 60% at 70% 0%, #fff6e8 0%, transparent 55%),
+        radial-gradient(70% 50% at 10% 100%, #cfe8f4 0%, transparent 50%),
+        linear-gradient(165deg, #eaf4fa 0%, #d7eaf4 42%, #c5dcec 100%);
+    }
+
+    .world {
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      padding: 28px 14px 56px;
+      perspective: 1600px;
+    }
+
+    .phone {
+      width: min(390px, 100%);
+      height: min(844px, 92dvh);
+      border-radius: 36px;
+      position: relative;
+      transform-style: preserve-3d;
+      overflow: hidden;
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,.65),
+        0 28px 70px rgba(12, 39, 64, .22),
+        0 8px 24px rgba(0, 85, 150, .12);
+      animation: phone-in 1.05s var(--ease) both;
+    }
+
+    /* Daylight Aegean stage — no neon HUD */
+    .stage {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      background: #b9d6e8;
+    }
+    .sky {
+      position: absolute;
+      inset: 0 0 38% 0;
+      background:
+        radial-gradient(45% 40% at 78% 18%, rgba(255, 214, 140, .85) 0%, transparent 60%),
+        linear-gradient(180deg, #f7fbff 0%, #d8ebf6 55%, #b8d7ea 100%);
+      animation: sky-breathe 16s ease-in-out infinite alternate;
+    }
+    .sun {
+      position: absolute;
+      top: 8%;
+      right: 12%;
+      width: 86px;
+      height: 86px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 40% 40%, #fff8e6 0%, #ffd27a 35%, rgba(255, 180, 70, .15) 70%, transparent 75%);
+      filter: blur(1px);
+      animation: sun-pulse 10s ease-in-out infinite alternate;
+      pointer-events: none;
+    }
+    .sea {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 58%;
+      background:
+        linear-gradient(180deg, rgba(185, 214, 232, .2) 0%, #7eb6d4 28%, #4f92b8 72%, #3a7a9e 100%);
+      overflow: hidden;
+    }
+    .sea::before,
+    .sea::after {
+      content: "";
+      position: absolute;
+      left: -20%;
+      width: 140%;
+      height: 120%;
+      background:
+        radial-gradient(ellipse 40% 18% at 30% 30%, rgba(255,255,255,.35), transparent 60%),
+        radial-gradient(ellipse 50% 22% at 70% 55%, rgba(255,255,255,.2), transparent 65%);
+      animation: water-drift 18s ease-in-out infinite alternate;
+      opacity: .85;
+    }
+    .sea::after {
+      animation-duration: 24s;
+      animation-direction: alternate-reverse;
+      opacity: .55;
+      mix-blend-mode: soft-light;
+    }
+    .ferry-plane {
+      position: absolute;
+      left: -8%;
+      right: -8%;
+      bottom: 6%;
+      height: 52%;
+      background:
+        linear-gradient(180deg, transparent 0%, rgba(62, 118, 150, .15) 100%),
+        url("./ido-ege-ferry.jpg") center 42% / cover no-repeat;
+      filter: saturate(1.05) contrast(1.02);
+      mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 78%, transparent 100%);
+      -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 78%, transparent 100%);
+      animation: ferry-drift 20s ease-in-out infinite alternate;
+      transform: translateZ(0) scale(1.04);
+    }
+    .map-soft {
+      position: absolute;
+      inset: 18% -15% -8%;
+      background: url("./aegean-map.svg") center 20% / 125% no-repeat;
+      opacity: .18;
+      filter: grayscale(.15) brightness(1.15);
+      mix-blend-mode: multiply;
+      animation: map-float 18s ease-in-out infinite alternate;
+      pointer-events: none;
+    }
+    .haze {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(247, 251, 255, .35) 0%, transparent 28%),
+        linear-gradient(180deg, transparent 45%, rgba(12, 39, 64, .18) 100%);
+      pointer-events: none;
+    }
+    .glass-rim {
+      position: absolute;
+      inset: 0;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.35);
+      border-radius: inherit;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .ui {
+      position: relative;
+      z-index: 2;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 14px 12px 12px;
+      transform-style: preserve-3d;
+    }
+
+    .glass {
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.72), rgba(255,255,255,.38) 45%, rgba(230, 244, 252, .42));
+      border: 1px solid var(--line);
+      backdrop-filter: blur(22px) saturate(1.35);
+      -webkit-backdrop-filter: blur(22px) saturate(1.35);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.85),
+        inset 0 -1px 0 rgba(0, 85, 150, .04),
+        0 18px 40px rgba(12, 39, 64, .12);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 11px;
+      border-radius: 18px;
+      transform: translateZ(42px);
+      animation: rise .9s var(--ease) .08s both;
+    }
+    .topbar img {
+      width: 34px;
+      height: 34px;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 10px rgba(245, 130, 32, .28));
+    }
+    .topbar strong {
+      font-family: var(--display);
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: -.02em;
+      color: var(--ink);
+    }
+    .topbar small {
+      display: block;
+      color: var(--ink-soft);
+      font-size: 11px;
+      font-weight: 600;
+      margin-top: 1px;
+    }
+    .status {
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.55);
+      border: 1px solid rgba(245, 130, 32, .35);
+      color: #c45f0a;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    .status i {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--ido-orange);
+      box-shadow: 0 0 0 3px rgba(245, 130, 32, .18);
+      animation: status-pulse 2.4s ease-in-out infinite;
+    }
+
+    .hero {
+      margin: 26px 6px 14px;
+      transform: translateZ(64px);
+      animation: rise 1s var(--ease) .16s both;
+    }
+    .hero .brand {
+      margin: 0;
+      font-family: var(--display);
+      font-size: clamp(34px, 9vw, 42px);
+      font-weight: 800;
+      letter-spacing: -.045em;
+      line-height: .95;
+      color: var(--ink);
+      text-shadow: 0 10px 30px rgba(255,255,255,.55);
+    }
+    .hero .brand span {
+      display: block;
+      font-size: .42em;
+      font-weight: 700;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--ido-navy);
+      margin-bottom: 8px;
+      opacity: .85;
+    }
+    .hero p {
+      margin: 12px 0 0;
+      max-width: 28ch;
+      font-size: 14px;
+      line-height: 1.45;
+      color: var(--ink-soft);
+      font-weight: 600;
+    }
+
+    .cta-row {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      gap: 10px;
+      margin: 0 2px 16px;
+      transform: translateZ(72px);
+      animation: rise 1s var(--ease) .26s both;
+    }
+    .btn {
+      min-height: 50px;
+      border-radius: 16px;
+      border: 0;
+      font: inherit;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: .01em;
+      cursor: pointer;
+      transition: transform .2s var(--ease), box-shadow .2s ease, filter .2s ease;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-primary {
+      color: #fff;
+      background: linear-gradient(135deg, #ff9a3c, var(--ido-orange) 55%, #e06a12);
+      box-shadow: 0 14px 28px rgba(245, 130, 32, .35), inset 0 1px 0 rgba(255,255,255,.4);
+    }
+    .btn-primary:hover { filter: brightness(1.05); }
+    .btn-ghost {
+      color: var(--ido-navy);
+      background: rgba(255,255,255,.55);
+      border: 1px solid rgba(255,255,255,.7);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: 0 10px 24px rgba(12, 39, 64, .08), inset 0 1px 0 rgba(255,255,255,.8);
+    }
+
+    .stack {
+      flex: 1;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      overflow: auto;
+      padding-bottom: 6px;
+      scrollbar-width: none;
+      transform-style: preserve-3d;
+    }
+    .stack::-webkit-scrollbar { display: none; }
+
+    .panel {
+      position: relative;
+      border-radius: 20px;
+      padding: 14px 14px 12px;
+      transform: translateZ(50px) rotateX(3.5deg);
+      transform-origin: center bottom;
+      animation: panel-rise .9s var(--ease) both;
+      overflow: hidden;
+    }
+    .panel:nth-child(1) { animation-delay: .34s; }
+    .panel:nth-child(2) { animation-delay: .44s; }
+    .panel:nth-child(3) { animation-delay: .54s; }
+    .panel::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background: linear-gradient(125deg, rgba(255,255,255,.45), transparent 32%, transparent 68%, rgba(0, 174, 239, .08));
+    }
+    .panel h2 {
+      margin: 0 0 8px;
+      font-family: var(--display);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--ido-navy);
+      opacity: .8;
+    }
+
+    .trip {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: end;
+      padding: 4px 0 2px;
+    }
+    .trip strong {
+      display: block;
+      font-family: var(--display);
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -.02em;
+    }
+    .trip small {
+      display: block;
+      margin-top: 3px;
+      color: var(--ink-soft);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .eta {
+      text-align: right;
+      font-family: var(--display);
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: -.03em;
+      color: var(--ido-navy);
+      line-height: 1;
+    }
+    .eta span {
+      display: block;
+      margin-top: 4px;
+      font-family: var(--font);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 11px 0;
+      border-top: 1px solid var(--line-soft);
+      cursor: pointer;
+      transition: transform .2s var(--ease), background .2s ease;
+      border-radius: 10px;
+    }
+    .row:first-of-type { border-top: 0; padding-top: 2px; }
+    .row:hover { transform: translateX(3px); background: rgba(255,255,255,.28); }
+    .row strong { display: block; font-size: 14px; font-weight: 700; }
+    .row small { display: block; margin-top: 2px; color: var(--ink-soft); font-size: 12px; font-weight: 600; }
+    .pill {
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      background: rgba(245, 130, 32, .12);
+      color: #c45f0a;
+      border: 1px solid rgba(245, 130, 32, .28);
+    }
+    .pill.ok {
+      background: rgba(0, 85, 150, .1);
+      color: var(--ido-navy);
+      border-color: rgba(0, 85, 150, .22);
+    }
+
+    .dock {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 2px;
+      padding: 8px 6px;
+      border-radius: 22px;
+      transform: translateZ(84px);
+      animation: rise 1s var(--ease) .48s both;
+    }
+    .dock button {
+      border: 0;
+      background: transparent;
+      color: rgba(12, 39, 64, .42);
+      font: inherit;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .03em;
+      display: grid;
+      justify-items: center;
+      gap: 5px;
+      padding: 7px 0;
+      cursor: pointer;
+    }
+    .dock button.active { color: var(--ido-navy); }
+    .dock .dot {
+      width: 5px; height: 5px; border-radius: 50%; background: transparent;
+    }
+    .dock button.active .dot {
+      background: var(--ido-orange);
+      box-shadow: 0 0 0 3px rgba(245, 130, 32, .18);
+    }
+
+    .caption {
+      width: min(420px, 100%);
+      margin-top: 20px;
+      text-align: center;
+      color: rgba(12, 39, 64, .72);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .caption strong {
+      display: block;
+      font-family: var(--display);
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--ink);
+      margin-bottom: 6px;
+      letter-spacing: -.02em;
+    }
+    .caption em {
+      font-style: normal;
+      color: var(--ido-navy);
+      font-weight: 700;
+    }
+
+    @keyframes phone-in {
+      from { opacity: 0; transform: translateY(28px) rotateX(12deg) scale(.96); }
+      to { opacity: 1; transform: translateY(0) rotateX(0) scale(1); }
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(18px) translateZ(20px); }
+      to { opacity: 1; }
+    }
+    @keyframes panel-rise {
+      from { opacity: 0; transform: translateY(24px) translateZ(20px) rotateX(10deg); }
+      to { opacity: 1; transform: translateZ(50px) rotateX(3.5deg); }
+    }
+    @keyframes sky-breathe {
+      from { filter: brightness(1); }
+      to { filter: brightness(1.04); }
+    }
+    @keyframes sun-pulse {
+      from { transform: scale(1); opacity: .9; }
+      to { transform: scale(1.08); opacity: 1; }
+    }
+    @keyframes water-drift {
+      from { transform: translateX(-2%) translateY(0); }
+      to { transform: translateX(3%) translateY(-2%); }
+    }
+    @keyframes ferry-drift {
+      from { transform: translateX(-1%) scale(1.04); }
+      to { transform: translateX(2%) scale(1.06); }
+    }
+    @keyframes map-float {
+      from { transform: translateY(0) scale(1); }
+      to { transform: translateY(-10px) scale(1.03); }
+    }
+    @keyframes status-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.15); opacity: .75; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="world">
+    <div class="phone" id="phone">
+      <div class="stage" aria-hidden="true">
+        <div class="sky"></div>
+        <div class="sun"></div>
+        <div class="sea"></div>
+        <div class="ferry-plane"></div>
+        <div class="map-soft"></div>
+        <div class="haze"></div>
+      </div>
+      <div class="glass-rim" aria-hidden="true"></div>
+
+      <div class="ui">
+        <header class="topbar glass">
+          <img src="./ido-logo.png" alt="" />
+          <div>
+            <strong>Excelbase</strong>
+            <small>İDO Operasyon</small>
+          </div>
+          <div class="status"><i></i> CANLI</div>
+        </header>
+
+        <div class="hero">
+          <h1 class="brand"><span>İDO · Ege</span>Excelbase</h1>
+          <p>Gündüz cam katmanları — feribot sahnesi üzerinde yumuşak derinlik.</p>
+        </div>
+
+        <div class="cta-row">
+          <button class="btn btn-primary" type="button">Sefer aç</button>
+          <button class="btn btn-ghost" type="button">Kapı durumu</button>
+        </div>
+
+        <div class="stack">
+          <section class="panel glass">
+            <h2>Aktif sefer</h2>
+            <div class="trip">
+              <div>
+                <strong>Yenikapı → Bandırma</strong>
+                <small>Kapı 3 · 14:40 kalkış</small>
+              </div>
+              <div class="eta">12<span>dk</span></div>
+            </div>
+          </section>
+
+          <section class="panel glass">
+            <h2>Bugün</h2>
+            <div class="row">
+              <div>
+                <strong>Bostancı → Adalar</strong>
+                <small>15:10 · Kapı 1</small>
+              </div>
+              <span class="pill">Hazırlık</span>
+            </div>
+            <div class="row">
+              <div>
+                <strong>Kadıköy → Beşiktaş</strong>
+                <small>15:25 · Kapı 2</small>
+              </div>
+              <span class="pill ok">Açık</span>
+            </div>
+          </section>
+
+          <section class="panel glass">
+            <h2>Saha</h2>
+            <div class="row">
+              <div>
+                <strong>Yolcu akışı</strong>
+                <small>Kapı 3 yoğun — yavaşlat</small>
+              </div>
+              <span class="pill">Uyarı</span>
+            </div>
+            <div class="row">
+              <div>
+                <strong>Araç rampası</strong>
+                <small>Son kontrol tamam</small>
+              </div>
+              <span class="pill ok">OK</span>
+            </div>
+          </section>
+        </div>
+
+        <nav class="dock glass" aria-label="Alt menü">
+          <button class="active" type="button"><span class="dot"></span>Ana</button>
+          <button type="button"><span class="dot"></span>Sefer</button>
+          <button type="button"><span class="dot"></span>Kapı</button>
+          <button type="button"><span class="dot"></span>Araç</button>
+          <button type="button"><span class="dot"></span>Daha</button>
+        </nav>
+      </div>
+    </div>
+
+    <p class="caption">
+      <strong>Holo C · Gündüz Ege camı</strong>
+      Cyberpunk yok: neon cyan, koyu HUD, scanline yok.
+      <em>visionOS / liquid-glass</em> derinlik + İDO turuncu + gerçek feribot sahnesi.
+      Marka hero’da; cam paneller sahnede yüzer.
+    </p>
+  </div>
+
+  <script>
+    const phone = document.getElementById("phone");
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!reduce && phone) {
+      phone.addEventListener("pointermove", (e) => {
+        const r = phone.getBoundingClientRect();
+        const x = (e.clientX - r.left) / r.width - 0.5;
+        const y = (e.clientY - r.top) / r.height - 0.5;
+        phone.style.transform =
+          `rotateY(${x * 10}deg) rotateX(${-y * 8}deg)`;
+      });
+      phone.addEventListener("pointerleave", () => {
+        phone.style.transform = "";
+        phone.style.transition = "transform .6s cubic-bezier(.22,1,.36,1)";
+        setTimeout(() => { phone.style.transition = ""; }, 650);
+      });
+    }
+  </script>
+</body>
+</html>
