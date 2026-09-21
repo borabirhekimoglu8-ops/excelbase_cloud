@@ -47,6 +47,12 @@ function numberOrUndefined(value: string): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function kindLabel(kind: string): string {
+  if (kind === "numeric") return "sayısal";
+  if (kind === "category") return "kategori";
+  return "metin";
+}
+
 /**
  * A filter control for every column in the table.
  *
@@ -176,11 +182,10 @@ export function ColumnFilterBar({
 }
 
 /**
- * A statistics card for every column, plus a breakdown the operator picks.
+ * Focused statistics: trend, one breakdown, then optional column details.
  *
- * Showing only the numeric columns left most of a spreadsheet unaccounted for;
- * every header now reports at least how full it is and what its commonest
- * values are.
+ * Dumping a card per column made the page unreadable; the operator now sees
+ * the answers first and opens a column only when they need its numbers.
  */
 export function ColumnStatsView({
   table,
@@ -197,6 +202,8 @@ export function ColumnStatsView({
   const [seriesIndex, setSeriesIndex] = useState<number | null>(null);
   const [trendValue, setTrendValue] = useState<number | null>(null);
   const [grain, setGrain] = useState<TimeGrain>("day");
+  const [openColumn, setOpenColumn] = useState<number | null>(null);
+  const [showColumns, setShowColumns] = useState(false);
 
   const categories = useMemo(() => categoryColumnIndexes(table), [table]);
   const numerics = useMemo(() => numericColumnIndexes(table), [table]);
@@ -245,6 +252,13 @@ export function ColumnStatsView({
     [donutSlices],
   );
 
+  const filledShare = useMemo(() => {
+    if (summaries.length === 0 || rows.length === 0) return 0;
+    const totalCells = summaries.reduce((sum, item) => sum + item.filled + item.empty, 0);
+    const filledCells = summaries.reduce((sum, item) => sum + item.filled, 0);
+    return totalCells === 0 ? 0 : Math.round((filledCells / totalCells) * 100);
+  }, [summaries, rows.length]);
+
   return (
     <div className="ic-stats">
       <p className="ic-stats-scope">
@@ -253,9 +267,19 @@ export function ColumnStatsView({
           : `${rows.length} satırın tamamı üzerinden hesaplandı.`}
       </p>
 
+      <div className="ic-stats-hero" aria-label="Özet">
+        <div><span>SATIR</span><strong>{rows.length}</strong></div>
+        <div><span>SÜTUN</span><strong>{table.headers.length}</strong></div>
+        <div><span>DOLULUK</span><strong>%{filledShare.toLocaleString("tr-TR")}</strong></div>
+        <div><span>SAYISAL</span><strong>{numerics.length}</strong></div>
+      </div>
+
       {dates.length > 0 && (
-        <div className="ic-stats-card">
-          <h4>Zaman içinde<em>{grain === "day" ? "günlük" : "aylık"}</em></h4>
+        <section className="ic-stats-section">
+          <header className="ic-stats-section-head">
+            <h4>Zaman içinde</h4>
+            <span>{grain === "day" ? "Günlük" : "Aylık"}</span>
+          </header>
           <div className="ic-stats-pickers">
             <label>
               <span>TARİH</span>
@@ -311,11 +335,19 @@ export function ColumnStatsView({
             formatValue={formatSalesNumber}
             formatKey={formatTimeKey}
           />
-        </div>
+        </section>
       )}
 
       {breakdown && categories.length > 0 && (
-        <div className="ic-stats-card">
+        <section className="ic-stats-section">
+          <header className="ic-stats-section-head">
+            <h4>Dağılım</h4>
+            <span>
+              {activeValue !== null
+                ? table.headers[activeValue]
+                : table.headers[activeGroup ?? 0]}
+            </span>
+          </header>
           <div className="ic-stats-pickers">
             <label>
               <span>KIRILIM</span>
@@ -344,93 +376,131 @@ export function ColumnStatsView({
             </label>
           </div>
 
-          <HoloDonut
-            slices={donutSlices}
-            total={donutTotal}
-            centreLabel={activeValue !== null ? table.headers[activeValue] ?? "Toplam" : "Satır"}
-            centreValue={formatSalesNumber(donutTotal)}
-          />
+          <div className="ic-stats-split">
+            <HoloDonut
+              slices={donutSlices}
+              total={donutTotal}
+              centreLabel={activeValue !== null ? table.headers[activeValue] ?? "Toplam" : "Satır"}
+              centreValue={formatSalesNumber(donutTotal)}
+            />
 
-          <ul className="ic-stats-breakdown">
-            {breakdown.entries.map((entry) => (
-              <li key={entry.value}>
-                <div>
-                  <strong>{entry.value}</strong>
-                  <span>
-                    {activeValue !== null
-                      ? `${formatSalesNumber(entry.sum)} · ${entry.count} satır`
-                      : `${entry.count} satır`}
-                  </span>
-                </div>
-                <div className="ic-stats-bar" aria-hidden="true">
-                  <i style={{ width: `${Math.max(2, entry.share)}%` }} />
-                </div>
-                <b>%{entry.share.toLocaleString("tr-TR")}</b>
-              </li>
-            ))}
-          </ul>
-        </div>
+            <ul className="ic-stats-breakdown">
+              {breakdown.entries.slice(0, 8).map((entry) => (
+                <li key={entry.value}>
+                  <div>
+                    <strong>{entry.value}</strong>
+                    <span>
+                      {activeValue !== null
+                        ? `${formatSalesNumber(entry.sum)} · ${entry.count} satır`
+                        : `${entry.count} satır`}
+                    </span>
+                  </div>
+                  <div className="ic-stats-bar" aria-hidden="true">
+                    <i style={{ width: `${Math.max(2, entry.share)}%` }} />
+                  </div>
+                  <b>%{entry.share.toLocaleString("tr-TR")}</b>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {breakdown.entries.length > 8 && (
+            <p className="ic-stats-more">
+              {`İlk 8 değer gösteriliyor · ${breakdown.entries.length - 8} değer daha var.`}
+            </p>
+          )}
+        </section>
       )}
 
-      {summaries.map((summary) => (
-        <div className="ic-stats-card" key={summary.index}>
-          <h4>
-            {summary.column}
-            <em>
-              {summary.kind === "numeric" ? "sayısal" : summary.kind === "category" ? "kategori" : "metin"}
-            </em>
-          </h4>
+      {summaries.length > 0 && (
+        <section className="ic-stats-section">
+          <header className="ic-stats-section-head">
+            <h4>Sütun detayları</h4>
+            <button
+              type="button"
+              className="ic-stats-toggle"
+              onClick={() => setShowColumns((open) => !open)}
+              aria-expanded={showColumns}
+            >
+              {showColumns ? "Gizle" : `${summaries.length} sütunu aç`}
+            </button>
+          </header>
 
-          {summary.numeric ? (
-            <>
-              <div className="ic-stats-grid">
-                <div><span>TOPLAM</span><strong>{formatSalesNumber(summary.numeric.sum)}</strong></div>
-                <div><span>ORTALAMA</span><strong>{formatSalesNumber(summary.numeric.average)}</strong></div>
-                <div><span>ORTANCA</span><strong>{formatSalesNumber(summary.numeric.median)}</strong></div>
-                <div><span>EN DÜŞÜK</span><strong>{formatSalesNumber(summary.numeric.min)}</strong></div>
-                <div><span>EN YÜKSEK</span><strong>{formatSalesNumber(summary.numeric.max)}</strong></div>
-                <div><span>ALT ÇEYREK</span><strong>{formatSalesNumber(summary.numeric.p25)}</strong></div>
-                <div><span>ÜST ÇEYREK</span><strong>{formatSalesNumber(summary.numeric.p75)}</strong></div>
-                <div><span>SAPMA</span><strong>{formatSalesNumber(summary.numeric.stdDev)}</strong></div>
-                <div><span>DOLU</span><strong>{summary.filled}</strong></div>
-                <div><span>BOŞ</span><strong>{summary.empty}</strong></div>
-              </div>
-              {/* Where the rows actually fall. The five-number summary above is
-                  exact; this says whether the column is bunched or spread. */}
-              {summary.histogram.length > 0 && (
-                <HoloBars
-                  entries={summary.histogram.map((bucket) => ({
-                    label: bucket.label,
-                    value: bucket.count,
-                  }))}
-                  formatValue={(value) => `${value}`}
-                />
-              )}
-            </>
-          ) : (
-            <>
-              <div className="ic-stats-grid">
-                <div><span>DOLU</span><strong>{summary.filled}</strong></div>
-                <div><span>BOŞ</span><strong>{summary.empty}</strong></div>
-                <div><span>FARKLI DEĞER</span><strong>{summary.distinct}</strong></div>
-              </div>
-              {summary.top.length > 0 && (
-                <ul className="ic-stats-breakdown compact">
-                  {summary.top.map((entry) => (
-                    <li key={entry.value}>
-                      <div><strong>{entry.value}</strong></div>
-                      <div className="ic-stats-bar" aria-hidden="true">
-                        <i style={{ width: `${Math.max(2, entry.share)}%` }} />
+          {showColumns && (
+            <ul className="ic-stats-columns">
+              {summaries.map((summary) => {
+                const open = openColumn === summary.index;
+                return (
+                  <li key={summary.index} className={open ? "open" : ""}>
+                    <button
+                      type="button"
+                      className="ic-stats-column-toggle"
+                      aria-expanded={open}
+                      onClick={() => setOpenColumn(open ? null : summary.index)}
+                    >
+                      <span>
+                        <strong>{summary.column}</strong>
+                        <em>{kindLabel(summary.kind)}</em>
+                      </span>
+                      <b>
+                        {summary.numeric
+                          ? formatSalesNumber(summary.numeric.sum)
+                          : `${summary.distinct} değer`}
+                      </b>
+                    </button>
+
+                    {open && (
+                      <div className="ic-stats-column-body">
+                        {summary.numeric ? (
+                          <>
+                            <div className="ic-stats-grid">
+                              <div><span>TOPLAM</span><strong>{formatSalesNumber(summary.numeric.sum)}</strong></div>
+                              <div><span>ORTALAMA</span><strong>{formatSalesNumber(summary.numeric.average)}</strong></div>
+                              <div><span>EN DÜŞÜK</span><strong>{formatSalesNumber(summary.numeric.min)}</strong></div>
+                              <div><span>EN YÜKSEK</span><strong>{formatSalesNumber(summary.numeric.max)}</strong></div>
+                              <div><span>DOLU</span><strong>{summary.filled}</strong></div>
+                              <div><span>BOŞ</span><strong>{summary.empty}</strong></div>
+                            </div>
+                            {summary.histogram.length > 0 && (
+                              <HoloBars
+                                entries={summary.histogram.map((bucket) => ({
+                                  label: bucket.label,
+                                  value: bucket.count,
+                                }))}
+                                formatValue={(value) => `${value}`}
+                              />
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <div className="ic-stats-grid">
+                              <div><span>DOLU</span><strong>{summary.filled}</strong></div>
+                              <div><span>BOŞ</span><strong>{summary.empty}</strong></div>
+                              <div><span>FARKLI</span><strong>{summary.distinct}</strong></div>
+                            </div>
+                            {summary.top.length > 0 && (
+                              <ul className="ic-stats-breakdown compact">
+                                {summary.top.map((entry) => (
+                                  <li key={entry.value}>
+                                    <div><strong>{entry.value}</strong></div>
+                                    <div className="ic-stats-bar" aria-hidden="true">
+                                      <i style={{ width: `${Math.max(2, entry.share)}%` }} />
+                                    </div>
+                                    <b>{entry.count}</b>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </>
+                        )}
                       </div>
-                      <b>{entry.count}</b>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           )}
-        </div>
-      ))}
+        </section>
+      )}
 
       {summaries.length === 0 && <p className="ic-sales-more">Gösterilecek sütun yok.</p>}
     </div>

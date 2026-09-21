@@ -2,13 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { type Passenger, type RecordFolder, fetchPassengers, fetchRecordFolders } from "@/lib/api";
+import { type RecordFolder, fetchRecordFolders } from "@/lib/api";
 import { RecordsTab } from "@/components/tabs/RecordsTab";
 import { PassengersTab } from "@/components/tabs/PassengersTab";
-import { ColumnFilterBar, ColumnStatsView } from "@/components/ColumnAnalysis";
 import { HoloDonut, HoloTrend } from "@/components/charts/Holo";
-import { passengerTable } from "@/lib/passengerTable";
-import { type SalesFilter, emptySalesFilter, filterSalesRows } from "@/lib/salesAnalysis";
 import {
   busiestOutstandingDays,
   gateVisaTotals,
@@ -60,39 +57,24 @@ export function GateVisaTab({
     setView(initialView);
   }, [initialView]);
   const [folders, setFolders] = useState<RecordFolder[]>([]);
-  const [passengers, setPassengers] = useState<Passenger[]>([]);
-  const [filter, setFilter] = useState<SalesFilter>(emptySalesFilter);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    Promise.all([
-      fetchRecordFolders({ ...dateScope, field: "created" }),
-      fetchPassengers({ scope: dateScope }),
-    ])
-      .then(([folderResponse, passengerRows]) => {
+    fetchRecordFolders({ ...dateScope, field: "created" })
+      .then((folderResponse) => {
         if (!active) return;
         setFolders(folderResponse.groups);
-        setPassengers(passengerRows);
       })
       .catch(() => {
         if (!active) return;
         setFolders([]);
-        setPassengers([]);
       })
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [dateScope, version]);
 
-  // The passenger list is the Gate Visa Excel, projected back into columns, so
-  // the same filters and statistics work here as on the sales page.
-  const table = useMemo(() => passengerTable(passengers), [passengers]);
-  const rows = useMemo(() => filterSalesRows(table, filter), [table, filter]);
-  const narrowed = rows.length !== table.rows.length;
-
-  // Folder totals still come from the folders themselves; they count days,
-  // which the passenger rows cannot.
   const totals = useMemo(() => gateVisaTotals(folders), [folders]);
   const outstanding = useMemo(() => busiestOutstandingDays(folders), [folders]);
 
@@ -114,27 +96,28 @@ export function GateVisaTab({
 
   return (
     <div className="ic-gatevisa-page">
-      {/* Only the upload lives here. Adding a single passenger is already
-          offered by the folder view below, and two stacked buttons for it read
-          as two different actions. */}
-      <section className="ic-gatevisa-actions">
-        <button type="button" className="ic-gatevisa-primary" onClick={onImport}>
-          <span aria-hidden="true">⇪</span>
-          <span>
-            <strong>Excel ile liste yükle</strong>
-            <small>Kapı vizesi listesi · ZIP veya Excel</small>
-          </span>
-        </button>
-        {onBulkPhotos ? (
-          <button type="button" className="ic-gatevisa-primary" onClick={onBulkPhotos}>
-            <span aria-hidden="true">▣</span>
+      {/* Upload actions belong with the folder workspace, not on top of the
+          statistics readout — stacking them there buried the numbers. */}
+      {view === "folders" && (
+        <section className="ic-gatevisa-actions">
+          <button type="button" className="ic-gatevisa-primary" onClick={onImport}>
+            <span aria-hidden="true">⇪</span>
             <span>
-              <strong>Toplu fotoğraf eşleştir</strong>
-              <small>Vesikalık / ZIP · isim veya pasaport ile otomatik</small>
+              <strong>Excel ile liste yükle</strong>
+              <small>Kapı vizesi listesi · ZIP veya Excel</small>
             </span>
           </button>
-        ) : null}
-      </section>
+          {onBulkPhotos ? (
+            <button type="button" className="ic-gatevisa-primary" onClick={onBulkPhotos}>
+              <span aria-hidden="true">▣</span>
+              <span>
+                <strong>Toplu fotoğraf eşleştir</strong>
+                <small>Vesikalık / ZIP · isim veya pasaport ile otomatik</small>
+              </span>
+            </button>
+          ) : null}
+        </section>
+      )}
 
       <div className="ic-subtabs" role="tablist" aria-label="Görünüm">
         <button
@@ -170,38 +153,55 @@ export function GateVisaTab({
 
       {view === "stats" && (
         <div className="ic-stats">
-          <ColumnFilterBar
-            table={table}
-            filter={filter}
-            onChange={setFilter}
-            onReset={() => setFilter(emptySalesFilter())}
-            narrowed={narrowed}
-            searchLabel="Yolcu listesinde ara…"
-          />
-
           <p className="ic-stats-scope">
             {loading
               ? "Liste hazırlanıyor…"
-              : `${folders.length} gün klasörü · ${table.rows.length} yolcu kaydı`}
+              : `${folders.length} gün klasörü · ${totals.passengers} yolcu kaydı`}
           </p>
 
-          <div className="ic-stats-card">
-            <h4>Operasyon</h4>
-            <div className="ic-stats-grid">
-              <div><span>YOLCU</span><strong>{totals.passengers}</strong></div>
-              <div><span>KLASÖR</span><strong>{totals.folders}</strong></div>
-              <div><span>HAZIR</span><strong>{totals.ready}</strong></div>
-              <div><span>KALAN</span><strong>{totals.outstanding}</strong></div>
-              <div><span>HAZIRLIK</span><strong>%{totals.readinessPercent.toLocaleString("tr-TR")}</strong></div>
-              <div><span>FOTOĞRAF</span><strong>%{totals.photoPercent.toLocaleString("tr-TR")}</strong></div>
-              <div><span>PDF</span><strong>{totals.documents}</strong></div>
-              <div><span>KONTROL</span><strong>{totals.review}</strong></div>
-              <div><span>TASLAK</span><strong>{totals.draft}</strong></div>
-            </div>
+          {/* Four numbers an operator needs at a glance — not every counter. */}
+          <div className="ic-stats-hero" aria-label="Operasyon özeti">
+            <div><span>YOLCU</span><strong>{totals.passengers}</strong></div>
+            <div><span>HAZIR</span><strong>{totals.ready}</strong></div>
+            <div><span>KALAN</span><strong>{totals.outstanding}</strong></div>
+            <div><span>FOTOĞRAF</span><strong>%{totals.photoPercent.toLocaleString("tr-TR")}</strong></div>
           </div>
 
-          <div className="ic-stats-card">
-            <h4>En çok iş kalan günler</h4>
+          <div className="ic-stats-meta" aria-label="Ek sayılar">
+            <span><b>{totals.folders}</b> klasör</span>
+            <span><b>{totals.documents}</b> PDF</span>
+            <span><b>{totals.review}</b> kontrol</span>
+            <span><b>{totals.draft}</b> taslak</span>
+            <span><b>%{totals.readinessPercent.toLocaleString("tr-TR")}</b> hazırlık</span>
+          </div>
+
+          <section className="ic-stats-section">
+            <header className="ic-stats-section-head">
+              <h4>Günlük durum</h4>
+              <span>Yolcu ve hazırlık</span>
+            </header>
+            <div className="ic-holo-split">
+              <div>
+                <p className="ic-holo-caption">Yolcu / gün</p>
+                <HoloTrend points={trendPoints} formatValue={(value) => `${value} yolcu`} />
+              </div>
+              <div>
+                <p className="ic-holo-caption">Hazırlık dağılımı</p>
+                <HoloDonut
+                  slices={readinessSlices}
+                  total={totals.passengers}
+                  centreLabel="HAZIRLIK"
+                  centreValue={`%${totals.readinessPercent.toLocaleString("tr-TR")}`}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="ic-stats-section">
+            <header className="ic-stats-section-head">
+              <h4>İş kalan günler</h4>
+              <span>Eksik yolcuya göre</span>
+            </header>
             {outstanding.length === 0 ? (
               <p className="ic-sales-more">
                 {totals.passengers === 0 ? "Bu aralıkta kayıt yok." : "Bu aralıkta eksik kalan yolcu yok."}
@@ -223,29 +223,7 @@ export function GateVisaTab({
                 ))}
               </ul>
             )}
-          </div>
-
-          <div className="ic-stats-card">
-            <h4>Günlük eğilim</h4>
-            <div className="ic-holo-split">
-              <div>
-                <p className="ic-holo-caption">Yolcu / gün</p>
-                <HoloTrend points={trendPoints} formatValue={(value) => `${value} yolcu`} />
-              </div>
-              <div>
-                <p className="ic-holo-caption">Hazırlık dağılımı</p>
-                <HoloDonut
-                  slices={readinessSlices}
-                  total={totals.passengers}
-                  centreLabel="HAZIRLIK"
-                  centreValue={`%${totals.readinessPercent.toLocaleString("tr-TR")}`}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Every Gate Visa column, filtered the same way the list is. */}
-          <ColumnStatsView table={table} rows={rows} narrowed={narrowed} />
+          </section>
         </div>
       )}
 
