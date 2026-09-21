@@ -168,10 +168,10 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
 
       {workspaceError && <div className="ops-form-error" role="alert">{workspaceError}</div>}
 
-      <section className="ops-module-card" aria-labelledby="home-queue-title">
+      <section className="ops-home-desk" aria-labelledby="home-queue-title">
         <div className="ops-section-heading">
           <div>
-            <h2 id="home-queue-title">Şimdi ne yapılacak</h2>
+            <h2 id="home-queue-title">İş sırası</h2>
             <p>Öncelikli işler ve uyarılar</p>
           </div>
         </div>
@@ -216,7 +216,7 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
         </div>
       </section>
 
-      <section className="ops-module-card">
+      <section className="ops-home-desk">
         <div className="ops-section-heading">
           <div>
             <h2>Aktif iş dosyaları</h2>
@@ -255,7 +255,7 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
         )}
       </section>
 
-      <section className="ops-module-card" aria-labelledby="home-more-title">
+      <section className="ops-home-desk" aria-labelledby="home-more-title">
         <div className="ops-section-heading">
           <div>
             <h2 id="home-more-title">Satış ve raporlar</h2>
