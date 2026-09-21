@@ -150,9 +150,17 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
     <div className="ops-page">
       <section className="ops-page-heading xb-home-hero">
         <div>
-          <p className="ops-eyebrow">Bugün</p>
+          <p className="xb-home-brand">Excelbase · İDO</p>
           <h1>{user.name.split(" ")[0] || "Operasyon"}</h1>
-          <p>{todayLabel}. Veriler bu cihazda şifreli.</p>
+          <p>{todayLabel}. Veriler bu cihazda şifreli kalır.</p>
+        </div>
+        <div className="xb-home-actions-strip">
+          <button className="ops-primary" type="button" onClick={() => onNavigate("gate-visa-list")}>
+            Yolcuları aç
+          </button>
+          <button className="ops-secondary" type="button" onClick={() => onNavigate("import")}>
+            Liste yükle
+          </button>
         </div>
       </section>
 
@@ -193,18 +201,12 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
             )}
           />
         )}
-        <div className="ops-home-actions" style={{ marginTop: 12 }}>
-          <button className="ops-primary" type="button" onClick={() => onNavigate("gate-visa-list")}>
-            Yolcuları aç
-          </button>
+        <div className="ops-home-actions" style={{ marginTop: 4 }}>
           <button className="ops-secondary" type="button" onClick={() => onNavigate("bulk-photos")}>
             Toplu fotoğraf
           </button>
           <button className="ops-secondary" type="button" onClick={() => onNavigate("passport-scan")}>
             Pasaport → Excel
-          </button>
-          <button className="ops-secondary" type="button" onClick={() => onNavigate("import")}>
-            Toplu liste
           </button>
           <button className="ops-secondary" type="button" disabled={closingDay || !summary.passenger_count} onClick={() => void closeDay()}>
             {closingDay ? "Paketleniyor…" : "Günü kapat"}

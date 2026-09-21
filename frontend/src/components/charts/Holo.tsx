@@ -16,8 +16,8 @@ import { useId } from "react";
  * be painted with the first one's colours.
  */
 
-/** The iridescent sweep used for strokes and gradients. */
-const HOLO_STOPS = ["#00e5ff", "#4f8cff", "#b06cff", "#ff5ea8"] as const;
+/** Soft Aegean strokes — sea, sand, hull orange. No neon rainbow. */
+const HOLO_STOPS = ["#6a9bb0", "#8bb8c8", "#c4a574", "#d96b2a"] as const;
 
 /**
  * Distinct colours for slices, wider than the gradient sweep.
@@ -27,14 +27,14 @@ const HOLO_STOPS = ["#00e5ff", "#4f8cff", "#b06cff", "#ff5ea8"] as const;
  * hues cover the largest ring actually drawn (six values plus "Diğer").
  */
 const SLICE_COLORS = [
-  "#00e5ff",
-  "#4f8cff",
-  "#b06cff",
-  "#ff5ea8",
-  "#ffb547",
-  "#2ee6a8",
-  "#7c5cff",
-  "#ff8a5c",
+  "#6a9bb0",
+  "#d96b2a",
+  "#c4a574",
+  "#3fae7a",
+  "#8bb8c8",
+  "#e8913a",
+  "#5a7f92",
+  "#b87a4a",
 ] as const;
 
 /** A stable colour per slice, so a value keeps its colour as data changes. */
@@ -51,11 +51,11 @@ function Defs({ id }: { id: string }) {
         ))}
       </linearGradient>
       <linearGradient id={`${id}-fill`} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#4f8cff" stopOpacity="0.45" />
-        <stop offset="1" stopColor="#4f8cff" stopOpacity="0" />
+        <stop offset="0" stopColor="#6a9bb0" stopOpacity="0.35" />
+        <stop offset="1" stopColor="#6a9bb0" stopOpacity="0" />
       </linearGradient>
-      <filter id={`${id}-glow`} x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="2.4" result="blur" />
+      <filter id={`${id}-glow`} x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="0.6" result="blur" />
         <feMerge>
           <feMergeNode in="blur" />
           <feMergeNode in="SourceGraphic" />
