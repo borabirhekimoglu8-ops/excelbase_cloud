@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1100" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="islandFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4fd1e8" stop-opacity=".18"/>
+      <stop offset="100%" stop-color="#f47721" stop-opacity=".08"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- Anatolia west coast -->
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#4fd1e8" stroke-opacity=".55" stroke-width="1.4"
+    d="M620 80c40 30 70 90 78 160 8 70-6 140-18 210-10 58-28 110-22 168 6 55 34 98 48 150 12 44 8 92-18 120l-36-18c22-24 28-62 16-98-16-48-42-88-48-140-8-62 8-118 18-178 12-72 28-142 18-208-8-54-32-98-66-128z"/>
+  <!-- Lesbos -->
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#7ee7f5" stroke-opacity=".7" stroke-width="1.2"
+    d="M470 210c28 8 48 28 52 52 4 28-10 48-34 58-22 8-48 2-62-18-12-18-10-42 6-56 14-12 26-18 38-36z"/>
+  <!-- Chios -->
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#7ee7f5" stroke-opacity=".7" stroke-width="1.2"
+    d="M448 330c18 6 30 22 28 40-2 18-18 30-36 28-16-2-28-16-26-32 2-18 16-30 34-36z"/>
+  <!-- Samos -->
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#7ee7f5" stroke-opacity=".7" stroke-width="1.2"
+    d="M470 420c26 4 42 18 40 36-2 16-20 26-40 24-18-2-32-14-30-30 2-14 14-26 30-30z"/>
+  <!-- Ikaria -->
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#7ee7f5" stroke-opacity=".65" stroke-width="1.1"
+    d="M400 455c22 2 36 12 34 24-2 12-18 18-34 16-14-2-24-10-22-20 2-10 10-18 22-20z"/>
+  <!-- Kos -->
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#7ee7f5" stroke-opacity=".75" stroke-width="1.3"
+    d="M500 560c34 4 56 18 54 38-2 18-26 28-54 26-24-2-42-14-40-30 2-16 20-30 40-34z"/>
+  <!-- Rhodes -->
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#f47721" stroke-opacity=".85" stroke-width="1.6"
+    d="M545 680c22 28 28 62 18 96-8 28-28 48-52 52-22 4-42-10-50-34-10-28-2-62 18-88 18-24 40-40 66-26z"/>
+  <!-- Crete -->
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#4fd1e8" stroke-opacity=".8" stroke-width="1.5"
+    d="M180 820c90 8 180 4 270-8 40-6 78-4 110 12l-8 22c-36-14-76-16-118-10-88 12-176 16-264 8z"/>
+  <!-- Cyclades cluster -->
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#7ee7f5" stroke-opacity=".55" stroke-width="1"
+    d="M310 560c8 4 14 12 12 20-2 8-10 12-18 10-8-2-12-10-10-18 2-6 8-12 16-12z"/>
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#7ee7f5" stroke-opacity=".55" stroke-width="1"
+    d="M340 590c10 2 16 10 14 18-2 8-12 12-20 10-8-2-12-10-10-18 2-6 8-12 16-10z"/>
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#7ee7f5" stroke-opacity=".55" stroke-width="1"
+    d="M290 610c10 4 16 12 14 20-2 8-12 12-20 8-8-2-12-12-10-18 2-8 8-12 16-10z"/>
+  <path filter="url(#glow)" fill="url(#islandFill)" stroke="#7ee7f5" stroke-opacity=".55" stroke-width="1"
+    d="M360 640c12 2 18 12 16 20-2 8-12 14-22 12-10-2-14-12-12-20 2-8 10-14 18-12z"/>
+  <!-- Ferry route glow: Çe_me ’ Chios ’ Kos ’ Rhodes -->
+  <path class="route" stroke="#f47721" stroke-opacity=".55" stroke-width="1.6" stroke-dasharray="6 10"
+    d="M600 380 C560 400, 520 430, 500 470 S470 540, 510 580 S540 640, 560 720"/>
+  <!-- Grid -->
+  <g stroke="#4fd1e8" stroke-opacity=".08" stroke-width=".8">
+    <path d="M40 100h720M40 260h720M40 420h720M40 580h720M40 740h720M40 900h720"/>
+    <path d="M120 40v1020M280 40v1020M440 40v1020M600 40v1020"/>
+  </g>
+</svg>

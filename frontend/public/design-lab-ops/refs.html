@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Excelbase · Dış referanslar</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", system-ui, sans-serif; background: #0e151c; color: #e8eef4; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 16px 48px; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p { color: #9aabbc; line-height: 1.5; max-width: 70ch; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 20px; }
+    figure {
+      margin: 0; background: #161f28; border: 1px solid #2a3846; overflow: hidden;
+    }
+    img { width: 100%; height: 160px; object-fit: cover; display: block; background: #0a1218; }
+    figcaption { padding: 10px; font-size: 12px; color: #9aabbc; line-height: 1.4; }
+    figcaption strong { display: block; color: #e8eef4; margin-bottom: 4px; }
+    a { color: #7eb6d8; }
+    .back { display: inline-block; margin-bottom: 16px; color: #f58220; font-weight: 700; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="./i.html">← Konsept I</a>
+    <h1>Dış görsel / sistem referansları</h1>
+    <p>
+      Konsept I yalnızca İDO marka görsellerine dayanmıyor. Aşağıdakiler Wikimedia Commons’tan
+      gerçek ECDIS / köprü konsolu fotoğrafları ve açık deniz visual channel görselleridir.
+      Sistem dili: Kongsberg K-Sim, Wärtsilä NTPRO 7 RealSea, OpenBridge, Furuno/Navi-Sailor ECDIS.
+    </p>
+    <div class="grid">
+      <figure>
+        <img src="./ext-refs/ecdis-aratere.png" alt="DEV Aratere ECDIS" />
+        <figcaption><strong>ECDIS — DEV Aratere</strong>Wikimedia · gerçek köprü ECDIS ekranı</figcaption>
+      </figure>
+      <figure>
+        <img src="./ext-refs/ecdis-cap-san-diego.jpg" alt="Cap San Diego Radar ECDIS" />
+        <figcaption><strong>Radar + ECDIS konsolu</strong>Cap San Diego köprü enstrümanları</figcaption>
+      </figure>
+      <figure>
+        <img src="./ext-refs/ecdis-radar-bridge.jpg" alt="Sichem Osprey radar ECDIS" />
+        <figcaption><strong>Sichem Osprey</strong>Radar ve ECDIS yan yana</figcaption>
+      </figure>
+      <figure>
+        <img src="./ext-refs/ecdis-inland-chart.jpg" alt="Inland ECDIS chart" />
+        <figcaption><strong>Inland ECDIS chart</strong>Tresco Navigis elektronik harita</figcaption>
+      </figure>
+      <figure>
+        <img src="./ext-refs/ecdis-periskal.jpg" alt="Periskal ECDIS viewer" />
+        <figcaption><strong>Periskal ECDIS viewer</strong>Operatör harita istasyonu</figcaption>
+      </figure>
+      <figure>
+        <img src="./ext-refs/nav-merchant-bridge.jpg" alt="Merchant ship navigation" />
+        <figcaption><strong>Merchant bridge nav</strong>Ticari gemi navigasyon sistemi</figcaption>
+      </figure>
+      <figure>
+        <img src="./ext-refs/ferry-open-water.jpg" alt="Open water vessel" />
+        <figcaption><strong>Visual channel</strong>Unsplash · açık deniz lookout</figcaption>
+      </figure>
+      <figure>
+        <img src="./ext-refs/sea-vessel.jpg" alt="Sea vessel" />
+        <figcaption><strong>Sea vessel</strong>Unsplash · RealSea-benzeri atmosfer</figcaption>
+      </figure>
+    </div>
+    <p style="margin-top:22px">
+      Sistem linkleri:
+      <a href="https://www.kongsbergmaritime.com/products/simulation/k-sim-navigation/">K-Sim</a> ·
+      <a href="https://www.wartsila.com/marine/products/simulation-and-training/navigational-simulators/ntpro-7">NTPRO 7</a> ·
+      <a href="https://www.openbridge.no/">OpenBridge</a>
+    </p>
+  </div>
+</body>
+</html>

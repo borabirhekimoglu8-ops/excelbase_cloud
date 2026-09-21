@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Excelbase · Konsept F — Terminal kurulu</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --board: #0c1218;
+      --row: #121a22;
+      --row-alt: #162029;
+      --ink: #e8eef4;
+      --mute: #8a9aab;
+      --line: #243040;
+      --navy: #3aa0e0;
+      --orange: #f58220;
+      --ok: #47c48a;
+      --warn: #e6a23c;
+      --font: "IBM Plex Sans", system-ui, sans-serif;
+      --disp: "Barlow Condensed", "Arial Narrow", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #06090d; color: var(--ink); font-family: var(--font); }
+    .frame {
+      width: min(430px, 100%);
+      min-height: 100dvh;
+      margin: 0 auto;
+      background: var(--board);
+      display: flex;
+      flex-direction: column;
+    }
+    .mast {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 12px; padding: 16px 14px 12px;
+      border-bottom: 2px solid #1e2a38;
+    }
+    .mast h1 {
+      margin: 0; font-family: var(--disp); font-weight: 700;
+      font-size: 34px; letter-spacing: .02em; line-height: 1; text-transform: uppercase;
+    }
+    .mast .sub { margin-top: 4px; color: var(--mute); font-size: 12px; font-weight: 600; }
+    .clock {
+      text-align: right; font-family: var(--disp); font-weight: 700;
+      font-size: 36px; letter-spacing: .04em; line-height: 1; color: #fff;
+    }
+    .clock small { display: block; font-family: var(--font); font-size: 11px; font-weight: 600; color: var(--mute); letter-spacing: .08em; text-transform: uppercase; margin-top: 4px; }
+    .cols {
+      display: grid;
+      grid-template-columns: 56px 1fr 52px 64px;
+      gap: 8px; padding: 8px 14px;
+      color: var(--mute); font-size: 10px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase;
+      border-bottom: 1px solid var(--line);
+    }
+    .board { flex: 1; overflow: auto; }
+    .row {
+      display: grid;
+      grid-template-columns: 56px 1fr 52px 64px;
+      gap: 8px; align-items: center;
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--row);
+    }
+    .row:nth-child(even) { background: var(--row-alt); }
+    .row.active {
+      background: linear-gradient(90deg, rgba(245,130,32,.16), transparent 55%);
+      box-shadow: inset 3px 0 0 var(--orange);
+    }
+    .time {
+      font-family: var(--disp); font-size: 26px; font-weight: 700;
+      letter-spacing: .02em; line-height: 1;
+    }
+    .dest {
+      font-family: var(--disp); font-size: 22px; font-weight: 650;
+      letter-spacing: .01em; text-transform: uppercase; line-height: 1.05;
+    }
+    .meta { margin-top: 3px; color: var(--mute); font-size: 11px; font-weight: 600; }
+    .gate {
+      font-family: var(--disp); font-size: 24px; font-weight: 700;
+      text-align: center; color: #fff;
+    }
+    .status {
+      font-size: 11px; font-weight: 800; letter-spacing: .06em;
+      text-transform: uppercase; text-align: right;
+    }
+    .status.board { color: var(--orange); }
+    .status.open { color: var(--ok); }
+    .status.plan { color: var(--mute); }
+    .status.warn { color: var(--warn); }
+    .tools {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+      background: var(--line); border-top: 1px solid var(--line);
+    }
+    .tools button {
+      border: 0; min-height: 48px; background: #15202b; color: var(--ink);
+      font: inherit; font-weight: 700; font-size: 13px; cursor: pointer;
+    }
+    .tools button.primary { background: var(--orange); color: #111; }
+    .brandbar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 14px; border-top: 1px solid var(--line);
+      background: #0a1016; color: var(--mute); font-size: 11px; font-weight: 600;
+    }
+    .brandbar img { width: 22px; height: 22px; object-fit: contain; opacity: .9; }
+    .brandbar strong { color: #fff; font-weight: 700; }
+    .caption-out {
+      max-width: 430px; margin: 16px auto; padding: 0 14px;
+      font-size: 13px; line-height: 1.5; color: #9aabbc;
+    }
+    .caption-out strong { display: block; margin-bottom: 4px; color: #d7e2ec; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <header class="mast">
+      <div>
+        <h1>Yenikapı</h1>
+        <div class="sub">Kalkışlar · bugün</div>
+      </div>
+      <div class="clock">14:28<small>Excelbase · İDO</small></div>
+    </header>
+    <div class="cols"><span>Saat</span><span>Hat</span><span>Kapı</span><span>Durum</span></div>
+    <div class="board">
+      <div class="row active">
+        <div class="time">14:40</div>
+        <div>
+          <div class="dest">Bandırma</div>
+          <div class="meta">İDO Ege · araç + yolcu</div>
+        </div>
+        <div class="gate">3</div>
+        <div class="status board">Biniş</div>
+      </div>
+      <div class="row">
+        <div class="time">15:10</div>
+        <div>
+          <div class="dest">Adalar</div>
+          <div class="meta">Bostancı aktarma</div>
+        </div>
+        <div class="gate">1</div>
+        <div class="status plan">Plan</div>
+      </div>
+      <div class="row">
+        <div class="time">15:25</div>
+        <div>
+          <div class="dest">Beşiktaş</div>
+          <div class="meta">Kadıköy çıkış</div>
+        </div>
+        <div class="gate">2</div>
+        <div class="status open">Açık</div>
+      </div>
+      <div class="row">
+        <div class="time">16:00</div>
+        <div>
+          <div class="dest">Yalova</div>
+          <div class="meta">Yoğunluk uyarısı</div>
+        </div>
+        <div class="gate">4</div>
+        <div class="status warn">Bekle</div>
+      </div>
+      <div class="row">
+        <div class="time">16:35</div>
+        <div>
+          <div class="dest">Bursa</div>
+          <div class="meta">İDO Bursa</div>
+        </div>
+        <div class="gate">3</div>
+        <div class="status plan">Plan</div>
+      </div>
+    </div>
+    <div class="tools">
+      <button type="button">Kapı listesi</button>
+      <button class="primary" type="button">Seferi aç</button>
+    </div>
+    <div class="brandbar">
+      <img src="./ido-logo.png" alt="" />
+      <span><strong>Excelbase</strong> · terminal operasyon kurulu</span>
+    </div>
+  </div>
+  <p class="caption-out">
+    <strong>F · Terminal kurulu (FIDS)</strong>
+    Havalimanı / liman bilgi panosu dili. Büyük tipografi, satır odaklı durum, istisna vurgusu. Uygulama bir “oyun sahnesi” değil — canlı kalkış tahtası.
+  </p>
+</body>
+</html>

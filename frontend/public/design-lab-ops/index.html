@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Excelbase · Konsept önerileri</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #152033; --mute: #5c6b7c; --line: #d7dee6;
+      --navy: #005596; --orange: #f58220;
+      --font: "IBM Plex Sans", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100dvh; padding: 40px 20px 64px;
+      font-family: var(--font); color: var(--ink); background: #eef2f5;
+    }
+    .wrap { width: min(760px, 100%); margin: 0 auto; }
+    .kicker {
+      font-size: 11px; font-weight: 700; letter-spacing: .16em;
+      text-transform: uppercase; color: var(--navy); margin-bottom: 10px;
+    }
+    h1 { margin: 0 0 12px; font-size: clamp(28px, 5vw, 40px); letter-spacing: -.03em; line-height: 1.1; }
+    .lead { margin: 0 0 24px; max-width: 54ch; color: var(--mute); font-size: 15px; line-height: 1.55; font-weight: 500; }
+    .grid { display: grid; gap: 12px; }
+    a.card {
+      display: grid; gap: 6px; text-decoration: none; color: inherit;
+      padding: 18px; background: #fff; border: 1px solid var(--line);
+    }
+    a.card:hover { border-color: var(--navy); }
+    a.card.featured {
+      border-color: rgba(245,130,32,.55);
+      box-shadow: 0 12px 28px rgba(245,130,32,.12);
+    }
+    .tag {
+      width: fit-content; font-size: 10px; font-weight: 800;
+      letter-spacing: .1em; text-transform: uppercase; color: var(--orange);
+    }
+    .tag.old { color: var(--mute); }
+    a.card h2 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+    a.card p { margin: 0; color: var(--mute); font-size: 13px; line-height: 1.5; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="kicker">Ultra simülasyon</div>
+    <h1>Full-mission ops konsolu</h1>
+    <p class="lead">
+      H’nin üstüne: gerçek ECDIS / köprü fotoğrafları, K-Sim &amp; NTPRO dili,
+      OpenBridge uyarı hiyerarşisi — yalnızca kendi görsellerimize bağlı değil.
+    </p>
+    <div class="grid">
+      <a class="card" href="./i.html">
+        <div class="tag">Arşiv · Konsept I</div>
+        <h2>Full-mission ops sim</h2>
+        <p>Conning + ECDIS + visual channel + radar/AIS + Excelbase kapı ops. Profesyonel simülasyon konsolu.</p>
+      </a>
+      <a class="card" href="./refs.html">
+        <div class="tag">Kaynaklar</div>
+        <h2>Dış referans galerisi</h2>
+        <p>Wikimedia ECDIS köprüleri, Unsplash visual channel, K-Sim / NTPRO / OpenBridge linkleri.</p>
+      </a>
+      <a class="card featured" href="./h.html">
+        <div class="tag">Uygulandı · Konsept H</div>
+        <h2>Uzamsal köprü hacmi</h2>
+        <p>Ciddi 3D holografi — I bunun simülasyon olgunluğu.</p>
+      </a>
+    </div>
+  </div>
+</body>
+</html>
