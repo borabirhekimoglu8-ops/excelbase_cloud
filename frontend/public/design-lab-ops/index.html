@@ -3,113 +3,75 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Excelbase · Yeni yön önerileri</title>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+  <title>Excelbase · Konsept önerileri</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --ink: #152033;
-      --mute: #5c6b7c;
-      --line: #d7dee6;
-      --navy: #005596;
-      --orange: #f58220;
+      --ink: #152033; --mute: #5c6b7c; --line: #d7dee6;
+      --navy: #005596; --orange: #f58220;
       --font: "IBM Plex Sans", system-ui, sans-serif;
-      --serif: "Instrument Serif", Georgia, serif;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0; min-height: 100dvh; padding: 40px 20px 64px;
-      font-family: var(--font); color: var(--ink);
-      background: #eef2f5;
+      font-family: var(--font); color: var(--ink); background: #eef2f5;
     }
     .wrap { width: min(760px, 100%); margin: 0 auto; }
     .kicker {
       font-size: 11px; font-weight: 700; letter-spacing: .16em;
       text-transform: uppercase; color: var(--navy); margin-bottom: 10px;
     }
-    h1 {
-      margin: 0 0 12px; font-family: var(--serif); font-weight: 400;
-      font-size: clamp(34px, 6vw, 48px); letter-spacing: -.03em; line-height: 1.05;
-    }
-    .lead {
-      margin: 0 0 28px; max-width: 52ch; color: var(--mute);
-      font-size: 16px; line-height: 1.55; font-weight: 500;
-    }
-    .reject {
-      padding: 14px 16px; margin-bottom: 28px;
-      border-left: 3px solid #9aa8b6; background: #fff; color: var(--mute);
-      font-size: 14px; line-height: 1.5;
-    }
-    .reject strong { color: var(--ink); }
-    .grid { display: grid; gap: 14px; }
+    h1 { margin: 0 0 12px; font-size: clamp(28px, 5vw, 40px); letter-spacing: -.03em; line-height: 1.1; }
+    .lead { margin: 0 0 24px; max-width: 54ch; color: var(--mute); font-size: 15px; line-height: 1.55; font-weight: 500; }
+    .grid { display: grid; gap: 12px; }
     a.card {
-      display: grid; gap: 8px; text-decoration: none; color: inherit;
-      padding: 20px; background: #fff; border: 1px solid var(--line);
-      transition: border-color .15s ease, transform .15s ease;
+      display: grid; gap: 6px; text-decoration: none; color: inherit;
+      padding: 18px; background: #fff; border: 1px solid var(--line);
     }
-    a.card:hover { border-color: var(--navy); transform: translateY(-1px); }
+    a.card:hover { border-color: var(--navy); }
+    a.card.featured {
+      border-color: rgba(245,130,32,.55);
+      box-shadow: 0 12px 28px rgba(245,130,32,.12);
+    }
     .tag {
       width: fit-content; font-size: 10px; font-weight: 800;
       letter-spacing: .1em; text-transform: uppercase; color: var(--orange);
     }
-    a.card h2 {
-      margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em;
-    }
-    a.card p {
-      margin: 0; color: var(--mute); font-size: 14px; line-height: 1.5; font-weight: 500;
-    }
-    a.card ul {
-      margin: 4px 0 0; padding-left: 18px; color: var(--ink);
-      font-size: 13px; line-height: 1.55; font-weight: 500;
-    }
-    .refs {
-      margin-top: 28px; font-size: 12px; color: var(--mute); line-height: 1.55;
-    }
+    .tag.old { color: var(--mute); }
+    a.card h2 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+    a.card p { margin: 0; color: var(--mute); font-size: 13px; line-height: 1.5; font-weight: 500; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="kicker">Yeni öneri seti</div>
-    <h1>Oyun değil. Operasyon yazılımı.</h1>
+    <div class="kicker">Yepyeni öneri</div>
+    <h1>3D holografik — ciddi.</h1>
     <p class="lead">
-      Holo / cam / 3D telefon sahnesi bırakıldı. Aşağıda üç bambaşka, olgun yön —
-      hepsi İDO sahası için, hiçbiri “oyun UI” değil.
+      Oyun HUD’su değil. visionOS volume mantığında uzamsal köprü hacmi:
+      harita düzlemi, derinlik plakaları, OpenBridge enstrüman camı.
     </p>
-    <div class="reject">
-      <strong>Bırakılanlar:</strong> hologram, neon HUD, parallax telefon, floating glass yığını,
-      speküler “machine glass” gösterisi. Bunlar eğlenceli ama saha yazılımı gibi durmuyor.
-    </div>
     <div class="grid">
+      <a class="card featured" href="./h.html">
+        <div class="tag">Öneri · Konsept H</div>
+        <h2>Uzamsal köprü hacmi</h2>
+        <p>Tam 3D holografi. Sabit Z katmanları, volumetrik Ege koridoru, ciddi enstrüman plakaları. Neon / telefon oyuncağı yok.</p>
+      </a>
       <a class="card" href="./e.html">
-        <div class="tag">Konsept E</div>
-        <h2>Köprü masası</h2>
-        <p>OpenBridge Day dilinde endüstriyel HMI. Enstrüman şeridi, durum kodları, mono metrikler.</p>
-        <ul>
-          <li>Referans: OpenBridge maritime design system</li>
-          <li>Amaç: okunabilirlik, güven, vardiya tempo</li>
-        </ul>
+        <div class="tag old">Önceki · E</div>
+        <h2>Köprü masası (2D HMI)</h2>
+        <p>OpenBridge düz arayüz — karşılaştırma.</p>
       </a>
       <a class="card" href="./f.html">
-        <div class="tag">Konsept F</div>
+        <div class="tag old">Önceki · F</div>
         <h2>Terminal kurulu</h2>
-        <p>Liman / havalimanı FIDS mantığı. Büyük tipografi, satır satır kalkış, istisna vurgusu.</p>
-        <ul>
-          <li>Referans: airport FIDS + ferry departure boards</li>
-          <li>Amaç: “hangi sefer, hangi kapı, hangi durum” bir bakışta</li>
-        </ul>
+        <p>FIDS panosu — karşılaştırma.</p>
       </a>
       <a class="card" href="./g.html">
-        <div class="tag">Konsept G</div>
+        <div class="tag old">Önceki · G</div>
         <h2>Saha atölyesi</h2>
-        <p>Sessiz ürün UI. İş dosyası / kapı listesi / eksikler. Fotoğraf yalnızca üst bant.</p>
-        <ul>
-          <li>Referans: modern ops ürünleri (Linear-grade clarity) × İDO saha işi</li>
-          <li>Amaç: gerçek Excelbase iş akışına en yakın dil</li>
-        </ul>
+        <p>Sessiz ürün UI — karşılaştırma.</p>
       </a>
     </div>
-    <p class="refs">
-      Canlı prototipler · seçtiğiniz yön(ler) uygulamaya alınır. İsterseniz E+F veya F+G hibrit de kurulabilir.
-    </p>
   </div>
 </body>
 </html>
