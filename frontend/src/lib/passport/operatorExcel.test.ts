@@ -10,7 +10,25 @@ import {
 } from "./operatorExcel";
 
 describe("operatorExcel", () => {
-  it("keeps the agency header row byte-for-byte", async () => {
+  it("keeps the full agency header row byte-for-byte (template is one piece)", async () => {
+    expect([...PASSPORT_OPERATOR_HEADERS]).toEqual([
+      "Yolcu Adı",
+      "Yolcu Soyadı",
+      "Doğum Tarihi",
+      "Ülke Kodu 2",
+      "Pasaport Bitiş Tar.",
+      "Vize Başlangıç Tar.",
+      "Vize Bitiş Tar.",
+      "Pasaport No",
+      "Cinsiyet",
+      "Araç Marka",
+      "Araç Model",
+      "Araç Tipi",
+      "Plaka",
+      "Gsm",
+      "TC.No",
+      "Doküman Tipi",
+    ]);
     const blob = createPassportOperatorXlsxBlob([]);
     const workbook = XLSX.read(await blob.arrayBuffer(), { type: "array" });
     const sheet = workbook.Sheets.Yolcular;
@@ -19,6 +37,8 @@ describe("operatorExcel", () => {
       return cell?.v;
     });
     expect(headers).toEqual([...PASSPORT_OPERATOR_HEADERS]);
+    // No extra columns beyond the agency template.
+    expect(sheet[XLSX.utils.encode_cell({ r: 0, c: 16 })]).toBeUndefined();
   });
 
   it("fills MRZ-derived columns and leaves vehicle fields blank", async () => {
@@ -50,7 +70,25 @@ describe("operatorExcel", () => {
     expect(sheet.M2.v).toBe("");
     expect(sheet.N2.v).toBe("");
     expect(sheet.O2.v).toBe("");
-    expect(sheet.P2.v).toBe("Pasaport");
+    expect(sheet.P2.v).toBe("Passport");
+  });
+
+  it("writes ID CARD when the operator selects it", async () => {
+    const blob = createPassportOperatorXlsxBlob([
+      {
+        firstName: "AYSE",
+        lastName: "YILMAZ",
+        birthDate: "1990-01-02",
+        countryCode2: "TR",
+        passportExpiry: "2031-01-02",
+        passportNo: "U99887766",
+        documentType: "ID CARD",
+      },
+    ]);
+    const workbook = XLSX.read(await blob.arrayBuffer(), { type: "array" });
+    const sheet = workbook.Sheets.Yolcular;
+    expect(sheet.D2.v).toBe("TR");
+    expect(sheet.P2.v).toBe("ID CARD");
   });
 
   it("maps nationality and sex for the operator sheet", () => {

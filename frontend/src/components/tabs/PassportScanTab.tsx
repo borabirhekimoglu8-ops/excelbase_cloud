@@ -4,13 +4,12 @@ import { ChangeEvent, DragEvent, useEffect, useMemo, useState } from "react";
 
 import { IMAGE_ACCEPT } from "@/lib/imageFormat";
 import { saveBlob } from "@/lib/offline/exporter";
+import { createPassportOperatorXlsxBlob } from "@/lib/passport/operatorExcel";
 import {
-  createPassportOperatorXlsxBlob,
-  nationalityToCountryCode2,
-} from "@/lib/passport/operatorExcel";
-import {
+  DOCUMENT_TYPES,
   revokePassportScanPreviews,
   scanPassportImages,
+  type PassportDocumentType,
   type PassportScanProgress,
   type PassportScanRow,
 } from "@/lib/passport/scanPassportImages";
@@ -26,23 +25,30 @@ function stamp(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
+function rowReady(row: PassportScanRow): boolean {
+  return Boolean(
+    row.firstName.trim()
+    && row.lastName.trim()
+    && row.passportNo.trim()
+    && row.countryCode2.trim().length === 2
+    && row.birthDate.trim()
+    && row.expiryDate.trim()
+    && row.documentType,
+  );
+}
+
 export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
   const { notify } = useStore();
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<PassportScanProgress | null>(null);
   const [rows, setRows] = useState<PassportScanRow[]>([]);
-  const [visaStart, setVisaStart] = useState("");
-  const [visaEnd, setVisaEnd] = useState("");
 
   useEffect(() => () => {
     revokePassportScanPreviews(rows);
   }, [rows]);
 
-  const readyCount = useMemo(
-    () => rows.filter((row) => row.passportNo.trim() && row.lastName.trim()).length,
-    [rows],
-  );
+  const readyCount = useMemo(() => rows.filter(rowReady).length, [rows]);
 
   async function runScan(files: File[]) {
     if (!files.length) return;
@@ -97,22 +103,20 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
 
   async function downloadExcel() {
     if (!readyCount) {
-      notify("En az bir satırda soyad ve pasaport no olmalı.", "error");
+      notify("Her satırda ad, soyad, pasaport no, ülke kodu (2), doğum, bitiş ve doküman tipi olmalı.", "error");
       return;
     }
     const payload = rows
-      .filter((row) => row.passportNo.trim() && row.lastName.trim())
+      .filter(rowReady)
       .map((row) => ({
         firstName: row.firstName.trim(),
         lastName: row.lastName.trim(),
         birthDate: row.birthDate.trim(),
-        countryCode2: nationalityToCountryCode2(row.nationality),
+        countryCode2: row.countryCode2.trim().toUpperCase(),
         passportExpiry: row.expiryDate.trim(),
-        visaStart,
-        visaEnd,
         passportNo: row.passportNo.trim(),
         sex: row.sex.trim(),
-        documentType: "Pasaport",
+        documentType: row.documentType,
       }));
     try {
       await saveBlob(
@@ -132,8 +136,9 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
           <p className="ops-eyebrow">Pasaport</p>
           <h1>Pasaport JPG → Excel</h1>
           <p>
-            Toplu pasaport fotoğraflarını bırakın. MRZ’den ad, soyad, doğum, ülke, pasaport no,
-            bitiş ve cinsiyet okunur; ajans Excel şablonunuz birebir üretilir.
+            Toplu pasaport / kimlik fotoğraflarını bırakın. Kritik alanlar doldurulur;
+            Excel şablonunun tüm başlıkları (vize, araç, GSM, TC dahil) birebir korunur —
+            kullanılmayan kolonlar boş bırakılır.
           </p>
         </div>
       </section>
@@ -146,7 +151,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
         onDrop={onDrop}
       >
         <strong>{busy ? "Okunuyor…" : "Pasaport JPG veya ZIP bırakın"}</strong>
-        <span>Biyometrik sayfa · net MRZ satırı · toplu seçim veya ZIP</span>
+        <span>Biyometrik sayfa · alttaki iki MRZ satırı net görünsün · toplu seçim veya ZIP</span>
         <em>İşlem cihazda yapılır; fotoğraflar sunucuya gönderilmez</em>
         <input
           type="file"
@@ -173,97 +178,114 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
       ) : null}
 
       {rows.length > 0 && (
-        <>
-          <section className="ops-module-card xb-passport-dates">
-            <div className="ops-section-heading">
-              <div>
-                <p className="ops-eyebrow">Vize</p>
-                <h2>Vize tarihlerini tüm satırlara uygula</h2>
-              </div>
+        <section className="ops-module-card">
+          <div className="ops-section-heading">
+            <div>
+              <p className="ops-eyebrow">Sonuç</p>
+              <h2>{readyCount}/{rows.length} satır Excel’e hazır</h2>
             </div>
-            <div className="xb-passport-date-grid">
-              <label>
-                <span>Vize Başlangıç Tar.</span>
-                <input type="date" value={visaStart} onChange={(event) => setVisaStart(event.target.value)} />
-              </label>
-              <label>
-                <span>Vize Bitiş Tar.</span>
-                <input type="date" value={visaEnd} onChange={(event) => setVisaEnd(event.target.value)} />
-              </label>
-            </div>
-          </section>
-
-          <section className="ops-module-card">
-            <div className="ops-section-heading">
-              <div>
-                <p className="ops-eyebrow">Sonuç</p>
-                <h2>{readyCount}/{rows.length} satır Excel’e hazır</h2>
-              </div>
-              <div className="xb-passport-actions">
-                <button type="button" className="primary" disabled={!readyCount || busy} onClick={() => void downloadExcel()}>
-                  Excel indir
+            <div className="xb-passport-actions">
+              <button type="button" className="primary" disabled={!readyCount || busy} onClick={() => void downloadExcel()}>
+                Excel indir
+              </button>
+              {onOpenImport ? (
+                <button type="button" onClick={onOpenImport}>
+                  Liste yükleme ekranı
                 </button>
-                {onOpenImport ? (
-                  <button type="button" onClick={onOpenImport}>
-                    Liste yükleme ekranı
-                  </button>
-                ) : null}
-              </div>
+              ) : null}
             </div>
+          </div>
 
-            <ul className="xb-passport-rows">
-              {rows.map((row) => (
-                <li key={row.id} data-status={row.status}>
-                  <div className="xb-passport-thumb">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={row.previewUrl} alt={row.filename} />
-                    <span>{row.status === "ok" ? "Net" : row.status === "weak" ? "Kontrol" : "Elle"}</span>
-                  </div>
-                  <div className="xb-passport-fields">
-                    <label>
-                      <span>Yolcu Adı</span>
-                      <input
-                        value={row.firstName}
-                        onChange={(event) => patchRow(row.id, { firstName: event.target.value })}
-                        autoCapitalize="characters"
-                      />
-                    </label>
-                    <label>
-                      <span>Yolcu Soyadı</span>
-                      <input
-                        value={row.lastName}
-                        onChange={(event) => patchRow(row.id, { lastName: event.target.value })}
-                        autoCapitalize="characters"
-                      />
-                    </label>
-                    <label>
-                      <span>Pasaport No</span>
-                      <input
-                        value={row.passportNo}
-                        onChange={(event) => patchRow(row.id, {
-                          passportNo: event.target.value.toLocaleUpperCase("tr-TR"),
-                        })}
-                        autoCapitalize="characters"
-                        autoCorrect="off"
-                      />
-                    </label>
-                    <p className="xb-passport-meta">
-                      {row.filename}
-                      {row.nationality ? ` · ${nationalityToCountryCode2(row.nationality)}` : ""}
-                      {row.birthDate ? ` · doğum ${row.birthDate}` : ""}
-                      {row.expiryDate ? ` · bitiş ${row.expiryDate}` : ""}
-                      {row.sex ? ` · ${row.sex}` : ""}
-                      {row.warnings[0] ? ` · ${row.warnings[0]}` : ""}
-                    </p>
-                  </div>
-                  <button type="button" className="danger" onClick={() => removeRow(row.id)} aria-label="Satırı sil">
-                    Sil
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </>
+          <ul className="xb-passport-rows">
+            {rows.map((row) => (
+              <li key={row.id} data-status={row.status}>
+                <div className="xb-passport-thumb">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={row.previewUrl} alt={row.filename} />
+                  <span>{row.status === "ok" ? "Net" : row.status === "weak" ? "Kontrol" : "Elle"}</span>
+                </div>
+                <div className="xb-passport-fields">
+                  <label>
+                    <span>Yolcu Adı</span>
+                    <input
+                      value={row.firstName}
+                      onChange={(event) => patchRow(row.id, { firstName: event.target.value })}
+                      autoCapitalize="characters"
+                    />
+                  </label>
+                  <label>
+                    <span>Yolcu Soyadı</span>
+                    <input
+                      value={row.lastName}
+                      onChange={(event) => patchRow(row.id, { lastName: event.target.value })}
+                      autoCapitalize="characters"
+                    />
+                  </label>
+                  <label>
+                    <span>Pasaport No</span>
+                    <input
+                      value={row.passportNo}
+                      onChange={(event) => patchRow(row.id, {
+                        passportNo: event.target.value.toLocaleUpperCase("tr-TR"),
+                      })}
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                    />
+                  </label>
+                  <label>
+                    <span>Ülke Kodu 2</span>
+                    <input
+                      value={row.countryCode2}
+                      maxLength={2}
+                      onChange={(event) => patchRow(row.id, {
+                        countryCode2: event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2),
+                      })}
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    <span>Doğum Tarihi</span>
+                    <input
+                      type="date"
+                      value={row.birthDate}
+                      onChange={(event) => patchRow(row.id, { birthDate: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Pasaport Bitiş Tar.</span>
+                    <input
+                      type="date"
+                      value={row.expiryDate}
+                      onChange={(event) => patchRow(row.id, { expiryDate: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Doküman Tipi</span>
+                    <select
+                      value={row.documentType}
+                      onChange={(event) => patchRow(row.id, {
+                        documentType: event.target.value as PassportDocumentType,
+                      })}
+                    >
+                      {DOCUMENT_TYPES.map((type) => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="xb-passport-meta">
+                    {row.filename}
+                    {row.warnings[0] ? ` · ${row.warnings[0]}` : ""}
+                  </p>
+                </div>
+                <button type="button" className="danger" onClick={() => removeRow(row.id)} aria-label="Satırı sil">
+                  Sil
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );

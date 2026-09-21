@@ -95,6 +95,29 @@ function softenLine2(line: string): string {
     .replace(/B/g, "8");
 }
 
+/** Country / nationality codes are letters — undo digit lookalikes from OCR. */
+function softenAlpha3(code: string): string {
+  return code
+    .replace(/0/g, "O")
+    .replace(/1/g, "I")
+    .replace(/5/g, "S")
+    .replace(/8/g, "B")
+    .replace(/2/g, "Z");
+}
+
+/**
+ * Digit fields (dates + check digits): letter→digit lookalikes.
+ * Leaves A–Z passport serial letters alone by operating only on known digit spans.
+ */
+function softenDigitSpan(span: string): string {
+  return span
+    .replace(/O/g, "0")
+    .replace(/I/g, "1")
+    .replace(/Z/g, "2")
+    .replace(/S/g, "5")
+    .replace(/B/g, "8");
+}
+
 export function parseTd3Mrz(line1Raw: string, line2Raw: string): MrzParseResult | null {
   const line1 = normalizeMrzLine(line1Raw);
   let line2 = normalizeMrzLine(line2Raw);
@@ -108,14 +131,34 @@ export function parseTd3Mrz(line1Raw: string, line2Raw: string): MrzParseResult 
     && !fieldOk(line2.slice(0, 9), line2[9] ?? "");
   if (softBetter) line2 = soft;
 
+  // Repair digit spans in-place when check digits prefer the softened form.
+  const birthCandidate = softenDigitSpan(line2.slice(13, 19));
+  const birthCheckChar = softenDigitSpan(line2[19] ?? "");
+  if (
+    birthCandidate !== line2.slice(13, 19)
+    && fieldOk(birthCandidate, birthCheckChar)
+    && !fieldOk(line2.slice(13, 19), line2[19] ?? "")
+  ) {
+    line2 = `${line2.slice(0, 13)}${birthCandidate}${birthCheckChar}${line2.slice(20)}`;
+  }
+  const expiryCandidate = softenDigitSpan(line2.slice(21, 27));
+  const expiryCheckChar = softenDigitSpan(line2[27] ?? "");
+  if (
+    expiryCandidate !== line2.slice(21, 27)
+    && fieldOk(expiryCandidate, expiryCheckChar)
+    && !fieldOk(line2.slice(21, 27), line2[27] ?? "")
+  ) {
+    line2 = `${line2.slice(0, 21)}${expiryCandidate}${expiryCheckChar}${line2.slice(28)}`;
+  }
+
   const warnings: string[] = [];
   const documentCode = line1.slice(0, 2).replace(/</g, "");
-  const issuingState = line1.slice(2, 5).replace(/</g, "");
+  const issuingState = softenAlpha3(line1.slice(2, 5).replace(/</g, ""));
   const { surname, givenNames } = namesFromLine1(line1);
 
   const passportNumber = line2.slice(0, 9).replace(/</g, "").trim();
   const passportCheck = line2[9] ?? "";
-  const nationality = line2.slice(10, 13).replace(/</g, "");
+  const nationality = softenAlpha3(line2.slice(10, 13).replace(/</g, ""));
   const birthRaw = line2.slice(13, 19);
   const birthCheck = line2[19] ?? "";
   const sexChar = line2[20] ?? "<";
@@ -164,7 +207,7 @@ export function extractTd3FromOcrText(text: string): MrzParseResult | null {
     .toUpperCase()
     .split(/\r?\n/)
     .map((line) => line.replace(/[^A-Z0-9<\s]/g, "").replace(/\s+/g, ""))
-    .filter((line) => line.length >= 30);
+    .filter((line) => line.length >= 28);
 
   const scored: string[] = [];
   for (const line of candidates) {
@@ -173,16 +216,27 @@ export function extractTd3FromOcrText(text: string): MrzParseResult | null {
       continue;
     }
     if (line.length > 44) {
+      // Sliding window — OCR often prefixes a stray digit/letter before the MRZ.
       for (let i = 0; i <= line.length - 44; i += 1) {
         scored.push(line.slice(i, i + 44));
       }
       continue;
     }
-    if (line.length >= 40) scored.push(line.padEnd(44, "<"));
+    if (line.length >= 38) scored.push(line.padEnd(44, "<"));
+  }
+
+  // Also hunt P<… and digit-heavy runs inside the flattened blob (phones often
+  // glue both MRZ lines into one OCR line).
+  const flat = text.toUpperCase().replace(/[^A-Z0-9<]/g, "");
+  for (let i = 0; i <= flat.length - 44; i += 1) {
+    const slice = flat.slice(i, i + 44);
+    if (/^P[A-Z<]/.test(slice) || /[0-9].*[0-9]/.test(slice)) {
+      scored.push(slice);
+    }
   }
 
   const line1s = scored.filter((line) => /^P[A-Z<]/.test(line));
-  const line2s = scored.filter((line) => /[0-9]/.test(line));
+  const line2s = scored.filter((line) => /[0-9]/.test(line) && !/^P[A-Z<]/.test(line));
 
   let best: MrzParseResult | null = null;
   for (const first of line1s) {
