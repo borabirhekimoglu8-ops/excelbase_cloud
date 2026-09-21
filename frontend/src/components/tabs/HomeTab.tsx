@@ -12,6 +12,7 @@ import {
 import { downloadLocal } from "@/lib/offline/downloads";
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
+import { productBrandLine } from "@/lib/product";
 import type { OfficeDocument, WorkFile, WorkspaceTask } from "@/lib/workspace";
 
 type HomeTabProps = {
@@ -148,10 +149,10 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
 
   return (
     <div className="ops-page">
-      <section className="ops-page-heading xb-home-hero">
+      <section className="ops-page-heading xb-home-hero" aria-labelledby="home-greeting">
         <div>
-          <p className="xb-home-brand">Excelbase · İDO</p>
-          <h1>{user.name.split(" ")[0] || "Operasyon"}</h1>
+          <p className="xb-home-brand">{productBrandLine()}</p>
+          <h1 id="home-greeting">{user.name.split(" ")[0] || "Operasyon"}</h1>
           <p>{todayLabel}. Veriler bu cihazda şifreli kalır.</p>
         </div>
         <div className="xb-home-actions-strip">

@@ -1,0 +1,13 @@
+---
+description: Doğrulama ve tamamlanma ölçütleri
+globs: frontend/**/*,backend/**/*,tests/**/*
+alwaysApply: false
+---
+
+# Doğrulama
+
+- Çalıştırmadığın testi başarılı sayma.
+- UI: mümkünse Browser ile sentetik veri; araç yoksa açıkça belirt.
+- Backend: ilgili `pytest`; frontend: ilgili `vitest`.
+- Her aşamada: ne değişti, neden, nasıl doğrulandı, açık sorun.
+- Kritik akışlar (sentetik): içe aktarma, arama/filtre, dışa aktarma, mobil, Ollama kapalı durumu.

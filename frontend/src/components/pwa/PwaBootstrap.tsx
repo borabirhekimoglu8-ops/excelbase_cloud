@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PRODUCT } from "@/lib/product";
 import styles from "./PwaBootstrap.module.css";
 
 const SHELL_VERSION = "2026.09.21.2";
@@ -269,8 +270,8 @@ export function PwaBootstrap() {
   }, [storageState]);
 
   const installCopy = ios
-    ? "Safari üzerinden Ana Ekran’a ekleyin; Excelbase Operations tam ekran ve çevrimdışı açılır."
-    : "Excelbase Operations’ı bu cihaza kurarak tam ekran ve çevrimdışı kullanın.";
+    ? `Safari üzerinden Ana Ekran’a ekleyin; ${PRODUCT.fullName} tam ekran ve çevrimdışı açılır.`
+    : `${PRODUCT.fullName}’ı bu cihaza kurarak tam ekran ve çevrimdışı kullanın.`;
 
   return (
     <>
@@ -333,7 +334,7 @@ export function PwaBootstrap() {
             <header className={styles.sheetHeader}>
               <div>
                 <p>Cihaz kullanımı</p>
-                <h2 id="pwa-sheet-title">Çevrimdışı Excelbase Operations</h2>
+                <h2 id="pwa-sheet-title">Çevrimdışı {PRODUCT.fullName}</h2>
               </div>
               <button
                 ref={closeButtonRef}
@@ -363,7 +364,7 @@ export function PwaBootstrap() {
               <div className={styles.section}>
                 <p className={styles.sectionLabel}>{standalone ? "Uygulama kuruldu" : "Ana ekrana ekleyin"}</p>
                 {standalone ? (
-                  <p className={styles.explanation}>Excelbase Operations bu cihazda bağımsız uygulama olarak çalışıyor.</p>
+                  <p className={styles.explanation}>{PRODUCT.fullName} bu cihazda bağımsız uygulama olarak çalışıyor.</p>
                 ) : ios ? (
                   <>
                     <p className={styles.explanation}>İlk kurulum için sayfayı Safari’de açın ve şu adımları izleyin:</p>
@@ -398,7 +399,7 @@ export function PwaBootstrap() {
               <p className={styles.limitNote}>
                 İlk kurulum ve uygulama güncellemeleri internet ister. Sonrasında cihazdaki verilere çevrimdışı
                 erişebilirsiniz. iPhone başka bir uygulamaya geçildiğinde çalışan işlemi duraklatabilir; aktif dosya
-                tamamlanana kadar Excelbase Operations’ı ekranda tutun. Tamamlanan dosyalar cihazda kalır.
+                tamamlanana kadar {PRODUCT.fullName}’ı ekranda tutun. Tamamlanan dosyalar cihazda kalır.
               </p>
             </div>
           </section>

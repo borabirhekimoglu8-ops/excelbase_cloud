@@ -1,19 +1,20 @@
 import type { MetadataRoute } from "next";
+import { PRODUCT } from "@/lib/product";
 
 export const dynamic = "force-static";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Excelbase Operations",
-    short_name: "Excelbase Operations",
-    description: "İş dosyaları, yolcular, evraklar, raporlar ve kapı vizesi süreçleri için çevrimdışı operasyon merkezi.",
+    name: PRODUCT.fullName,
+    short_name: PRODUCT.shortName,
+    description: PRODUCT.description,
     start_url: "/",
     scope: "/",
     display: "standalone",
     orientation: "portrait-primary",
-    background_color: "#f5f7f9",
-    theme_color: "#007ea7",
+    background_color: PRODUCT.backgroundColor,
+    theme_color: PRODUCT.themeColor,
     lang: "tr",
     categories: ["business", "productivity"],
     icons: [

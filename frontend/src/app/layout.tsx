@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Figtree, Fraunces } from "next/font/google";
 import { PwaBootstrap } from "@/components/pwa/PwaBootstrap";
 import { AegeanBackdrop } from "@/components/ui/AegeanBackdrop";
+import { PRODUCT, productWindowTitle } from "@/lib/product";
 import "./globals.css";
 
 const figtree = Figtree({
@@ -17,16 +18,16 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  applicationName: "Excelbase Operations",
-  title: "Excelbase Operations · Operasyon ve evrak merkezi",
-  description: "İş dosyaları, yolcular, evraklar, raporlar ve kapı vizesi süreçleri için çevrimdışı operasyon merkezi.",
+  applicationName: PRODUCT.fullName,
+  title: productWindowTitle(),
+  description: PRODUCT.description,
   manifest: "/manifest.webmanifest",
   formatDetection: {
     telephone: false,
   },
   appleWebApp: {
     capable: true,
-    title: "Excelbase Operations",
+    title: PRODUCT.fullName,
     statusBarStyle: "black-translucent",
   },
   icons: {
@@ -38,7 +39,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0c2233",
+  themeColor: PRODUCT.themeColor,
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",

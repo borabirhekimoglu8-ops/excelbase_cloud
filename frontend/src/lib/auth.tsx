@@ -3,6 +3,7 @@
 import { FormEvent, ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { AuthStatus, AuthUser, fetchAuthStatus, login, loginWithRecovery, logout, setupAuth } from "@/lib/api";
 import { BrandMark } from "@/components/ui/BrandMark";
+import { PRODUCT } from "@/lib/product";
 
 type AuthValue = {
   user: AuthUser;
@@ -16,8 +17,8 @@ function AuthBrand() {
     <div className="brand-lockup auth-brand">
       <BrandMark size={52} tone="on-brand" />
       <div>
-        <strong>Excelbase</strong>
-        <small>Operasyon</small>
+        <strong>{PRODUCT.shortName}</strong>
+        <small>{PRODUCT.tagline}</small>
       </div>
     </div>
   );
@@ -89,7 +90,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const value = useMemo(() => (status?.user ? { user: status.user, signOut } : null), [status]);
 
   if (!status) {
-    return <div className="auth-loading">Excelbase yerel kasası hazırlanıyor…</div>;
+    return <div className="auth-loading">{PRODUCT.shortName} yerel kasası hazırlanıyor…</div>;
   }
 
   if (pendingRecovery) {

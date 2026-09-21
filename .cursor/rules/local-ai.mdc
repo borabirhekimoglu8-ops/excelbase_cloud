@@ -1,0 +1,15 @@
+---
+description: Yerel AI ve harici veri aktarımı sınırları
+globs: backend/assistant/**/*,backend/workstation/**/*,frontend/src/lib/assistant/**/*,frontend/src/components/assistant/**/*
+alwaysApply: false
+---
+
+# Yerel AI
+
+- Uygulama AI’sı ile Cursor geliştirme AI’sı ayrıdır; karıştırma.
+- Ollama yalnız yapılandırılabilir loopback taban URL; dış host reddedilir.
+- Hassas içerikte otomatik bulut fallback yok.
+- Kayıt yazan/silen araçlar açık kullanıcı onayı ister.
+- `localhost` tarayıcı cihazında sunucu makinesi değildir; LAN senaryosunu varsayma.
+- Yerel servisi internete açma.
+- Kanıtlanmamış KVKK/uyumluluk iddiası yazma.

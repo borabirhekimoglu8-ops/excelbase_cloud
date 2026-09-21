@@ -2,6 +2,7 @@
 
 import { ReactNode } from "react";
 import { BrandMark } from "@/components/ui/BrandMark";
+import { PRODUCT, productAssistantLabel, productAssistantOpenLabel } from "@/lib/product";
 
 type HeaderUtilitiesProps = {
   onAssistant?: () => void;
@@ -16,8 +17,8 @@ function HeaderUtilities({ onAssistant, onSettings }: HeaderUtilitiesProps) {
         <button
           className="ido-header-action operations-header-icon"
           type="button"
-          aria-label="Excelbase Asistanını aç"
-          title="Excelbase Asistanı"
+          aria-label={productAssistantOpenLabel()}
+          title={productAssistantLabel()}
           onClick={onAssistant}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -55,8 +56,8 @@ export function AppHeaderHome({
     <header className="ido-header">
       <span className="ido-header-mark" aria-hidden="true"><BrandMark size={40} /></span>
       <div className="ido-header-identity">
-        <p className="ido-header-brand">Excelbase</p>
-        <p className="ido-header-sub">İDO operasyon</p>
+        <p className="ido-header-brand">{PRODUCT.shortName}</p>
+        <p className="ido-header-sub">{PRODUCT.partnerLine ? `${PRODUCT.partnerLine} ${PRODUCT.tagline.toLocaleLowerCase("tr-TR")}` : PRODUCT.tagline}</p>
       </div>
       <HeaderUtilities onAssistant={onAssistant} onSettings={onSettings} />
     </header>

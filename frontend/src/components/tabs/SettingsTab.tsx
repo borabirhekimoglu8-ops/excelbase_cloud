@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
+import { PRODUCT } from "@/lib/product";
 import { UI_VERSION } from "@/lib/version";
 import type { LayoutPreference } from "@/lib/layoutPreference";
 
@@ -115,7 +116,7 @@ export function SettingsTab({
       <div className="ic-info-note">
         <span className="ic-info-mark">i</span>
         <div className="ic-info-note-copy">
-          <p className="ic-info-note-title">Excelbase · v{UI_VERSION}</p>
+          <p className="ic-info-note-title">{PRODUCT.shortName} · v{UI_VERSION}</p>
           <p className="ic-info-note-detail">
             {connected ? "Çevrimdışı kullanıma hazır" : "Yerel kasa okunamadı"} · Kapı vizesi ve çalışma alanı verileri bu cihazda şifreli saklanıyor.
           </p>
