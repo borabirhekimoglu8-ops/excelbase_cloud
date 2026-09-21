@@ -3774,6 +3774,21 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   animation: xb-rise .75s cubic-bezier(.22, 1, .36, 1) both;
 }
 
+.xb-home-stage::before {
+  content: "";
+  position: absolute;
+  inset: auto -8% -8% -8%;
+  height: 78%;
+  background: linear-gradient(180deg, transparent, rgba(4, 16, 24, 0.55) 35%, rgba(4, 16, 24, 0.82));
+  pointer-events: none;
+  z-index: 0;
+}
+
+.xb-home-stage > * {
+  position: relative;
+  z-index: 1;
+}
+
 .xb-home-stage-brand {
   margin: 0;
   font-family: var(--font-display);
