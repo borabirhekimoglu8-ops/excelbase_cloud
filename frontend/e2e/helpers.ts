@@ -6,3 +6,9 @@ export async function completeSetup(page: Page, name: string, pin = "123456"): P
   await page.getByRole("button", { name: "Kurulumu tamamla" }).click();
   await page.getByRole("button", { name: "Kodu yazdım, devam et" }).click();
 }
+
+export async function openGateVisa(page: Page): Promise<void> {
+  await page.getByRole("navigation", { name: "Ana gezinme" })
+    .getByRole("button", { name: "Kapı", exact: true })
+    .click();
+}

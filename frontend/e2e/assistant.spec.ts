@@ -83,7 +83,7 @@ test("Claude Sonnet bağımsız çalışma alanı güvenli bağlamla gerçek soh
   expect(JSON.stringify(postedBody)).not.toMatch(/passport_no|api.?key|anthropic_api|model/i);
 
   await page.getByRole("button", { name: "Geri" }).click();
-  await expect(page.getByRole("heading", { name: /Sonnet/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Excelbase", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Excelbase Asistanını aç" }).click();
   await expect(page.getByText("Operasyon hazır. <script>window.hacked=true</script>", { exact: true })).toBeVisible();
 });
