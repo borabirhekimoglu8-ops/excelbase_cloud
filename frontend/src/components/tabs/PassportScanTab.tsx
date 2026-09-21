@@ -136,8 +136,9 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
           <p className="ops-eyebrow">Pasaport</p>
           <h1>Pasaport JPG → Excel</h1>
           <p>
-            Toplu pasaport / kimlik fotoğraflarını bırakın. Okunan alanlar: ad, soyad, pasaport no,
-            ülke kodu (2), doğum, pasaport bitiş ve doküman tipi (Passport / ID CARD).
+            Toplu pasaport / kimlik fotoğraflarını bırakın. Kritik alanlar doldurulur;
+            Excel şablonunun tüm başlıkları (vize, araç, GSM, TC dahil) birebir korunur —
+            kullanılmayan kolonlar boş bırakılır.
           </p>
         </div>
       </section>

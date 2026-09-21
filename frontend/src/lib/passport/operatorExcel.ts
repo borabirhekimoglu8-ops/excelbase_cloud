@@ -1,13 +1,21 @@
 /**
  * Operator passport bulk-scan Excel — headers must stay byte-for-byte
  * identical to the agency template the operator already uses.
+ *
+ * The sheet is one piece: every column below stays, even when the UI only
+ * asks the operator to fill the critical MRZ fields. Unused columns
+ * (vize, araç, GSM, TC) are written as empty cells — never dropped.
  */
 
 import * as XLSX from "@e965/xlsx";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-/** Exact column order and labels. Do not rename, reorder, or translate. */
+/**
+ * Exact agency template — do not rename, reorder, translate, or drop a column.
+ * Critical filled columns: Yolcu Adı, Yolcu Soyadı, Doğum Tarihi, Ülke Kodu 2,
+ * Pasaport Bitiş Tar., Pasaport No, Doküman Tipi (+ Cinsiyet when known).
+ */
 export const PASSPORT_OPERATOR_HEADERS = [
   "Yolcu Adı",
   "Yolcu Soyadı",
