@@ -181,7 +181,7 @@ export function createPassportOperatorXlsxBlob(rows: readonly PassportOperatorRo
     cell(row.plate).toLocaleUpperCase("tr-TR"),
     cell(row.gsm),
     cell(row.tcNo),
-    cell(row.documentType) || "Pasaport",
+    cell(row.documentType) || "Passport",
   ]);
 
   const worksheet = XLSX.utils.aoa_to_sheet([

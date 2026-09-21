@@ -50,7 +50,25 @@ describe("operatorExcel", () => {
     expect(sheet.M2.v).toBe("");
     expect(sheet.N2.v).toBe("");
     expect(sheet.O2.v).toBe("");
-    expect(sheet.P2.v).toBe("Pasaport");
+    expect(sheet.P2.v).toBe("Passport");
+  });
+
+  it("writes ID CARD when the operator selects it", async () => {
+    const blob = createPassportOperatorXlsxBlob([
+      {
+        firstName: "AYSE",
+        lastName: "YILMAZ",
+        birthDate: "1990-01-02",
+        countryCode2: "TR",
+        passportExpiry: "2031-01-02",
+        passportNo: "U99887766",
+        documentType: "ID CARD",
+      },
+    ]);
+    const workbook = XLSX.read(await blob.arrayBuffer(), { type: "array" });
+    const sheet = workbook.Sheets.Yolcular;
+    expect(sheet.D2.v).toBe("TR");
+    expect(sheet.P2.v).toBe("ID CARD");
   });
 
   it("maps nationality and sex for the operator sheet", () => {

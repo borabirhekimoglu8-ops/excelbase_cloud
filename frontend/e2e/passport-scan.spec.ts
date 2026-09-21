@@ -36,9 +36,13 @@ test("pasaport JPG MRZ okur", async ({ page }) => {
   await expect(lastName).toHaveValue(/ERIKSSON/i, { timeout: 120_000 });
   const passportNo = page.locator(".xb-passport-rows input").nth(2);
   await expect(passportNo).toHaveValue(/L898902C3/i, { timeout: 30_000 });
+  const country = page.locator(".xb-passport-rows input").nth(3);
+  await expect(country).toHaveValue(/^[A-Z]{2}$/);
+  await expect(page.locator(".xb-passport-rows select")).toHaveValue("Passport");
+  await expect(page.getByText(/Vize/i)).toHaveCount(0);
 
   await page.screenshot({
-    path: "/opt/cursor/artifacts/screenshots/passport-ocr-result.png",
+    path: "/opt/cursor/artifacts/screenshots/passport_fields_priority.png",
     fullPage: true,
   });
 });

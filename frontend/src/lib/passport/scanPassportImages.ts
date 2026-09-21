@@ -9,9 +9,14 @@
 import { BlobReader, Uint8ArrayWriter, ZipReader } from "@zip.js/zip.js";
 
 import { IMAGE_EXTENSIONS, isImageFilename } from "@/lib/imageFormat";
+import { nationalityToCountryCode2 } from "@/lib/passport/operatorExcel";
 import { extractTd3FromOcrText, type MrzParseResult } from "@/lib/passport/mrz";
 
 export type PassportScanStatus = "ok" | "weak" | "failed";
+
+/** Values written to the agency "Doküman Tipi" column. */
+export const DOCUMENT_TYPES = ["Passport", "ID CARD"] as const;
+export type PassportDocumentType = (typeof DOCUMENT_TYPES)[number];
 
 export type PassportScanRow = {
   id: string;
@@ -20,15 +25,25 @@ export type PassportScanRow = {
   firstName: string;
   lastName: string;
   passportNo: string;
+  /** ISO 3166-1 alpha-2 (Ülke Kodu 2). */
+  countryCode2: string;
   nationality: string;
   birthDate: string;
   sex: string;
   expiryDate: string;
+  documentType: PassportDocumentType;
   status: PassportScanStatus;
   warnings: string[];
   mrzLine1: string;
   mrzLine2: string;
 };
+
+/** MRZ document code → agency document type label. */
+export function documentTypeFromMrzCode(code: string): PassportDocumentType {
+  const raw = code.trim().toUpperCase();
+  if (raw.startsWith("I")) return "ID CARD";
+  return "Passport";
+}
 
 export type PassportScanProgress = {
   done: number;
@@ -261,10 +276,12 @@ function rowFromMrz(
       firstName: "",
       lastName: "",
       passportNo: "",
+      countryCode2: "",
       nationality: "",
       birthDate: "",
       sex: "",
       expiryDate: "",
+      documentType: "Passport",
       status: "failed",
       warnings: [...extraWarnings, "MRZ okunamadı — alanları elle doldurun"],
       mrzLine1: "",
@@ -281,10 +298,12 @@ function rowFromMrz(
     firstName,
     lastName: mrz.surname,
     passportNo: mrz.passportNumber,
+    countryCode2: nationalityToCountryCode2(mrz.nationality),
     nationality: mrz.nationality,
     birthDate: mrz.birthDate,
     sex: mrz.sex,
     expiryDate: mrz.expiryDate,
+    documentType: documentTypeFromMrzCode(mrz.documentCode),
     status: mrz.valid ? "ok" : "weak",
     warnings: [...mrz.warnings, ...extraWarnings],
     mrzLine1: mrz.line1,

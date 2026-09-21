@@ -3250,31 +3250,6 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   font-size: var(--type-12);
   text-align: center;
 }
-.xb-passport-dates .xb-passport-date-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.xb-passport-date-grid label {
-  display: grid;
-  gap: 4px;
-}
-.xb-passport-date-grid span {
-  color: var(--ido-faint);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-.xb-passport-date-grid input {
-  min-height: 40px;
-  padding: 0 10px;
-  border: 1px solid var(--ido-border);
-  border-radius: 8px;
-  background: rgba(0,0,0,.22);
-  color: var(--ido-ink);
-  font-size: 15px;
-}
 .xb-passport-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3330,6 +3305,7 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   min-width: 0;
 }
 .xb-passport-fields label:nth-child(3) { grid-column: 1 / -1; }
+.xb-passport-fields label:nth-child(7) { grid-column: 1 / -1; }
 .xb-passport-fields span {
   color: var(--ido-faint);
   font-size: 9px;
@@ -3337,7 +3313,8 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   letter-spacing: .06em;
   text-transform: uppercase;
 }
-.xb-passport-fields input {
+.xb-passport-fields input,
+.xb-passport-fields select {
   min-height: 36px;
   width: 100%;
   padding: 0 8px;
