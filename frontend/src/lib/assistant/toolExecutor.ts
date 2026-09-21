@@ -18,7 +18,7 @@ import {
   fetchSummary,
   fetchWorkFiles,
   fetchWorkspaceTasks,
-  mergeDuplicates,
+  mergeDuplicatesForPassengerId,
   toggleWorkspaceTask,
   updatePassenger,
 } from "@/lib/api";
@@ -106,17 +106,25 @@ function limitFrom(input: Record<string, unknown>): number {
 /** Map a flag the model set onto the stored field that represents it. */
 function flagUpdates(flags: Record<string, unknown>): Partial<Passenger> {
   const updates: Partial<Passenger> = {};
-  if (typeof flags.has_passport === "boolean") {
-    // An empty passport field is what "missing" means in the vault; the model
-    // may only clear it, never invent a number.
-    if (!flags.has_passport) updates.passport_no = "";
+  if (typeof flags.has_photo === "boolean" || typeof flags.fee_paid === "boolean") {
+    throw new AssistantToolError(
+      "Fotoğraf ve ücret bayrakları asistanla değiştirilemez; uygulama ekranını kullanın.",
+    );
   }
-  if (typeof flags.has_voucher === "boolean") {
-    if (!flags.has_voucher) updates.voucher = "";
+  if (flags.has_passport === true || flags.has_voucher === true) {
+    throw new AssistantToolError(
+      "Asistan pasaport veya voucher numarası uyduramaz; yalnız eksik diye temizleyebilir.",
+    );
+  }
+  if (flags.has_passport === false) {
+    updates.passport_no = "";
+  }
+  if (flags.has_voucher === false) {
+    updates.voucher = "";
   }
   if (Object.keys(updates).length === 0) {
     throw new AssistantToolError(
-      "Bu bayrak kasada doğrudan güncellenemiyor; fotoğraf ve ücret alanları uygulama üzerinden değiştirilir.",
+      "Güncellenecek bayrak yok. has_passport veya has_voucher için false gönderin.",
     );
   }
   return updates;
@@ -266,7 +274,15 @@ async function run(
       return { ok: true, passenger_count: result.passenger_count ?? null };
     }
     case "merge_duplicates": {
-      const result = await mergeDuplicates(String(input.passport_key ?? ""));
+      // Resolve via passenger ref so the model never needs a passport string.
+      // Merging uses that row's identity key only (passport+date), not a prefix.
+      const id = passengerId(input.ref);
+      if (input.passport_key != null && String(input.passport_key).trim()) {
+        throw new AssistantToolError(
+          "merge_duplicates artık passport_key kabul etmez; yinelenen grubun bir kaydının ref değerini gönderin.",
+        );
+      }
+      const result = await mergeDuplicatesForPassengerId(id);
       return { ok: true, removed: result.removed, passenger_count: result.passenger_count };
     }
     default:

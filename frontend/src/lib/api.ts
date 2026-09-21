@@ -38,6 +38,7 @@ import {
   localLogout,
   localMatchPhotos,
   localMergeDuplicates,
+  localMergeDuplicatesForPassengerId,
   localPassengerPage,
   localPassengerDocumentFile,
   localPassengerDocuments,
@@ -367,6 +368,7 @@ export const deletePassenger = localDeletePassenger;
 export const bulkDelete = localBulkDelete;
 export const clearAll = localClearAll;
 export const mergeDuplicates = localMergeDuplicates;
+export const mergeDuplicatesForPassengerId = localMergeDuplicatesForPassengerId;
 export const saveOperationMeta = localSaveOperationMeta;
 export const fetchWorkFiles = localListWorkFiles;
 export const getWorkFile = localGetWorkFile;

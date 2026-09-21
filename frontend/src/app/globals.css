@@ -3120,39 +3120,44 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 }
 
 .xb-home-hero {
-  padding: 12px 2px 8px;
+  padding: 16px 2px 12px;
   position: relative;
   animation: xb-rise .7s cubic-bezier(.22,1,.36,1) both;
+  display: grid;
+  gap: 14px;
 }
 .xb-home-hero h1 {
   font-family: var(--font-display);
   font-weight: 580;
-  font-size: clamp(28px, 8vw, 34px);
+  font-size: clamp(30px, 8.5vw, 36px);
   letter-spacing: -.03em;
   line-height: 1.05;
   color: #fff;
+  margin: 0;
 }
 .xb-home-hero .xb-home-brand {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   color: var(--ido-orange);
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
-  letter-spacing: .04em;
-  text-transform: none;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 .xb-home-hero > div > p:not(.xb-home-brand) {
   margin: 8px 0 0;
-  max-width: 28ch;
+  max-width: 32ch;
   color: var(--muted);
   font-size: var(--type-13);
-  line-height: 1.45;
+  line-height: 1.5;
 }
 .xb-home-actions-strip {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .xb-home-hero { animation: none; }
 }
 .xb-home-actions-strip .ops-primary { flex: 1 1 140px; }
 .xb-home-actions-strip .ops-secondary { flex: 1 1 100px; }

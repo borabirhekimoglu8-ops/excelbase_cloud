@@ -1,4 +1,5 @@
 import type { SafeAssistantContext } from "@/lib/assistant/context";
+import { PRODUCT } from "@/lib/product";
 
 export const ASSISTANT_READ_ONLY_CAPABILITIES = [
   "dashboard_summary",
@@ -286,9 +287,9 @@ export async function fetchAssistantStatus(signal?: AbortSignal): Promise<Assist
     headers: { Accept: "application/json" },
     signal,
   });
-  if (!response.ok) throw new Error("Excelbase Assistant durumu alınamadı.");
+  if (!response.ok) throw new Error(`${PRODUCT.shortName} Assistant durumu alınamadı.`);
   const payload: unknown = await response.json();
-  if (!isAssistantStatus(payload)) throw new Error("Excelbase Assistant durum yanıtı geçersiz.");
+  if (!isAssistantStatus(payload)) throw new Error(`${PRODUCT.shortName} Assistant durum yanıtı geçersiz.`);
   return payload;
 }
 

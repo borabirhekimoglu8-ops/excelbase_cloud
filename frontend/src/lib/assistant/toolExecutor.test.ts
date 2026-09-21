@@ -34,6 +34,7 @@ const passenger = {
 const fetchPassengers = vi.fn();
 const updatePassenger = vi.fn();
 const deletePassenger = vi.fn();
+const mergeDuplicatesForPassengerId = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   fetchPassengers: (...args: unknown[]) => fetchPassengers(...args),
@@ -46,6 +47,7 @@ vi.mock("@/lib/api", () => ({
   createWorkspaceNote: vi.fn(),
   toggleWorkspaceTask: vi.fn(),
   mergeDuplicates: vi.fn(),
+  mergeDuplicatesForPassengerId: (...args: unknown[]) => mergeDuplicatesForPassengerId(...args),
 }));
 
 const scope = { range: "all" } as never;
@@ -103,6 +105,46 @@ describe("assistant tool executor", () => {
 
     expect(result.is_error).toBe(true);
     expect(deletePassenger).not.toHaveBeenCalled();
+  });
+
+  it("rejects photo/fee flags and passport invention", async () => {
+    const { executeAssistantTool } = await import("./toolExecutor");
+
+    const photo = await executeAssistantTool(
+      { ...call("update_passenger_flags", { ref: "p_42", flags: { has_photo: true } }), writes: true },
+      scope,
+    );
+    expect(photo.is_error).toBe(true);
+    expect(updatePassenger).not.toHaveBeenCalled();
+
+    const invent = await executeAssistantTool(
+      { ...call("update_passenger_flags", { ref: "p_42", flags: { has_passport: true } }), writes: true },
+      scope,
+    );
+    expect(invent.is_error).toBe(true);
+  });
+
+  it("merges duplicates by passenger ref, not passport_key", async () => {
+    const { executeAssistantTool } = await import("./toolExecutor");
+    mergeDuplicatesForPassengerId.mockResolvedValue({ removed: 1, passenger_count: 3 });
+
+    const rejected = await executeAssistantTool(
+      {
+        ...call("merge_duplicates", { passport_key: "U12" }),
+        writes: true,
+        confirm: true,
+      },
+      scope,
+    );
+    expect(rejected.is_error).toBe(true);
+    expect(mergeDuplicatesForPassengerId).not.toHaveBeenCalled();
+
+    const ok = await executeAssistantTool(
+      { ...call("merge_duplicates", { ref: "p_42" }), writes: true, confirm: true },
+      scope,
+    );
+    expect(ok.is_error).toBe(false);
+    expect(mergeDuplicatesForPassengerId).toHaveBeenCalledWith(42);
   });
 
   it("reports a failure back to the model rather than throwing", async () => {

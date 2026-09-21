@@ -1,33 +1,24 @@
-# Proje durum özeti (2026-09-21)
+# Proje durum özeti (güncellendi: 2026-09-21 aşama 2)
 
-Kod incelemesine dayalı; çalıştırılmayan kontroller başarılı sayılmadı.
+Kod incelemesi + birim testleri + kısmi Browser. Çalıştırılmayan kontroller başarılı sayılmadı.
 
-## Çalışan
+## Bu aşamada doğrulanan / düzeltilen
 
-- Çevrimdışı PWA + şifreli IndexedDB kasası
-- Gate Visa: içe aktarma, yolcular, foto/evrak, paketler, istatistik
-- İş dosyaları, görevler, ofis evrakları, satış/raporlar
-- Pasaport OCR → Excel, toplu foto eşleme
-- Asistan (Anthropic ve/veya Ollama), workstation katalog, drive audit (env kapılı)
-- Şifreli yedek / geri yükleme
+- Vault-sync token-only belgelendi; IP hız sınırı eklendi (`docs/DATA_FLOWS.md`)
+- `merge_duplicates` önek çakışması + `passport_key` PII yolu düzeltildi → `ref`
+- `update_passenger_flags` şema/executor hizalandı
+- Gate ↔ master ilişki belgesi: `docs/PASSENGER_STORES.md`
+- Marka: kullanıcıya görünen metinler `product.ts`
+- ANA tipografi/boşluk CSS iyileştirmesi; masaüstü+mobil ekran görüntüsü alındı
 
-## Eksik / yarım
+## Browser
 
-- Tek merkezli bilgi grafı (Sefer↔Yazışma↔Evrak) yok
-- Ürün adı dağınıktı → `product.ts` eklendi (bu PR)
-- Çift yolcu düzlemi (Gate vs master roster)
-- Sunucu passenger API’si PWA tarafından kullanılmıyor ama duruyor
-- Asistan `merge_duplicates` / flag tool tutarsızlıkları
-- Tasarım önekleri (`ido`/`ops`/`xb`/`ic`) birleşmemiş
+- ANA desktop/mobile: görüldü (`/opt/cursor/artifacts/screenshots/home-*.png`)
+- Ollama kapalı: probe `network` / bağlanılamadı (doğrulandı)
+- Import / kayıt düzenleme / arama / export / offline: otomasyon PIN alanında takıldı — uçtan uca Browser tamamlanmadı
 
-## Teknoloji
+## Öncelik (sonraki)
 
-Next 16 static + React 19 · FastAPI · idb vault · xlsx/zip · tesseract · Anthropic/Ollama
-
-## Öncelik sırası
-
-1. Marka tek kaynak + tasarım sözleşmesi (bu aşama)
-2. ANA → diğer ekranlarda token tutarlılığı
-3. Bilgi grafı çekirdeği (mevcut katalog/audit üzerine)
-4. Araçlı yerel ajan
-5. Sunucu/PWA çift düzlemini sadeleştirme
+1. Playwright ile kritik akış e2e (PIN setup fixture)
+2. Kalan hardcoded marka (varsa) taraması
+3. Bilgi grafı (henüz başlanmadı)

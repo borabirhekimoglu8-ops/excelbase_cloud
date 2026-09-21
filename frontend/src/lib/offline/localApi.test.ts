@@ -561,6 +561,38 @@ describe("local offline API", () => {
     expect((await listBinaryIds()).filter((id) => id.startsWith("document:"))).toHaveLength(0);
   });
 
+  it("kısa pasaport önekiyle yanlış grupları birleştirmez", async () => {
+    await localQueueImportFile(workbookFile("a.xlsx", "Ada Bir", "U1234567"), false, "add", "pa", "ja");
+    await localQueueImportFile(workbookFile("a2.xlsx", "Ada Bir Kopya", "U1234567"), false, "add", "pa2", "ja2");
+    await localQueueImportFile(workbookFile("b.xlsx", "Bora Iki", "U1299999"), false, "add", "pb", "jb");
+    await localQueueImportFile(workbookFile("b2.xlsx", "Bora Iki Kopya", "U1299999"), false, "add", "pb2", "jb2");
+
+    // Old startsWith("U12") would have merged both U1234567 and U1299999 groups.
+    await localMergeDuplicates("U12");
+    expect(await localPassengers()).toHaveLength(4);
+
+    await localMergeDuplicates("U1234567");
+    const after = await localPassengers();
+    expect(after).toHaveLength(3);
+    expect(after.filter((row) => row.passport_no === "U1234567")).toHaveLength(1);
+    expect(after.filter((row) => row.passport_no === "U1299999")).toHaveLength(2);
+  });
+
+  it("asistan ref ile yalnız o kimlik grubunu birleştirir", async () => {
+    await localQueueImportFile(workbookFile("c1.xlsx", "Cem Uc", "CEM999"), false, "add", "c1", "jc1");
+    await localQueueImportFile(workbookFile("c2.xlsx", "Cem Uc Kopya", "CEM999"), false, "add", "c2", "jc2");
+    await localQueueImportFile(workbookFile("d1.xlsx", "Deniz Dort", "DEN888"), false, "add", "d1", "jd1");
+    await localQueueImportFile(workbookFile("d2.xlsx", "Deniz Dort Kopya", "DEN888"), false, "add", "d2", "jd2");
+    const cem = (await localPassengers()).find((row) => row.passport_no === "CEM999");
+    expect(cem).toBeTruthy();
+
+    const { localMergeDuplicatesForPassengerId } = await import("./localApi");
+    await localMergeDuplicatesForPassengerId(cem!.id);
+    const after = await localPassengers();
+    expect(after.filter((row) => row.passport_no === "CEM999")).toHaveLength(1);
+    expect(after.filter((row) => row.passport_no === "DEN888")).toHaveLength(2);
+  });
+
   it("kısa pasaport parçalarıyla fotoğrafı yanlış yolcuya otomatik bağlamaz", async () => {
     await localQueueImportFile(workbookFile("kisa.xlsx", "Kısa Numara", "1"), false, "skip", "s", "sj");
     const photo = Object.assign(new Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: "image/jpeg" }), {
