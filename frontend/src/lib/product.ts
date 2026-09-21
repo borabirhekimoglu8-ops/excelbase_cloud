@@ -14,16 +14,16 @@ export const PRODUCT = {
   fullName: "Excelbase Operations",
   /** Ortak çalışma bağlamı satırı (İDO vb.). Boş bırakılabilir. */
   partnerLine: "İDO",
-  /** Kısa alt başlık. */
-  tagline: "Operasyon",
+  /** Kısa alt başlık (üst çubuk / kilit). */
+  tagline: "Uzamsal köprü",
   /** Uzun açıklama (manifest / meta). */
   description:
     "İş dosyaları, yolcular, evraklar, raporlar ve kapı vizesi süreçleri için çevrimdışı operasyon merkezi.",
   /** Belge / sekme başlığı soneki. */
   documentTitle: "Operasyon ve evrak merkezi",
-  /** PWA tema — koyu kabuk ile uyumlu. */
-  themeColor: "#0c2233",
-  backgroundColor: "#07141f",
+  /** PWA tema — uzamsal köprü kabuğu ile uyumlu. */
+  themeColor: "#0b1219",
+  backgroundColor: "#0b1219",
 } as const;
 
 export type ProductIdentity = typeof PRODUCT;

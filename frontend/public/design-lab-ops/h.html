@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Excelbase · Konsept H — Uzamsal köprü hacmi</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #e7eef5;
+      --mute: rgba(231, 238, 245, 0.62);
+      --navy: #7eb6d8;
+      --ido: #f58220;
+      --ok: #6bcf9a;
+      --warn: #e0a35a;
+      --glass: rgba(210, 225, 238, 0.12);
+      --glass-edge: rgba(255, 255, 255, 0.28);
+      --font: "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+      --ease: cubic-bezier(.22, .8, .25, 1);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; min-height: 100%;
+      font-family: var(--font); color: var(--ink);
+      background: #0b1219;
+      overflow-x: hidden;
+    }
+
+    /* Serious spatial room — muted, not neon void */
+    .space {
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      padding: 28px 16px 48px;
+      perspective: 1600px;
+      perspective-origin: 50% 45%;
+      position: relative;
+      isolation: isolate;
+    }
+    .space::before {
+      content: "";
+      position: absolute; inset: 0; z-index: 0;
+      background:
+        radial-gradient(50% 40% at 50% 30%, rgba(90, 130, 160, .22), transparent 70%),
+        radial-gradient(40% 35% at 20% 80%, rgba(245, 130, 32, .06), transparent 60%),
+        linear-gradient(180deg, #121c26 0%, #0b1219 55%, #080d13 100%);
+    }
+    .space::after {
+      content: "";
+      position: absolute; inset: 0; z-index: 0; pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      opacity: .5; mix-blend-mode: soft-light;
+    }
+
+    .volume {
+      position: relative;
+      z-index: 1;
+      width: min(920px, 96vw);
+      height: min(560px, 72dvh);
+      transform-style: preserve-3d;
+      transform: rotateX(18deg) rotateY(-22deg);
+      transition: transform .5s var(--ease);
+    }
+    .volume.is-held { transition: transform .08s linear; }
+
+    /* Floor grid — instrument reference, not game arena */
+    .floor {
+      position: absolute;
+      left: 8%; right: 8%; bottom: -8%;
+      height: 55%;
+      transform: translateZ(-120px) rotateX(78deg);
+      transform-origin: center top;
+      background:
+        linear-gradient(90deg, rgba(126,182,216,.08) 1px, transparent 1px) 0 0 / 48px 48px,
+        linear-gradient(0deg, rgba(126,182,216,.08) 1px, transparent 1px) 0 0 / 48px 48px,
+        radial-gradient(60% 50% at 50% 0%, rgba(126,182,216,.12), transparent 70%);
+      border: 1px solid rgba(126,182,216,.12);
+      pointer-events: none;
+    }
+
+    .plane {
+      position: absolute;
+      transform-style: preserve-3d;
+      backface-visibility: hidden;
+    }
+
+    /* Far: photographic depth plate (subdued ferry) */
+    .photo-plate {
+      inset: 6% 18% 28% 18%;
+      transform: translateZ(-160px) rotateY(4deg);
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.1);
+      box-shadow: 0 30px 60px rgba(0,0,0,.35);
+      opacity: .55;
+    }
+    .photo-plate img {
+      width: 100%; height: 100%; object-fit: cover; object-position: center 45%;
+      display: block; filter: saturate(.7) brightness(.75) contrast(1.05);
+    }
+    .photo-plate::after {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(11,18,25,.2), rgba(11,18,25,.65));
+    }
+
+    /* Mid-far: volumetric chart */
+    .chart {
+      left: 16%; right: 16%; top: 10%; bottom: 22%;
+      transform: translateZ(-70px) rotateX(52deg) rotateZ(-6deg);
+      transform-origin: center center;
+      background:
+        linear-gradient(180deg, rgba(40, 70, 95, .35), rgba(20, 40, 55, .5)),
+        url("./aegean-map.svg") center 35% / 130% no-repeat;
+      border: 1px solid rgba(126,182,216,.28);
+      box-shadow:
+        0 0 0 1px rgba(0,0,0,.2),
+        0 40px 80px rgba(0,0,0,.4),
+        inset 0 0 40px rgba(126,182,216,.08);
+      overflow: hidden;
+    }
+    .chart::before {
+      content: ""; position: absolute; inset: 0;
+      background:
+        radial-gradient(circle at 32% 48%, rgba(245,130,32,.55) 0 3px, transparent 4px),
+        radial-gradient(circle at 78% 36%, rgba(126,182,216,.7) 0 3px, transparent 4px);
+      opacity: .95;
+    }
+    .corridor {
+      position: absolute;
+      left: 32%; top: 36%;
+      width: 48%; height: 3px;
+      background: linear-gradient(90deg, rgba(245,130,32,.9), rgba(126,182,216,.55));
+      transform: rotate(-12deg);
+      box-shadow: 0 0 12px rgba(245,130,32,.25);
+      transform-origin: left center;
+      animation: corridor-pulse 4.5s ease-in-out infinite;
+    }
+    .corridor::after {
+      content: "";
+      position: absolute; right: -2px; top: 50%;
+      width: 8px; height: 8px; margin-top: -4px;
+      border: 1px solid rgba(126,182,216,.8);
+      transform: rotate(45deg);
+    }
+    .chart-label {
+      position: absolute; left: 12px; bottom: 10px;
+      font-size: 10px; font-weight: 700; letter-spacing: .14em;
+      text-transform: uppercase; color: rgba(231,238,245,.55);
+    }
+
+    /* Instrument glass plates */
+    .plate {
+      background: linear-gradient(160deg, rgba(230,240,250,.16), rgba(160,190,215,.07));
+      border: 1px solid var(--glass-edge);
+      backdrop-filter: blur(18px) saturate(1.2);
+      -webkit-backdrop-filter: blur(18px) saturate(1.2);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.35),
+        inset 0 -1px 0 rgba(0,0,0,.15),
+        0 24px 50px rgba(0,0,0,.35);
+      padding: 14px 16px;
+    }
+    .plate h2 {
+      margin: 0 0 10px;
+      font-size: 10px; font-weight: 700; letter-spacing: .16em;
+      text-transform: uppercase; color: var(--mute);
+    }
+
+    .brand-plate {
+      left: 4%; top: 4%;
+      width: min(280px, 42%);
+      transform: translateZ(90px) rotateY(8deg);
+      padding: 12px 14px;
+    }
+    .brand-plate .row { display: flex; align-items: center; gap: 10px; }
+    .brand-plate img { width: 28px; height: 28px; object-fit: contain; }
+    .brand-plate strong {
+      display: block; font-size: 16px; font-weight: 700; letter-spacing: -.02em;
+    }
+    .brand-plate small { color: var(--mute); font-size: 11px; font-weight: 600; }
+    .sys {
+      margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.12);
+      display: flex; justify-content: space-between; gap: 8px;
+      font-family: var(--mono); font-size: 11px; font-weight: 600;
+      color: var(--ok);
+    }
+    .sys span:last-child { color: var(--mute); }
+
+    .active-plate {
+      left: 4%; bottom: 8%;
+      width: min(320px, 46%);
+      transform: translateZ(130px) rotateY(10deg) rotateX(-4deg);
+    }
+    .route {
+      font-size: 22px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 4px;
+    }
+    .route-meta { color: var(--mute); font-size: 12px; font-weight: 600; margin-bottom: 12px; }
+    .metrics {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+    }
+    .metrics div {
+      border: 1px solid rgba(255,255,255,.12);
+      padding: 8px; background: rgba(0,0,0,.18);
+    }
+    .metrics label {
+      display: block; font-size: 9px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase; color: var(--mute);
+    }
+    .metrics b {
+      display: block; margin-top: 4px;
+      font-family: var(--mono); font-size: 18px; font-weight: 600;
+    }
+    .metrics em { font-style: normal; font-size: 10px; color: var(--mute); font-weight: 600; }
+
+    .queue-plate {
+      right: 3%; top: 18%;
+      width: min(280px, 40%);
+      transform: translateZ(70px) rotateY(-12deg);
+    }
+    .q-row {
+      display: grid; grid-template-columns: 44px 1fr auto;
+      gap: 8px; align-items: center;
+      padding: 9px 0; border-top: 1px solid rgba(255,255,255,.1);
+      font-size: 13px; font-weight: 600;
+    }
+    .q-row:first-of-type { border-top: 0; padding-top: 0; }
+    .q-row .t { font-family: var(--mono); font-size: 13px; color: var(--navy); }
+    .q-row small { display: block; color: var(--mute); font-size: 11px; font-weight: 500; margin-top: 1px; }
+    .badge {
+      font-family: var(--mono); font-size: 10px; font-weight: 600;
+      padding: 3px 6px; border: 1px solid currentColor;
+    }
+    .badge.run { color: var(--ido); }
+    .badge.ok { color: var(--ok); }
+    .badge.plan { color: var(--mute); }
+
+    .alert-plate {
+      right: 6%; bottom: 10%;
+      width: min(260px, 38%);
+      transform: translateZ(150px) rotateY(-8deg) rotateX(-6deg);
+      border-color: rgba(224, 163, 90, .45);
+    }
+    .alert-plate p {
+      margin: 0; font-size: 13px; font-weight: 600; line-height: 1.4;
+    }
+    .alert-plate .code {
+      display: inline-block; margin-bottom: 8px;
+      font-family: var(--mono); font-size: 10px; font-weight: 600;
+      color: var(--warn); letter-spacing: .08em;
+    }
+
+    .actions {
+      position: absolute;
+      left: 50%; bottom: -2%;
+      transform: translateX(-50%) translateZ(180px);
+      display: flex; gap: 10px;
+    }
+    .actions button {
+      min-height: 44px; min-width: 140px; padding: 0 18px;
+      border: 1px solid rgba(255,255,255,.28);
+      background: rgba(20, 35, 50, .55);
+      color: var(--ink); font: inherit; font-weight: 700; font-size: 13px;
+      backdrop-filter: blur(12px);
+      cursor: pointer;
+      box-shadow: 0 16px 32px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.2);
+    }
+    .actions button.primary {
+      background: rgba(245, 130, 32, .92);
+      border-color: rgba(255,200,140,.5);
+      color: #1a1208;
+    }
+
+    .caption {
+      position: relative; z-index: 2;
+      width: min(720px, 94vw);
+      margin: 28px auto 0;
+      text-align: center;
+      color: rgba(210, 222, 234, .78);
+      font-size: 13px; line-height: 1.55;
+    }
+    .caption strong {
+      display: block; color: #fff; font-size: 16px; font-weight: 700;
+      margin-bottom: 6px; letter-spacing: -.02em;
+    }
+    .caption em { font-style: normal; color: #c9dff0; font-weight: 600; }
+
+    @keyframes corridor-pulse {
+      0%, 100% { opacity: .75; }
+      50% { opacity: 1; }
+    }
+
+    @media (max-width: 720px) {
+      .volume {
+        width: min(100%, 420px);
+        height: min(680px, 78dvh);
+        transform: rotateX(12deg) rotateY(-12deg) scale(.98);
+      }
+      .brand-plate { width: 72%; left: 6%; }
+      .active-plate { width: 78%; left: 6%; bottom: 14%; }
+      .queue-plate { width: 70%; right: 6%; top: 22%; }
+      .alert-plate { width: 68%; right: 8%; bottom: 4%; }
+      .photo-plate { inset: 8% 10% 40% 10%; }
+      .chart { left: 10%; right: 10%; top: 18%; bottom: 36%; }
+      .actions { bottom: -6%; flex-wrap: wrap; justify-content: center; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .corridor { animation: none; }
+      .volume { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="space">
+    <div class="volume" id="volume" aria-label="Excelbase uzamsal köprü hacmi">
+      <div class="floor" aria-hidden="true"></div>
+
+      <div class="plane photo-plate" aria-hidden="true">
+        <img src="./ido-ege-ferry.jpg" alt="" />
+      </div>
+
+      <div class="plane chart" aria-hidden="true">
+        <div class="corridor"></div>
+        <div class="chart-label">Ege · YNK→BND koridoru</div>
+      </div>
+
+      <aside class="plane plate brand-plate">
+        <div class="row">
+          <img src="./ido-logo.png" alt="" width="28" height="28" />
+          <div>
+            <strong>Excelbase</strong>
+            <small>Uzamsal köprü hacmi</small>
+          </div>
+        </div>
+        <div class="sys">
+          <span>SİSTEM NORMAL</span>
+          <span>14:28:06</span>
+        </div>
+      </aside>
+
+      <section class="plane plate active-plate">
+        <h2>Aktif sefer</h2>
+        <p class="route">Yenikapı → Bandırma</p>
+        <p class="route-meta">Kapı 3 · İDO Ege · ETD 14:40</p>
+        <div class="metrics">
+          <div><label>Kalan</label><b>12</b><em>dk</em></div>
+          <div><label>Kapı</label><b>3</b><em>biniş</em></div>
+          <div><label>Liste</label><b>184</b><em>kayıt</em></div>
+        </div>
+      </section>
+
+      <section class="plane plate queue-plate">
+        <h2>Sıradaki kalkışlar</h2>
+        <div class="q-row">
+          <span class="t">15:10</span>
+          <div>Adalar<small>Kapı 1</small></div>
+          <span class="badge plan">PLAN</span>
+        </div>
+        <div class="q-row">
+          <span class="t">15:25</span>
+          <div>Beşiktaş<small>Kapı 2</small></div>
+          <span class="badge ok">AÇIK</span>
+        </div>
+        <div class="q-row">
+          <span class="t">14:40</span>
+          <div>Bandırma<small>Kapı 3</small></div>
+          <span class="badge run">BİNİŞ</span>
+        </div>
+      </section>
+
+      <aside class="plane plate alert-plate">
+        <div class="code">UYARI · YOĞUNLUK</div>
+        <p>Kapı 3 yolcu akışı eşiği aşıldı. Rampa temposunu düşürün.</p>
+      </aside>
+
+      <div class="actions">
+        <button type="button">Kapı listesi</button>
+        <button class="primary" type="button">Seferi aç</button>
+      </div>
+    </div>
+
+    <p class="caption">
+      <strong>H · Uzamsal köprü hacmi</strong>
+      Tamamen 3D holografik — ama oyun değil.
+      <em>visionOS volume</em> mantığı: harita düzlemi, fotoğraf derinliği, enstrüman cam plakaları sabit Z katmanlarında.
+      Neon HUD / telefon oyuncağı / parallax juice yok. OpenBridge ciddiyet + uzamsal derinlik.
+    </p>
+  </div>
+
+  <script>
+    (() => {
+      const vol = document.getElementById("volume");
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!vol || reduce) return;
+
+      let mx = 0, my = 0, tx = 0, ty = 0, held = false;
+      const baseX = 18, baseY = -22;
+
+      const onMove = (e) => {
+        const r = vol.getBoundingClientRect();
+        mx = ((e.clientX - r.left) / r.width - 0.5) * 2;
+        my = ((e.clientY - r.top) / r.height - 0.5) * 2;
+        held = true;
+        vol.classList.add("is-held");
+      };
+      const onLeave = () => {
+        mx = 0; my = 0; held = false;
+        vol.classList.remove("is-held");
+      };
+      vol.addEventListener("pointermove", onMove);
+      vol.addEventListener("pointerleave", onLeave);
+
+      const tick = () => {
+        tx += (mx - tx) * 0.06;
+        ty += (my - ty) * 0.06;
+        /* Restrained orbit — instrument inspection, not game camera */
+        const ry = baseY + tx * 8;
+        const rx = baseX + ty * -5;
+        vol.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>

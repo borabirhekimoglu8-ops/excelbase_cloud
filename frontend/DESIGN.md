@@ -6,9 +6,9 @@ Kaynak tokenlar: `frontend/src/app/globals.css` (`:root`).
 
 ## Kimlik
 
-- Atmosfer: liman / gece operasyonu — koyu lacivert zemin, deniz mavisi vurgu, kontrollü turuncu CTA.
-- Tipografi: **Fraunces** (gösterim / kahraman), **Figtree** (gövde / listeler).
-- Marka sinyali: `product.shortName` + isteğe bağlı `partnerLine`; ANA’da marka hero seviyesinde okunur.
+- Atmosfer: Concept H uzamsal köprü — koyu `#0b1219` zemin, holografik Aegean vurgu, kontrollü turuncu CTA.
+- Tipografi: **Bricolage Grotesque** (gösterim / kahraman), **Source Sans 3** (gövde / listeler).
+- Marka sinyali: yalnız `frontend/src/lib/product.ts`; ANA’da `PRODUCT.shortName` hero seviyesinde okunur.
 
 ## İlkeler
 

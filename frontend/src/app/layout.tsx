@@ -1,20 +1,20 @@
 import type { Metadata, Viewport } from "next";
-import { Figtree, Fraunces } from "next/font/google";
+import { Bricolage_Grotesque, Source_Sans_3 } from "next/font/google";
 import { PwaBootstrap } from "@/components/pwa/PwaBootstrap";
 import { AegeanBackdrop } from "@/components/ui/AegeanBackdrop";
 import { PRODUCT, productWindowTitle } from "@/lib/product";
 import "./globals.css";
 
-const figtree = Figtree({
+const sourceSans = Source_Sans_3({
   subsets: ["latin", "latin-ext"],
   display: "swap",
-  variable: "--font-figtree",
+  variable: "--font-source-sans",
 });
 
-const fraunces = Fraunces({
+const bricolage = Bricolage_Grotesque({
   subsets: ["latin", "latin-ext"],
   display: "swap",
-  variable: "--font-fraunces",
+  variable: "--font-bricolage",
 });
 
 export const metadata: Metadata = {
@@ -47,8 +47,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="tr" className={`${figtree.variable} ${fraunces.variable}`}>
-      <body className={figtree.className}>
+    <html lang="tr" className={`${sourceSans.variable} ${bricolage.variable}`}>
+      <body className={sourceSans.className}>
         <AegeanBackdrop />
         {children}
         <PwaBootstrap />

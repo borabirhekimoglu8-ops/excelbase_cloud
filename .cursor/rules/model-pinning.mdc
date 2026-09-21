@@ -1,0 +1,180 @@
+---
+description: Hardened model pins — opaque Auto banned for real work; explicit Task pins + Model log
+alwaysApply: true
+---
+
+# Model pinning (hardened)
+
+**Intent:** best model that **fits** the job — not the most expensive by default, not cheap Auto habit.
+
+**Always:** explicit Task `model` · §6 Model log every turn · user-named model wins.
+
+**Signals:** up = `en iyi|kalite|ciddi|production|max|fable` · down = `ucuz|hızlı|maliyet|draft`
+
+---
+
+## 0. Kill opaque parent (non-negotiable)
+
+Cursor Auto often **hides** the routed model. That is treated as a **defect for this repo**, not an acceptable steady state.
+
+### 0.1 Orchestrator-only parent
+
+If parent is `Auto` / `default` / unknown routed id:
+
+- Parent may only: call tools, apply this rule, launch Tasks, merge results, write the Model log.  
+- Parent must **not** be the sole brain for: architecture, multi-file impl, OCR/auth/KVKK, security/bugbot, browser QA, video review, or any F-gate work.  
+- Those jobs **must** run as `Task` with an **explicit** slug from §2/§3.
+
+### 0.2 `inherit` ban under opaque parent
+
+`inherit` is **forbidden** when parent identity is Auto/default/unknown. Pass a concrete slug instead.
+
+### 0.3 Preferred parent (user / dashboard)
+
+Set Cloud Agent / chat default to an **explicit** model (recommended: `cursor-grok-4.6-high`; hardest runs: `cursor-grok-4.6-xhigh` or `gpt-5.6-sol-high`).  
+If this run is still Auto: one short reminder in the Model log (`parent: orchestrator-only — set default to Grok-high`), then continue via pinned Tasks. Do **not** stall waiting.
+
+### 0.4 Turn validity gate (before final reply)
+
+Invalid — fix before sending:
+
+- Non-trivial work (anything above tiny Q&A / single-file typo) with **zero** explicit Task pins while parent is opaque  
+- Any F-gate / I3+ / R1+ / B1 / V1 done only on parent  
+- Model log missing or using `routed id hidden` as the **only** model line for real work  
+
+Valid: opaque orchestrator parent **plus** explicit Task rows for every real operation.
+
+---
+
+## 1. Decide (strict order)
+
+1. Opaque parent? → §0 (orchestrator + force Task pins).  
+2. **Hard gate Fable?** → §3. If yes, pin Fable once for that decision/review Task.  
+3. Else **lane** from §2.  
+4. Apply §4 bias (±1 tier max unless user names a model).  
+5. Cap check §5.  
+6. On slug reject → §7.  
+7. Log §6. Run §0.4 validity gate.
+
+Lanes first; Fable only on hard gates; never “think hard” on opaque Auto alone.
+
+---
+
+## 2. Default lanes (90% of work)
+
+| Lane | Job | Pin | Notes |
+|------|-----|-----|-------|
+| E0 | Trivial path/symbol find | `composer-2.5-fast` | needles only |
+| E1 | Codebase explore / map | `composer-2.5` | **all** explore; never frontier swarm |
+| I1 | Small patch / typo / config | `gpt-5.6-terra-medium` | Task if parent opaque |
+| I2 | Mid feature / CI triage | `gpt-5.6-sol-medium` | **must** Task if parent opaque |
+| I3 | Multi-file feature impl | `gpt-5.6-sol-high` | **must** Task |
+| I4 | Hard impl / OCR first pass | `gpt-5.6-sol-xhigh` | **must** Task; one then reassess |
+| R1 | Architecture (no trust/PII gate) | `claude-opus-5-thinking-high` | **must** Task |
+| R2 | Normal bugbot / non-sensitive review | `claude-opus-5-thinking-high` | **must** Task |
+| B1 | Browser / GUI QA | `claude-sonnet-5-thinking-high` | **must** Task; xhigh if flaky |
+| V1 | Video / screenshot review | `gemini-3.8-flash-high` | **must** Task |
+| L1 | Huge transcript/log first pass | `muse-spark-1.3-high` | **must** Task if large |
+| P1 | Parent everyday | **`cursor-grok-4.6-high`** (explicit) | Auto only as §0 orchestrator |
+| P2 | Parent hardest multi-PR | `cursor-grok-4.6-xhigh` | explicit |
+| X1 | `inherit` | parent model | **only** if parent slug is known & ≥ lane |
+
+**Banned in explore:** Opus, Fable, Sol-max, Grok-xhigh.  
+**Banned as implementers:** Gemini, Muse. **Banned as browser primary:** Fable, Composer, Muse.
+
+### Catalog (allowed Task slugs only)
+
+`inherit` · `cursor-grok-4.6-{low,medium,high,xhigh}[-fast]` · `composer-2.5[-fast]` · `gpt-5.6-sol-{none,low,medium,high,xhigh,max}[-fast]` · `gpt-5.6-terra-{none,low,medium,high,xhigh,max}[-fast]` · `claude-opus-5-thinking-{low,medium,high,xhigh,max}[-fast]` · `claude-sonnet-5-thinking-{low,medium,high,xhigh,max}` · `claude-fable-5-1-thinking-{low,medium,high,xhigh,max}` · `gemini-3.8-flash-{low,medium,high}` · `muse-spark-1.3-{minimal,low,medium,high,xhigh,max}`
+
+Effort: `high` = serious default · `xhigh` = hard multi-step · `max` = crisis only · `*-fast` only for user speed + E0/E1 swarm or B1 time-box — **never** on F-gates / auth / OCR / KVKK.
+
+---
+
+## 3. Fable 5.1 — narrow auto-ON (hard gates)
+
+Auto-pin Fable **without waiting** only if **all** of A+B+C:
+
+- **A.** Touches: auth/sessions/secrets/encryption · KVKK/GDPR/PII/passenger data · passport/OCR **after failed fix** · irreversible migration / corruption risk · `security-review` · bugbot on those paths · user said `fable`  
+- **B.** Task is decision/design/review/correctness-critical edit — not explore/browser/video/log-only  
+- **C.** §5 caps allow another Fable Task  
+
+| Id | Gate | Pin |
+|----|------|-----|
+| F1 | Security review | `claude-fable-5-1-thinking-high` |
+| F2 | Auth / secrets / encryption | `claude-fable-5-1-thinking-high` |
+| F3 | KVKK / PII / passenger data | `claude-fable-5-1-thinking-high` |
+| F4 | OCR/passport retry after failed fix | `claude-fable-5-1-thinking-xhigh` |
+| F5 | Irreversible migration / corruption | `claude-fable-5-1-thinking-xhigh` |
+| F6 | Trust-boundary + residency/tenancy/local-cloud | `claude-fable-5-1-thinking-xhigh` |
+| F7 | Bugbot on F2–F5 paths | `claude-fable-5-1-thinking-high` |
+| F8 | User said `fable` | named tier or `thinking-high` |
+| F9 | Same gate failed on Opus/Sol-xhigh | escalate **one** step once |
+
+**Not Fable:** generic architecture/UI; first-pass OCR (I4); quality words alone; explore/CI/browser/video/docs.
+
+**Pairing:** E1 Composer → one Fable/Opus synthesis → Sol impl. Browser/video = B1/V1.
+
+**Blocked:** fable→Opus-max chain→Sol-max; log it. **Cost-down:** keep F1–F5/F7; soften F6/F9.
+
+---
+
+## 4. Bias (max ±1 unless named)
+
+| Signal | Effect |
+|--------|--------|
+| Quality words | +1 tier same lane; does **not** alone open Fable |
+| Cost/speed | E0/Terra/medium OK; **keep** F1–F5 |
+| Named model | That slug; F1–F5 still win on sensitive Tasks |
+| Silence | §2 defaults + §0 if parent opaque |
+
+---
+
+## 5. Hard caps (anti-bloat)
+
+Per **user turn:** Fable ≤2 · frontier synthesizers (Fable/Opus-xhigh+/Sol-xhigh+) ≤3 · explore ≤4 Composer-only · `max` only F5/F9 or user-max · `*-fast` on F-gates = 0.
+
+One F9 escalate per problem, then stop/ask/ship.
+
+---
+
+## 6. Model log (mandatory — no opaque-only)
+
+```markdown
+### Model log
+| # | Operation | Model | Why |
+|---|-----------|-------|-----|
+| 0 | parent | `cursor-grok-4.6-high` **or** `orchestrator-only (Auto)` | P1 / §0 |
+| 1 | … | `exact-slug` | lane E1 / gate F3 / user … |
+```
+
+Rules:
+
+- Parent row: explicit slug **or** `orchestrator-only (Auto)` — **never** `routed id hidden` as the story.  
+- If parent is orchestrator-only, **≥1 Task row** required whenever work exceeded tiny Q&A.  
+- One row per Task; Shell/Edit alone → still need Task for I2+ work planned next, or do I1 via Task when opaque.  
+- `Why`: lane/gate/user ≤12 words. Fallbacks: `requested → actual`.  
+- Never omit. Inline launch OK: `Pin: composer-2.5 · E1`.
+
+---
+
+## 7. Fallbacks
+
+Same family first: Fable→Opus-max… · Sol→Terra · Grok→medium · Sonnet→medium · Composer→Terra · Gemini→Sonnet · Muse→Composer.  
+Hard last resort: Opus ↔ Sol ↔ Grok. No fast/none/low on F-gates.
+
+---
+
+## 8. Anti-patterns
+
+- Doing I2+/R/B/V/F work on opaque Auto parent alone  
+- `inherit` under Auto/default  
+- Writing `routed id hidden` and stopping  
+- Skipping Model log or Task `model`  
+- Fable from quality words alone · frontier explore swarms · Fable browser/video  
+- Gemini/Muse as backend impl · skipping F1–F5 for cost  
+
+---
+
+## 9. Mini checklist
+
+`[ ]` §0 opaque? `[ ]` F-gate? `[ ]` lane `[ ]` caps `[ ]` explicit model `[ ]` log `[ ]` §0.4 valid

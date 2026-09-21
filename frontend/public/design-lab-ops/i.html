@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Excelbase · Konsept I — Full-mission ops sim</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      /* OpenBridge-inspired Day/Dusk hybrid for sim consoles */
+      --bg: #0e151c;
+      --panel: #161f28;
+      --panel-2: #1c2732;
+      --line: #2a3846;
+      --ink: #e8eef4;
+      --mute: #8fa0b0;
+      --inst: #6ec3ff;
+      --ok: #3ecf8e;
+      --warn: #e0a35a;
+      --alarm: #e25b4a;
+      --ido: #f58220;
+      --navy: #005596;
+      --font: "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; min-height: 100%;
+      background: #070b10; color: var(--ink); font-family: var(--font);
+    }
+
+    .studio {
+      min-height: 100dvh;
+      padding: 20px 14px 40px;
+      display: grid;
+      place-items: center;
+      perspective: 1800px;
+      background:
+        radial-gradient(55% 45% at 50% 20%, rgba(50, 80, 110, .28), transparent 70%),
+        #070b10;
+    }
+
+    .console {
+      width: min(1180px, 98vw);
+      transform: rotateX(7deg) rotateY(-6deg);
+      transform-style: preserve-3d;
+      transition: transform .45s cubic-bezier(.2,.8,.2,1);
+      box-shadow:
+        0 40px 100px rgba(0,0,0,.55),
+        0 0 0 1px rgba(255,255,255,.06);
+    }
+    .console.is-held { transition: transform .08s linear; }
+
+    .bezel {
+      background: linear-gradient(180deg, #1a232c, #121920);
+      border: 1px solid #2d3a48;
+      padding: 10px;
+      transform: translateZ(20px);
+    }
+
+    /* —— Conning / overhead (Wärtsilä-style consolidated instruments) —— */
+    .conning {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      margin-bottom: 8px;
+    }
+    .c-cell {
+      background: #0f171f;
+      padding: 8px 8px 7px;
+      min-height: 54px;
+    }
+    .c-cell label {
+      display: block; font-size: 9px; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase; color: var(--mute);
+    }
+    .c-cell b {
+      display: block; margin-top: 3px;
+      font-family: var(--mono); font-size: 18px; font-weight: 600;
+      color: var(--inst); letter-spacing: -.02em; line-height: 1;
+    }
+    .c-cell em {
+      font-style: normal; font-size: 10px; color: var(--mute); font-weight: 600;
+    }
+    .c-cell.warn b { color: var(--warn); }
+    .c-cell.ok b { color: var(--ok); }
+
+    .main {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr 0.72fr;
+      gap: 8px;
+      min-height: 420px;
+      transform-style: preserve-3d;
+    }
+
+    .module {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      display: flex; flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      transform-style: preserve-3d;
+    }
+    .module-h {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; padding: 7px 10px;
+      background: var(--panel-2);
+      border-bottom: 1px solid var(--line);
+      font-size: 10px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--mute);
+    }
+    .module-h span { color: var(--ink); font-family: var(--mono); font-weight: 600; letter-spacing: 0; text-transform: none; font-size: 11px; }
+
+    /* ECDIS channel — real chart photo + ops overlay */
+    .ecdis { transform: translateZ(28px); }
+    .ecdis-view {
+      flex: 1; position: relative; min-height: 280px;
+      background: #0a1218 url("./ext-refs/ecdis-aratere.png") center / cover no-repeat;
+    }
+    .ecdis-view::after {
+      content: ""; position: absolute; inset: 0;
+      background:
+        linear-gradient(90deg, rgba(14,21,28,.55), transparent 28%, transparent 72%, rgba(14,21,28,.4)),
+        linear-gradient(180deg, rgba(14,21,28,.25), transparent 30%, rgba(14,21,28,.55));
+      pointer-events: none;
+    }
+    .ownship {
+      position: absolute; left: 42%; top: 58%; z-index: 2;
+      width: 0; height: 0;
+      border-left: 7px solid transparent;
+      border-right: 7px solid transparent;
+      border-bottom: 18px solid var(--ido);
+      filter: drop-shadow(0 0 6px rgba(245,130,32,.45));
+      transform: rotate(28deg);
+    }
+    .route-line {
+      position: absolute; z-index: 2;
+      left: 42%; top: 20%; width: 3px; height: 42%;
+      background: linear-gradient(180deg, rgba(110,195,255,.15), rgba(245,130,32,.85));
+      transform: rotate(18deg); transform-origin: bottom center;
+      box-shadow: 0 0 10px rgba(245,130,32,.25);
+    }
+    .wp {
+      position: absolute; z-index: 3;
+      width: 8px; height: 8px; border: 1px solid #fff;
+      background: rgba(110,195,255,.35);
+      transform: rotate(45deg);
+    }
+    .wp.a { left: 48%; top: 24%; }
+    .wp.b { left: 54%; top: 40%; }
+    .chart-hud {
+      position: absolute; z-index: 4; left: 8px; bottom: 8px; right: 8px;
+      display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .chip {
+      font-family: var(--mono); font-size: 10px; font-weight: 600;
+      padding: 4px 7px; background: rgba(10,18,24,.78);
+      border: 1px solid rgba(110,195,255,.25); color: var(--ink);
+      backdrop-filter: blur(8px);
+    }
+    .chip b { color: var(--inst); }
+
+    /* Visual channel — RealSea-inspired external view */
+    .visual { transform: translateZ(16px); }
+    .visual-view {
+      flex: 1; min-height: 280px; position: relative;
+      background: #102030 url("./ext-refs/ferry-open-water.jpg") center 40% / cover no-repeat;
+    }
+    .visual-view::before {
+      content: ""; position: absolute; inset: 0;
+      background:
+        linear-gradient(180deg, rgba(14,21,28,.35), transparent 35%, rgba(14,21,28,.5)),
+        radial-gradient(60% 50% at 50% 40%, transparent, rgba(0,0,0,.35));
+    }
+    .hud-cross {
+      position: absolute; inset: 0; z-index: 2; pointer-events: none;
+      background:
+        linear-gradient(90deg, transparent 49.6%, rgba(255,255,255,.18) 49.6% 50.4%, transparent 50.4%),
+        linear-gradient(0deg, transparent 49.6%, rgba(255,255,255,.18) 49.6% 50.4%, transparent 50.4%);
+      opacity: .35;
+    }
+    .visual-meta {
+      position: absolute; z-index: 3; left: 10px; top: 10px; right: 10px;
+      display: flex; justify-content: space-between; gap: 8px;
+      font-family: var(--mono); font-size: 10px; font-weight: 600;
+      color: rgba(255,255,255,.85);
+      text-shadow: 0 1px 4px rgba(0,0,0,.6);
+    }
+    .bearing {
+      position: absolute; z-index: 3; right: 12px; bottom: 12px;
+      font-family: var(--mono); font-size: 11px; font-weight: 600;
+      padding: 6px 8px; background: rgba(10,18,24,.72);
+      border: 1px solid rgba(255,255,255,.18);
+    }
+
+    /* Right stack: radar + AIS + Excelbase gate */
+    .stack {
+      display: grid; grid-template-rows: 1fr 0.85fr 1.15fr; gap: 8px;
+      transform: translateZ(40px);
+    }
+    .radar-view {
+      flex: 1; position: relative; min-height: 120px;
+      background:
+        radial-gradient(circle at center, rgba(62,207,142,.08), transparent 55%),
+        #0a1218;
+      display: grid; place-items: center;
+    }
+    .ppi {
+      width: min(150px, 70%); aspect-ratio: 1;
+      border-radius: 50%;
+      border: 1px solid rgba(62,207,142,.35);
+      background:
+        repeating-radial-gradient(circle, transparent 0 18px, rgba(62,207,142,.08) 18px 19px),
+        conic-gradient(from 0deg, transparent 0 8%, rgba(62,207,142,.18) 8% 10%, transparent 10% 100%);
+      position: relative;
+      animation: sweep 4.8s linear infinite;
+      box-shadow: inset 0 0 30px rgba(62,207,142,.08);
+    }
+    .ppi .blip {
+      position: absolute; width: 5px; height: 5px; border-radius: 50%;
+      background: var(--warn); box-shadow: 0 0 6px var(--warn);
+    }
+    .ppi .blip.a { left: 62%; top: 30%; }
+    .ppi .blip.b { left: 28%; top: 55%; background: var(--inst); box-shadow: 0 0 6px var(--inst); }
+    .ppi .own {
+      position: absolute; left: 50%; top: 50%; width: 6px; height: 6px;
+      margin: -3px 0 0 -3px; background: var(--ido); border-radius: 1px;
+    }
+
+    .ais { padding: 6px 0; }
+    .ais-row {
+      display: grid; grid-template-columns: 1fr auto auto;
+      gap: 8px; padding: 6px 10px; font-size: 11px; font-weight: 600;
+      border-top: 1px solid rgba(42,56,70,.8);
+    }
+    .ais-row:first-child { border-top: 0; }
+    .ais-row small { display: block; color: var(--mute); font-weight: 500; font-size: 10px; }
+    .ais-row .cpa { font-family: var(--mono); color: var(--inst); font-size: 11px; }
+    .ais-row .risk { font-family: var(--mono); font-size: 10px; color: var(--ok); }
+    .ais-row .risk.hot { color: var(--warn); }
+
+    .ops { background: linear-gradient(180deg, #1a2632, #141d26); }
+    .ops-body { padding: 10px; display: grid; gap: 8px; }
+    .ops .title {
+      font-size: 13px; font-weight: 700; letter-spacing: -.01em; margin: 0;
+    }
+    .ops .sub { margin: 0; color: var(--mute); font-size: 11px; font-weight: 600; }
+    .ops-metrics {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    }
+    .ops-metrics div {
+      border: 1px solid var(--line); background: rgba(0,0,0,.25); padding: 6px;
+    }
+    .ops-metrics label {
+      display: block; font-size: 8px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--mute);
+    }
+    .ops-metrics b {
+      font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--ink);
+    }
+    .ops-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .ops-actions button {
+      min-height: 36px; border: 1px solid var(--line);
+      background: #0f171f; color: var(--ink); font: inherit;
+      font-size: 11px; font-weight: 700; cursor: pointer;
+    }
+    .ops-actions button.primary {
+      background: var(--ido); border-color: #ffb06a; color: #1a1208;
+    }
+
+    /* Alert rail — OpenBridge alert hierarchy */
+    .alerts {
+      margin-top: 8px;
+      display: grid; grid-template-columns: 110px 1fr auto;
+      gap: 10px; align-items: center;
+      padding: 8px 10px;
+      background: rgba(224, 163, 90, .1);
+      border: 1px solid rgba(224, 163, 90, .45);
+      transform: translateZ(48px);
+    }
+    .alerts .lvl {
+      font-family: var(--mono); font-size: 11px; font-weight: 700;
+      color: var(--warn); letter-spacing: .06em;
+    }
+    .alerts p { margin: 0; font-size: 12px; font-weight: 600; }
+    .alerts .ack {
+      font-size: 10px; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--mute);
+      border: 1px solid var(--line); padding: 6px 10px; background: #0f171f;
+      cursor: pointer;
+    }
+
+    .statusbar {
+      margin-top: 8px;
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+      padding: 7px 10px; background: #0c131a; border: 1px solid var(--line);
+      font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--mute);
+      transform: translateZ(24px);
+    }
+    .statusbar .ok { color: var(--ok); }
+    .statusbar .brand { color: var(--ink); margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .statusbar img { width: 18px; height: 18px; object-fit: contain; }
+
+    .caption {
+      width: min(900px, 96vw);
+      margin: 22px auto 0;
+      color: rgba(200, 214, 226, .78);
+      font-size: 13px; line-height: 1.55; text-align: center;
+    }
+    .caption strong {
+      display: block; color: #fff; font-size: 16px; font-weight: 700;
+      margin-bottom: 6px; letter-spacing: -.02em;
+    }
+    .refs {
+      width: min(900px, 96vw);
+      margin: 14px auto 0;
+      padding: 12px 14px;
+      border: 1px solid #243140;
+      background: rgba(20, 28, 36, .75);
+      color: #9aabbc;
+      font-size: 11px; line-height: 1.55;
+    }
+    .refs b { color: #d7e2ec; }
+    .refs a { color: #7eb6d8; }
+
+    @keyframes sweep {
+      to { background:
+        repeating-radial-gradient(circle, transparent 0 18px, rgba(62,207,142,.08) 18px 19px),
+        conic-gradient(from 360deg, transparent 0 8%, rgba(62,207,142,.18) 8% 10%, transparent 10% 100%);
+      }
+    }
+
+    @media (max-width: 900px) {
+      .console { transform: none; width: 100%; }
+      .main { grid-template-columns: 1fr; }
+      .conning { grid-template-columns: repeat(4, 1fr); }
+      .stack { grid-template-rows: auto; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ppi { animation: none; }
+      .console { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="studio">
+    <div class="console" id="console" aria-label="Excelbase full-mission ops simulation console">
+      <div class="bezel">
+        <div class="conning" aria-label="Conning instruments">
+          <div class="c-cell"><label>HDG</label><b>086.2</b><em>°</em></div>
+          <div class="c-cell"><label>COG</label><b>084.7</b><em>°</em></div>
+          <div class="c-cell ok"><label>SOG</label><b>12.4</b><em>kn</em></div>
+          <div class="c-cell"><label>ROT</label><b>2.1</b><em>°/min</em></div>
+          <div class="c-cell"><label>Depth</label><b>28.6</b><em>m</em></div>
+          <div class="c-cell"><label>Wind</label><b>NNE 8</b><em>kn</em></div>
+          <div class="c-cell warn"><label>XTE</label><b>0.04</b><em>NM</em></div>
+          <div class="c-cell ok"><label>ETA</label><b>16:52</b><em>loc</em></div>
+        </div>
+
+        <div class="main">
+          <section class="module ecdis">
+            <div class="module-h">ECDIS · ENC overlay <span>TR401234 · 1:50 000</span></div>
+            <div class="ecdis-view">
+              <div class="route-line" aria-hidden="true"></div>
+              <div class="wp a" aria-hidden="true"></div>
+              <div class="wp b" aria-hidden="true"></div>
+              <div class="ownship" aria-hidden="true" title="Own ship"></div>
+              <div class="chart-hud">
+                <div class="chip">ROUTE <b>YNK → BND</b></div>
+                <div class="chip">WP <b>03 / 11</b></div>
+                <div class="chip">DST <b>48.2 NM</b></div>
+                <div class="chip">SAFETY <b>8.0 m</b></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="module visual">
+            <div class="module-h">Visual channel · bridge lookout <span>REALSEA-STYLE</span></div>
+            <div class="visual-view">
+              <div class="hud-cross" aria-hidden="true"></div>
+              <div class="visual-meta">
+                <span>CAM FWD · STAB ON</span>
+                <span>VIS 8 NM · DAY</span>
+              </div>
+              <div class="bearing">BRG 084° · RNG 1.2 NM</div>
+            </div>
+          </section>
+
+          <div class="stack">
+            <section class="module">
+              <div class="module-h">Radar / ARPA <span>3 NM · HEAD UP</span></div>
+              <div class="radar-view">
+                <div class="ppi" aria-hidden="true">
+                  <div class="own"></div>
+                  <div class="blip a"></div>
+                  <div class="blip b"></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="module">
+              <div class="module-h">AIS targets <span>CPA / TCPA</span></div>
+              <div class="ais">
+                <div class="ais-row">
+                  <div>T1 · Cargo<small>MMSI 2710…</small></div>
+                  <span class="cpa">0.82</span>
+                  <span class="risk">SAFE</span>
+                </div>
+                <div class="ais-row">
+                  <div>T2 · Ferry<small>same lane</small></div>
+                  <span class="cpa">0.31</span>
+                  <span class="risk hot">WATCH</span>
+                </div>
+                <div class="ais-row">
+                  <div>T3 · Pilot<small>port approach</small></div>
+                  <span class="cpa">1.40</span>
+                  <span class="risk">SAFE</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="module ops">
+              <div class="module-h">Excelbase · gate ops <span>KAPI 3</span></div>
+              <div class="ops-body">
+                <p class="title">Yenikapı → Bandırma</p>
+                <p class="sub">İDO Ege · ETD 14:40 · biniş aktif</p>
+                <div class="ops-metrics">
+                  <div><label>Kalan</label><b>12′</b></div>
+                  <div><label>Liste</label><b>184</b></div>
+                  <div><label>Fotosuz</label><b>12</b></div>
+                </div>
+                <div class="ops-actions">
+                  <button type="button">Kapı listesi</button>
+                  <button class="primary" type="button">Seferi aç</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div class="alerts">
+          <div class="lvl">WARNING</div>
+          <p>Kapı 3 yolcu yoğunluğu eşiği aşıldı — rampa temposunu düşürün. (Saha ops + sim entegrasyonu)</p>
+          <button class="ack" type="button">ACK</button>
+        </div>
+
+        <div class="statusbar">
+          <span class="ok">● SIM ONLINE</span>
+          <span>MODE · FULL MISSION OPS</span>
+          <span>PALETTE · OPENBRIDGE DUSK</span>
+          <span>SYNC · OFFLINE STORE READY</span>
+          <span class="brand">
+            <img src="./ido-logo.png" alt="" />
+            Excelbase
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <p class="caption">
+      <strong>I · Full-mission ops sim</strong>
+      Ultra-profesyonel köprü simülasyonu dili: conning bar + ECDIS + visual channel + radar/AIS + Excelbase kapı ops.
+      Oyun hologramı değil — eğitim/operasyon konsolu.
+    </p>
+    <div class="refs">
+      <b>Dış referanslar (bu prototipte kullanılan / ilham):</b><br />
+      Kongsberg <a href="https://www.kongsbergmaritime.com/products/simulation/k-sim-navigation/" target="_blank" rel="noopener">K-Sim Navigation</a> ·
+      Wärtsilä <a href="https://www.wartsila.com/marine/products/simulation-and-training/navigational-simulators/ntpro-7" target="_blank" rel="noopener">NTPRO 7 / RealSea (UE5)</a> ·
+      <a href="https://www.openbridge.no/" target="_blank" rel="noopener">OpenBridge</a> HMI (day/dusk palette, alert hierarchy) ·
+      Furuno / Navi-Sailor ECDIS conning patterns ·
+      Wikimedia ECDIS bridge photos (Aratere ECDIS, Cap San Diego Radar/ECDIS, Sichem Osprey) ·
+      Unsplash open-water vessel visual channel.
+      <br /><a href="./refs.html">Referans galerisi →</a>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const el = document.getElementById("console");
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!el || reduce) return;
+      let mx = 0, my = 0, tx = 0, ty = 0;
+      const baseX = 7, baseY = -6;
+      el.addEventListener("pointermove", (e) => {
+        const r = el.getBoundingClientRect();
+        mx = ((e.clientX - r.left) / r.width - 0.5) * 2;
+        my = ((e.clientY - r.top) / r.height - 0.5) * 2;
+        el.classList.add("is-held");
+      });
+      el.addEventListener("pointerleave", () => {
+        mx = 0; my = 0; el.classList.remove("is-held");
+      });
+      const tick = () => {
+        tx += (mx - tx) * 0.05;
+        ty += (my - ty) * 0.05;
+        el.style.transform = `rotateX(${baseX + ty * -4}deg) rotateY(${baseY + tx * 6}deg)`;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>

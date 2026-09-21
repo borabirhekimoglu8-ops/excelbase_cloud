@@ -13,11 +13,11 @@ export type NavKey = PrimaryNavKey | "records" | "import" | "settings";
 // screen instead: they are consulted, not worked in, and a seventh 55px tab
 // made every label wrap on a phone.
 const ITEMS: Array<{ key: PrimaryNavKey; label: string }> = [
-  { key: "home", label: "ANA" },
-  { key: "gate-visa", label: "KAPI" },
-  { key: "work-files", label: "İŞLER" },
-  { key: "passengers", label: "YOLCULAR" },
-  { key: "documents", label: "EVRAKLAR" },
+  { key: "home", label: "Ana" },
+  { key: "gate-visa", label: "Kapı" },
+  { key: "work-files", label: "İşler" },
+  { key: "passengers", label: "Yolcular" },
+  { key: "documents", label: "Evraklar" },
 ];
 
 /**

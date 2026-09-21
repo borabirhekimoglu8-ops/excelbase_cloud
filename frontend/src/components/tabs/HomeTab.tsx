@@ -12,7 +12,7 @@ import {
 import { downloadLocal } from "@/lib/offline/downloads";
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
-import { productBrandLine } from "@/lib/product";
+import { PRODUCT } from "@/lib/product";
 import type { OfficeDocument, WorkFile, WorkspaceTask } from "@/lib/workspace";
 
 type HomeTabProps = {
@@ -148,16 +148,23 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
   ].filter(Boolean) as Array<{ key: string; title: string; detail: string; target: string; attention: boolean }>;
 
   return (
-    <div className="ops-page">
-      <section className="ops-page-heading xb-home-hero" aria-labelledby="home-greeting">
-        <div>
-          <p className="xb-home-brand">{productBrandLine()}</p>
-          <h1 id="home-greeting">{user.name.split(" ")[0] || "Operasyon"}</h1>
-          <p>{todayLabel}. Veriler bu cihazda şifreli kalır.</p>
+    <div className="ops-page xb-spatial-home">
+      <section className="xb-home-stage" aria-label={`${PRODUCT.shortName} ana ekran`}>
+        <div className="xb-home-sys">
+          <span className="xb-home-sys-ok">SİSTEM NORMAL</span>
+          <span>{todayLabel}</span>
         </div>
+        <p className="xb-home-eyebrow">{PRODUCT.partnerLine ? `${PRODUCT.partnerLine} · Operasyon` : "Operasyon"}</p>
+        <h1 className="xb-home-stage-brand">{PRODUCT.shortName}</h1>
+        <p className="xb-home-stage-title">
+          {user.name.split(" ")[0] || "Operatör"} · {PRODUCT.tagline.toLocaleLowerCase("tr-TR")}
+        </p>
+        <p className="xb-home-stage-copy">
+          Veriler bu cihazda şifreli kalır. Kapı listesini açın veya yeni liste yükleyin.
+        </p>
         <div className="xb-home-actions-strip">
           <button className="ops-primary" type="button" onClick={() => onNavigate("gate-visa-list")}>
-            Yolcuları aç
+            Kapı listesi
           </button>
           <button className="ops-secondary" type="button" onClick={() => onNavigate("import")}>
             Liste yükle
@@ -167,11 +174,11 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
 
       {workspaceError && <div className="ops-form-error" role="alert">{workspaceError}</div>}
 
-      <section className="ops-module-card" aria-labelledby="home-queue-title">
+      <section className="ops-home-desk" aria-labelledby="home-queue-title">
         <div className="ops-section-heading">
           <div>
-            <p className="ops-eyebrow">İş kuyruğu</p>
-            <h2 id="home-queue-title">Şimdi ne yapılacak</h2>
+            <h2 id="home-queue-title">İş sırası</h2>
+            <p>Öncelikli işler ve uyarılar</p>
           </div>
         </div>
         {queue.length ? (
@@ -215,11 +222,11 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
         </div>
       </section>
 
-      <section className="ops-module-card">
+      <section className="ops-home-desk">
         <div className="ops-section-heading">
           <div>
-            <p className="ops-eyebrow">Açık işler</p>
             <h2>Aktif iş dosyaları</h2>
+            <p>Açık, bekleyen veya bloke kayıtlar</p>
           </div>
           <button className="ops-section-link" type="button" onClick={() => onNavigate("work-files")}>
             Tümünü gör
@@ -254,11 +261,11 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
         )}
       </section>
 
-      <section className="ops-module-card" aria-labelledby="home-more-title">
+      <section className="ops-home-desk" aria-labelledby="home-more-title">
         <div className="ops-section-heading">
           <div>
-            <p className="ops-eyebrow">Analiz</p>
             <h2 id="home-more-title">Satış ve raporlar</h2>
+            <p>Özet ve dışa aktarım</p>
           </div>
         </div>
         <div className="ops-home-links">
