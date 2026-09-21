@@ -3,7 +3,11 @@
 import { ChangeEvent, DragEvent, useEffect, useMemo, useState } from "react";
 
 import { IMAGE_ACCEPT } from "@/lib/imageFormat";
-import { createGateVisaPaxListXlsxBlob, saveBlob } from "@/lib/offline/exporter";
+import { saveBlob } from "@/lib/offline/exporter";
+import {
+  createPassportOperatorXlsxBlob,
+  nationalityToCountryCode2,
+} from "@/lib/passport/operatorExcel";
 import {
   revokePassportScanPreviews,
   scanPassportImages,
@@ -28,8 +32,8 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<PassportScanProgress | null>(null);
   const [rows, setRows] = useState<PassportScanRow[]>([]);
-  const [departureDate, setDepartureDate] = useState("");
-  const [arrivalDate, setArrivalDate] = useState("");
+  const [visaStart, setVisaStart] = useState("");
+  const [visaEnd, setVisaEnd] = useState("");
 
   useEffect(() => () => {
     revokePassportScanPreviews(rows);
@@ -98,18 +102,22 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
     }
     const payload = rows
       .filter((row) => row.passportNo.trim() && row.lastName.trim())
-      .map((row, index) => ({
-        no: String(index + 1),
+      .map((row) => ({
         firstName: row.firstName.trim(),
         lastName: row.lastName.trim(),
+        birthDate: row.birthDate.trim(),
+        countryCode2: nationalityToCountryCode2(row.nationality),
+        passportExpiry: row.expiryDate.trim(),
+        visaStart,
+        visaEnd,
         passportNo: row.passportNo.trim(),
-        departureDate: departureDate,
-        arrivalDate: arrivalDate,
+        sex: row.sex.trim(),
+        documentType: "Pasaport",
       }));
     try {
       await saveBlob(
-        createGateVisaPaxListXlsxBlob(payload),
-        `gate-visa-pasaport-tarama-${stamp()}.xlsx`,
+        createPassportOperatorXlsxBlob(payload),
+        `pasaport-yolcu-listesi-${stamp()}.xlsx`,
       );
       notify(`${payload.length} satırlık Excel indirildi.`, "ok");
     } catch (reason) {
@@ -124,8 +132,8 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
           <p className="ops-eyebrow">Pasaport</p>
           <h1>Pasaport JPG → Excel</h1>
           <p>
-            Toplu pasaport fotoğraflarını bırakın. MRZ satırından ad, soyad ve pasaport no okunur;
-            Gate Visa Excel’i oluşur — tek tek elle yazmaya gerek kalmaz.
+            Toplu pasaport fotoğraflarını bırakın. MRZ’den ad, soyad, doğum, ülke, pasaport no,
+            bitiş ve cinsiyet okunur; ajans Excel şablonunuz birebir üretilir.
           </p>
         </div>
       </section>
@@ -169,18 +177,18 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
           <section className="ops-module-card xb-passport-dates">
             <div className="ops-section-heading">
               <div>
-                <p className="ops-eyebrow">Sefer</p>
-                <h2>Tarihleri tüm satırlara uygula</h2>
+                <p className="ops-eyebrow">Vize</p>
+                <h2>Vize tarihlerini tüm satırlara uygula</h2>
               </div>
             </div>
             <div className="xb-passport-date-grid">
               <label>
-                <span>Gidiş</span>
-                <input type="date" value={departureDate} onChange={(event) => setDepartureDate(event.target.value)} />
+                <span>Vize Başlangıç Tar.</span>
+                <input type="date" value={visaStart} onChange={(event) => setVisaStart(event.target.value)} />
               </label>
               <label>
-                <span>Varış</span>
-                <input type="date" value={arrivalDate} onChange={(event) => setArrivalDate(event.target.value)} />
+                <span>Vize Bitiş Tar.</span>
+                <input type="date" value={visaEnd} onChange={(event) => setVisaEnd(event.target.value)} />
               </label>
             </div>
           </section>
@@ -213,7 +221,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
                   </div>
                   <div className="xb-passport-fields">
                     <label>
-                      <span>Ad</span>
+                      <span>Yolcu Adı</span>
                       <input
                         value={row.firstName}
                         onChange={(event) => patchRow(row.id, { firstName: event.target.value })}
@@ -221,7 +229,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
                       />
                     </label>
                     <label>
-                      <span>Soyad</span>
+                      <span>Yolcu Soyadı</span>
                       <input
                         value={row.lastName}
                         onChange={(event) => patchRow(row.id, { lastName: event.target.value })}
@@ -241,8 +249,10 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
                     </label>
                     <p className="xb-passport-meta">
                       {row.filename}
-                      {row.nationality ? ` · ${row.nationality}` : ""}
+                      {row.nationality ? ` · ${nationalityToCountryCode2(row.nationality)}` : ""}
                       {row.birthDate ? ` · doğum ${row.birthDate}` : ""}
+                      {row.expiryDate ? ` · bitiş ${row.expiryDate}` : ""}
+                      {row.sex ? ` · ${row.sex}` : ""}
                       {row.warnings[0] ? ` · ${row.warnings[0]}` : ""}
                     </p>
                   </div>
