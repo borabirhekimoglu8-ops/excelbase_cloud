@@ -146,7 +146,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
         onDrop={onDrop}
       >
         <strong>{busy ? "Okunuyor…" : "Pasaport JPG veya ZIP bırakın"}</strong>
-        <span>Biyometrik sayfa · net MRZ satırı · toplu seçim veya ZIP</span>
+        <span>Biyometrik sayfa · alttaki iki MRZ satırı net görünsün · toplu seçim veya ZIP</span>
         <em>İşlem cihazda yapılır; fotoğraflar sunucuya gönderilmez</em>
         <input
           type="file"

@@ -54,4 +54,17 @@ describe("extractTd3FromOcrText", () => {
     expect(parsed?.surname).toBe("ERIKSSON");
     expect(parsed?.valid).toBe(true);
   });
+
+  it("recovers phone-photo OCR with a stray prefix and O/0 nationality swap", () => {
+    const text = [
+      "PASSPORTPASAPORT",
+      "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<LLL<<",
+      "1L898902C36UT07408122F1204159ZE184226B<<<<<10",
+    ].join("\n");
+    const parsed = extractTd3FromOcrText(text);
+    expect(parsed?.passportNumber).toBe("L898902C3");
+    expect(parsed?.surname).toBe("ERIKSSON");
+    expect(parsed?.nationality).toBe("UTO");
+    expect(parsed?.valid).toBe(true);
+  });
 });
