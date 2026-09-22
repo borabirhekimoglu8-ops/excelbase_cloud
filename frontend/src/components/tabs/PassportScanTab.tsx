@@ -259,10 +259,16 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
   }
 
   async function downloadExcel() {
+    if (blockedExports.length) {
+      notify(
+        `${blockedExports[0]} Dışa aktarma durduruldu; bu satırı silin veya ayrı işleyin.`,
+        "error",
+      );
+      return;
+    }
     if (!readyCount) {
       notify(
-        blockedExports[0]
-          ?? "Alanları tamamlayın, geçerli uyruğu seçin ve “Kontrol ettim” kutusunu işaretleyin.",
+        "Alanları tamamlayın, geçerli uyruğu seçin ve “Kontrol ettim” kutusunu işaretleyin.",
         "error",
       );
       return;
@@ -285,12 +291,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
         createPassportOperatorXlsxBlob(payload),
         `pasaport-yolcu-listesi-${stamp()}.xlsx`,
       );
-      notify(
-        blockedExports.length
-          ? `${payload.length} satırlık Excel indirildi; ${blockedExports.length} temsil edilemeyen uyruk satırı atlandı.`
-          : `${payload.length} satırlık Excel indirildi.`,
-        "ok",
-      );
+      notify(`${payload.length} satırlık Excel indirildi.`, "ok");
     } catch (reason) {
       notify(reason instanceof Error ? reason.message : "Excel oluşturulamadı.", "error");
     }
