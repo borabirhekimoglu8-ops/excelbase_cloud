@@ -275,7 +275,8 @@ export async function scanPassportImages(
         rows.push(row);
       }
     } catch {
-      const failed = rowFromParsedMrz(image.filename, URL.createObjectURL(source), null, {
+      const failed = rowFromParsedMrz(image.filename, null, {
+        previewUrl: URL.createObjectURL(source),
         batchId,
         pageNo,
       });

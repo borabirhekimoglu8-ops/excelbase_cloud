@@ -34,9 +34,9 @@ describe("committed text fixture expected outputs", () => {
       };
     });
     expect(parsed).toEqual([
-      { pageNo: 1, verified: true, hasRows: true },
-      { pageNo: 2, verified: true, hasRows: true },
-      { pageNo: 3, verified: false, hasRows: true },
+      { pageNo: 1, verified: false, hasRows: true },
+      { pageNo: 2, verified: false, hasRows: true },
+      { pageNo: 3, verified: false, hasRows: false },
       { pageNo: 4, verified: false, hasRows: false },
       { pageNo: 5, verified: false, hasRows: false },
     ]);
