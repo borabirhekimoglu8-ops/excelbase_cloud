@@ -1,0 +1,16 @@
+# Yerel pasaport OCR — yalnız ofis PC / run.sh. Render ve Dockerfile bunu kurmaz.
+#
+# Resmi kaynaklar (2026-09-22 doğrulandı):
+# - Kurulum: https://www.paddleocr.ai/latest/en/version3.x/installation.html
+# - PP-OCRv6: https://www.paddleocr.ai/latest/en/version3.x/algorithm/PP-OCRv6/PP-OCRv6.html
+# - Sürüm: https://github.com/PaddlePaddle/PaddleOCR/releases/tag/v3.7.0
+# - Lisans: Apache-2.0 https://github.com/PaddlePaddle/PaddleOCR/blob/main/LICENSE
+#
+# PP-OCRv6, paddleocr 3.7.0 ile yayınlandı. Varsayılan boru hattı modeli PP-OCRv6_medium.
+# Genel OCR ek bağımlılık grubu istemez. Çıkarım motoru: PaddlePaddle CPU (GPU zorunlu değil).
+# Python: paket 3.8+; bu depo 3.11+ ister.
+# İlk çalıştırmada modeller indirilir; sonrasında internet gerekmez.
+
+# Pinned after install on Linux x86_64 / Python 3.12 (2026-09-22).
+paddleocr==3.7.0
+paddlepaddle==3.2.2

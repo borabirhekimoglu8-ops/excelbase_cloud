@@ -208,6 +208,36 @@ def workstation_settings() -> WorkstationSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class PassportOcrSettings:
+    """Local loopback PP-OCRv6 profile. Off by default; never installed on Render."""
+
+    enabled: bool
+    closed_deployment: bool
+    versions: tuple[str, ...]
+    lang: str
+    max_image_bytes: int
+    max_pixels: int
+    max_concurrency: int
+
+
+def passport_ocr_settings() -> PassportOcrSettings:
+    assistant = assistant_settings()
+    raw_versions = os.environ.get("EXCELBASE_PASSPORT_OCR_VERSIONS", "PP-OCRv6")
+    versions = tuple(item.strip() for item in raw_versions.split(",") if item.strip())
+    return PassportOcrSettings(
+        enabled=_env_bool("EXCELBASE_PASSPORT_OCR", default=False),
+        closed_deployment=(
+            not assistant.open_access or bool(assistant_allowed_networks())
+        ),
+        versions=versions or ("PP-OCRv6",),
+        lang=(os.environ.get("EXCELBASE_PASSPORT_OCR_LANG", "en").strip() or "en")[:16],
+        max_image_bytes=_bounded_env_int("EXCELBASE_PASSPORT_OCR_MAX_IMAGE_BYTES", 12 * 1024 * 1024, 256 * 1024, 32 * 1024 * 1024),
+        max_pixels=_bounded_env_int("EXCELBASE_PASSPORT_OCR_MAX_PIXELS", 25_000_000, 1_000_000, 40_000_000),
+        max_concurrency=_bounded_env_int("EXCELBASE_PASSPORT_OCR_MAX_CONCURRENCY", 1, 1, 2),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class AssistantSettings:
     enabled: bool
     provider: str
