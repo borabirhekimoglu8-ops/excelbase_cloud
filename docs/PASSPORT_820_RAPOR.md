@@ -2,17 +2,19 @@
 
 ## Sonuç
 
-PDF raster → OCR → doğrulanmış satır yolunda çalışan motor PaddleOCR 3.7.0
-üzerindeki **PP-OCRv6** oldu. Görüntü kanıtı,
+PDF raster → OCR aşamasında çalışan motor PaddleOCR 3.7.0 üzerindeki
+**PP-OCRv6** oldu. Hiçbir motor bu koşuda PDF → doğrulanmış satır → Excel
+akışını tamamlamadı. Görüntü kanıtı,
 `tests/passport_ocr_protocol/generate_and_run.py` işaretli pytest protokolünün
 ürettiği `ppocrv6-synthetic.json` dosyasıdır. Protokol temiz PNG, JPEG q=35,
 ±3° eğim, PDF-raster ve VIZ-only sentetik görüntüleri gerçek motordan geçirdi.
 Frontend `engineProtocol.test.ts`, PDF-raster sonucunu PP-OCR satır
-boru hattına verip doğrulanmış `UTO` satırını yeniden üretir.
+boru hattına verir ve bu kaydın doğrulanmadığını kilitler.
 
-Bu sentetik satır ülke olmayan UTO kodunu taşıdığı için Excel dosyasına
-bilinçli olarak alınmadı; başarılı bir motor-kaynaklı Excel indirme iddiası
-yoktur. Depodaki `.txt` dosyaları ise yalnız
+Motor çıktısındaki MRZ çifti kontrol basamaklarından geçmedi; ayrıca sentetik
+belge ülke olmayan UTO kodunu taşır. Bu nedenle Excel dosyasına alınmadı ve
+başarılı bir motor-kaynaklı Excel indirme iddiası yoktur. Depodaki `.txt`
+dosyaları ise yalnız
 `text_fixture_expected_output` etiketli ayrıştırıcı beklenen çıktılarıdır.
 
 Uygulamanın görüntü yolu artık yalnız loopback FastAPI üzerindeki PaddleOCR /
@@ -85,6 +87,7 @@ Vault-sync bu koşuda çalıştırılmadı.
 ## Doğrulama kaydı
 
 - Gerçek PP-OCRv6 sentetik görüntü protokolü: 1 geçti.
-- Protokol sonucu tüketen frontend testi: PDF-raster satırı doğrulandı.
+- Protokol sonucu tüketen frontend testi: PDF-raster çıktı alındı, MRZ satırı
+  doğrulanmadı ve Excel’e girmedi.
 - Görüntü kanıtı yalnız sentetik protokole aittir; gerçek operatör belgesi
   çalıştırılmadı.

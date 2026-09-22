@@ -2,16 +2,17 @@
 
 ## Hangi motor çalıştı, hangi görüntü testi kanıtlıyor?
 
-PDF-raster → OCR → doğrulanmış satır yolunda PaddleOCR 3.7.0 üzerindeki
-**PP-OCRv6** çalıştı. Görüntü kanıtı, işaretli pytest
+PDF-raster → OCR aşamasında PaddleOCR 3.7.0 üzerindeki **PP-OCRv6** çalıştı.
+Hiçbir motor bu koşuda PDF → doğrulanmış satır → Excel akışını tamamlamadı.
+Görüntü kanıtı, işaretli pytest
 `tests/passport_ocr_protocol/generate_and_run.py` ve onun ürettiği
 `frontend/src/lib/passport/__fixtures__/engine-runs/ppocrv6-synthetic.json`
 dosyasıdır. `engineProtocol.test.ts` gerçek PDF-raster motor çıktısını frontend
-satır boru hattında doğrular.
+satır boru hattına verir ve MRZ’nin doğrulanmadığını kaydeder.
 
-Sentetik satır UTO taşıdığı için Excel şablonunda temsil edilemez ve indirme
-bilinçli olarak kapalıdır. Dolayısıyla motor-kaynaklı başarılı Excel dosyası
-iddiası yoktur. `compressed-pages/*.txt` dosyaları yalnız ayrıştırıcı için
+Motor çıktısı checksum-safe MRZ çifti üretmedi; sentetik belge ayrıca UTO
+taşır. Excel indirme bilinçli olarak kapalıdır ve motor-kaynaklı başarılı Excel
+dosyası iddiası yoktur. `compressed-pages/*.txt` dosyaları yalnız ayrıştırıcı için
 beklenen/kaydedilmiş metin çıktılarıdır; görüntü veya OCR motoru kanıtı değildir.
 
 Görüntü yolu yalnız yerel FastAPI içindeki PaddleOCR / PP-OCRv6 servisidir.
