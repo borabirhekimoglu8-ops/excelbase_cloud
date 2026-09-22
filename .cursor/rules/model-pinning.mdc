@@ -31,8 +31,8 @@ If parent is `Auto` / `default` / unknown routed id:
 
 ### 0.3 Preferred parent (user / dashboard)
 
-Set Cloud Agent / chat default to an **explicit** model (recommended: `cursor-grok-4.6-high`; hardest runs: `cursor-grok-4.6-xhigh` or `gpt-5.6-sol-high`).  
-If this run is still Auto: one short reminder in the Model log (`parent: orchestrator-only — set default to Grok-high`), then continue via pinned Tasks. Do **not** stall waiting.
+Set Cloud Agent / chat default to an **explicit** model (recommended: `grok-4.7-high`; hardest runs: `grok-4.7-xhigh` or `gpt-5.6-sol-high`).  
+If this run is still Auto: one short reminder in the Model log (`parent: orchestrator-only — set default to Grok 4.7 high`), then continue via pinned Tasks. Do **not** stall waiting. `cursor-grok-4.6-*` remains a valid fallback if 4.7 is unavailable.
 
 ### 0.4 Turn validity gate (before final reply)
 
@@ -75,8 +75,8 @@ Lanes first; Fable only on hard gates; never “think hard” on opaque Auto alo
 | B1 | Browser / GUI QA | `claude-sonnet-5-thinking-high` | **must** Task; xhigh if flaky |
 | V1 | Video / screenshot review | `gemini-3.8-flash-high` | **must** Task |
 | L1 | Huge transcript/log first pass | `muse-spark-1.3-high` | **must** Task if large |
-| P1 | Parent everyday | **`cursor-grok-4.6-high`** (explicit) | Auto only as §0 orchestrator |
-| P2 | Parent hardest multi-PR | `cursor-grok-4.6-xhigh` | explicit |
+| P1 | Parent everyday | **`grok-4.7-high`** (explicit) | Auto only as §0 orchestrator |
+| P2 | Parent hardest multi-PR | `grok-4.7-xhigh` | explicit |
 | X1 | `inherit` | parent model | **only** if parent slug is known & ≥ lane |
 
 **Banned in explore:** Opus, Fable, Sol-max, Grok-xhigh.  
@@ -84,7 +84,7 @@ Lanes first; Fable only on hard gates; never “think hard” on opaque Auto alo
 
 ### Catalog (allowed Task slugs only)
 
-`inherit` · `cursor-grok-4.6-{low,medium,high,xhigh}[-fast]` · `composer-2.5[-fast]` · `gpt-5.6-sol-{none,low,medium,high,xhigh,max}[-fast]` · `gpt-5.6-terra-{none,low,medium,high,xhigh,max}[-fast]` · `claude-opus-5-thinking-{low,medium,high,xhigh,max}[-fast]` · `claude-sonnet-5-thinking-{low,medium,high,xhigh,max}` · `claude-fable-5-1-thinking-{low,medium,high,xhigh,max}` · `gemini-3.8-flash-{low,medium,high}` · `muse-spark-1.3-{minimal,low,medium,high,xhigh,max}`
+`inherit` · `grok-4.7-{low,medium,high,xhigh}[-fast]` · `cursor-grok-4.6-{low,medium,high,xhigh}[-fast]` · `composer-2.5[-fast]` · `gpt-5.6-sol-{none,low,medium,high,xhigh,max}[-fast]` · `gpt-5.6-terra-{none,low,medium,high,xhigh,max}[-fast]` · `claude-opus-5-thinking-{low,medium,high,xhigh,max}[-fast]` · `claude-sonnet-5-thinking-{low,medium,high,xhigh,max}` · `claude-fable-5-1-thinking-{low,medium,high,xhigh,max}` · `gemini-3.8-flash-{low,medium,high}` · `muse-spark-1.3-{minimal,low,medium,high,xhigh,max}`
 
 Effort: `high` = serious default · `xhigh` = hard multi-step · `max` = crisis only · `*-fast` only for user speed + E0/E1 swarm or B1 time-box — **never** on F-gates / auth / OCR / KVKK.
 
@@ -143,7 +143,7 @@ One F9 escalate per problem, then stop/ask/ship.
 ### Model log
 | # | Operation | Model | Why |
 |---|-----------|-------|-----|
-| 0 | parent | `cursor-grok-4.6-high` **or** `orchestrator-only (Auto)` | P1 / §0 |
+| 0 | parent | `grok-4.7-high` **or** `orchestrator-only (Auto)` | P1 / §0 |
 | 1 | … | `exact-slug` | lane E1 / gate F3 / user … |
 ```
 
@@ -159,7 +159,7 @@ Rules:
 
 ## 7. Fallbacks
 
-Same family first: Fable→Opus-max… · Sol→Terra · Grok→medium · Sonnet→medium · Composer→Terra · Gemini→Sonnet · Muse→Composer.  
+Same family first: Fable→Opus-max… · Sol→Terra · Grok `grok-4.7-xhigh`→`grok-4.7-high`→`grok-4.7-medium` then `cursor-grok-4.6-xhigh`→`cursor-grok-4.6-high`→`cursor-grok-4.6-medium` · Sonnet→medium · Composer→Terra · Gemini→Sonnet · Muse→Composer.  
 Hard last resort: Opus ↔ Sol ↔ Grok. No fast/none/low on F-gates.
 
 ---
