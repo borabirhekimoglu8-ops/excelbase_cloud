@@ -2,8 +2,8 @@ import { test, expect } from "@playwright/test";
 
 import { completeSetup, openGateVisa } from "./helpers";
 
-const LINE1 = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
-const LINE2 = "L898902C36UTO7408122F1204159ZE184226B<<<<<10";
+const LINE1 = "P<TURYILMAZ<<ADA<<<<<<<<<<<<<<<<<<<<<<<<<<<<";
+const LINE2 = "U1000001<6UTO9001011F301231610000000146<<<44";
 
 test("pasaport WhatsApp PDF ve görüntü ekranı açılır", async ({ page }) => {
   await page.goto("/");
@@ -30,9 +30,9 @@ test("yapıştırılan MRZ alanlarını doğrular ve Excel indirir", async ({ pa
   await page.getByRole("button", { name: "Satırları işle" }).click();
 
   const lastName = page.locator(".xb-passport-rows input").nth(1);
-  await expect(lastName).toHaveValue(/ERIKSSON/i);
+  await expect(lastName).toHaveValue(/YILMAZ/i);
   const passportNo = page.locator(".xb-passport-rows input").nth(2);
-  await expect(passportNo).toHaveValue(/L898902C3/i);
+  await expect(passportNo).toHaveValue(/U1000001/i);
   // UTO is the fictional ICAO sample state. Unknown codes must stay blank.
   await expect(page.getByLabel("Uyruktan türetilen ülke kodu 2")).toHaveValue("");
   await expect(page.getByText(/Özel\/örnek uyruk kodu/)).toBeVisible();
