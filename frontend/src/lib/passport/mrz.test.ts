@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { mrzCheckDigit, mrzDateToIso, parseTd3FromCells } from "./mrz";
-import type { Cell } from "./mrzGrid";
+import { mrzCheckDigit, mrzDateToIso, parseTd3FromCells, parseTd3FromLines } from "./mrz";
+import type { Cell } from "./td3Schema";
 
 const LINE1 = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
 const LINE2 = "L898902C36UTO7408122F1204159ZE184226B<<<<<10";
@@ -69,5 +69,19 @@ describe("parseTd3FromCells", () => {
     expect(parsed?.passportNumber).toBe("U1000001");
     expect(parsed?.nationalId).toBe("10000000146");
     expect(parsed?.verified).toBe(true);
+  });
+});
+
+describe("parseTd3FromLines", () => {
+  it("decodes exact copied text without OCR candidates", () => {
+    const parsed = parseTd3FromLines(LINE1, LINE2, new Date("2026-09-22T00:00:00Z"));
+    expect(parsed?.surname).toBe("ERIKSSON");
+    expect(parsed?.passportNumber).toBe("L898902C3");
+    expect(parsed?.verified).toBe(true);
+  });
+
+  it("rejects lines that are not exactly 44 MRZ characters", () => {
+    expect(parseTd3FromLines(LINE1.slice(1), LINE2)).toBeNull();
+    expect(parseTd3FromLines(LINE1, `${LINE2}!`)).toBeNull();
   });
 });

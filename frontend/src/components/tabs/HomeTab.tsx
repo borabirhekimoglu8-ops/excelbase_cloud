@@ -214,7 +214,7 @@ export function HomeTab({ onNavigate, onOpenWorkFile }: HomeTabProps) {
             Toplu fotoğraf
           </button>
           <button className="ops-secondary" type="button" onClick={() => onNavigate("passport-scan")}>
-            Pasaport → Excel
+            MRZ → Excel
           </button>
           <button className="ops-secondary" type="button" disabled={closingDay || !summary.passenger_count} onClick={() => void closeDay()}>
             {closingDay ? "Paketleniyor…" : "Günü kapat"}
