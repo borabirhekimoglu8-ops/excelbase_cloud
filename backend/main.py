@@ -7,7 +7,7 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
@@ -25,6 +25,7 @@ from .config import (
     api_key,
     assistant_settings,
     drive_audit_settings,
+    passport_ocr_settings,
     workstation_settings,
 )
 from .models import (
@@ -123,6 +124,9 @@ from .workstation.schemas import (
     WorkstationRootRequest,
     WorkstationSearchRequest,
 )
+from .passportocr.engine import EngineUnavailable
+from .passportocr.security import is_loopback_client, require_local_ocr_session
+from .passportocr.service import ocr_state, recognize_image, warmup as warmup_passport_ocr
 from .workstation.service import (
     WorkstationError,
     WorkstationUnavailableError,
@@ -284,7 +288,7 @@ def assistant_session(request: Request, response: Response) -> AssistantSessionR
     actor = optional_assistant_actor(request)
     if actor is None and assistant_settings().open_access and assistant_network_allowed(request):
         actor, token = issue_open_assistant_session()
-        _set_assistant_session_cookie(response, token)
+        _set_assistant_session_cookie(request, response, token)
         request.state.actor = actor
         return AssistantSessionResponse(
             setup_required=False,
@@ -313,7 +317,7 @@ def assistant_session_setup(
     require_bootstrap_token(payload.bootstrap_token)
     actor = setup_admin(payload.display_name, payload.pin)
     token = issue_assistant_session(actor)
-    _set_assistant_session_cookie(response, token)
+    _set_assistant_session_cookie(request, response, token)
     request.state.actor = actor
     return AssistantSessionResponse(
         setup_required=False,
@@ -333,7 +337,7 @@ def assistant_session_login(
     """Authenticate an existing user without minting a global app session."""
     actor = authenticate(payload.pin, request.client.host if request.client else "unknown")
     token = issue_assistant_session(actor)
-    _set_assistant_session_cookie(response, token)
+    _set_assistant_session_cookie(request, response, token)
     request.state.actor = actor
     return AssistantSessionResponse(
         setup_required=False,
@@ -346,19 +350,20 @@ def assistant_session_login(
 
 @app.post("/api/assistant/v1/session/logout", response_model=SimpleResult)
 def assistant_session_logout(
+    request: Request,
     response: Response,
     _actor: Actor = Depends(require_assistant_session),
 ) -> SimpleResult:
     response.delete_cookie(
         ASSISTANT_SESSION_COOKIE,
         path=ASSISTANT_SESSION_PATH,
-        secure=os.environ.get("APP_ENV", "development").lower() == "production",
+        secure=_cookie_secure(request),
         httponly=True,
         samesite="strict",
     )
     # Otherwise logging out cannot clear a session an older build issued, and
     # "log out and back in" -- the natural way to recover -- would not work.
-    _clear_legacy_assistant_session_cookies(response)
+    _clear_legacy_assistant_session_cookies(request, response)
     return SimpleResult(ok=True, message="Sonnet oturumu kapatıldı.")
 
 
@@ -585,6 +590,114 @@ async def workstation_advise(
         ) from None
 
 
+def _passport_ocr_http_error(state: str, detail: str, code: int) -> JSONResponse:
+    return JSONResponse(status_code=code, content={"detail": detail, "state": state})
+
+
+@app.get("/api/passport-ocr/v1/status")
+def passport_ocr_status(
+    _actor: Actor = Depends(require_local_ocr_session),
+) -> dict:
+    return ocr_state(passport_ocr_settings())
+
+
+@app.post("/api/passport-ocr/v1/warmup")
+def passport_ocr_warmup(
+    _actor: Actor = Depends(require_local_ocr_session),
+) -> dict:
+    payload = warmup_passport_ocr(passport_ocr_settings())
+    code = status.HTTP_202_ACCEPTED if payload.get("state") == "engine_loading" else status.HTTP_200_OK
+    return JSONResponse(status_code=code, content=payload)
+
+
+@app.post("/api/passport-ocr/v1/recognize")
+async def passport_ocr_recognize(
+    request: Request,
+    image: UploadFile = File(...),
+    page_id: str = Form(""),
+    _actor: Actor = Depends(require_local_ocr_session),
+) -> dict:
+    settings = passport_ocr_settings()
+    token = (page_id or "").strip()
+    if token and (
+        len(token) > 64
+        or any(
+            ch
+            not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+            for ch in token
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="page_id geçersiz."
+        )
+    data = await image.read(settings.max_image_bytes + 1)
+    request_id = getattr(request.state, "request_id", "")
+    started = time.monotonic()
+    try:
+        payload = await asyncio.to_thread(recognize_image, data, token, settings)
+    except ValueError as exc:
+        reason = str(exc)
+        duration_ms = int((time.monotonic() - started) * 1000)
+        logger.info(
+            "passport-ocr recognize request_id=%s status=%d lines=%d duration_ms=%d",
+            request_id,
+            413 if reason == "too_large" else 415 if reason == "unsupported" else 422,
+            0,
+            duration_ms,
+        )
+        if reason == "too_large":
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Görüntü çok büyük.",
+            ) from None
+        if reason == "unsupported":
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Yalnız JPEG, PNG veya HEIC kabul edilir.",
+            ) from None
+        if reason == "too_many_pixels":
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Görüntü çözünürlüğü çok yüksek.",
+            ) from None
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Görüntü okunamadı.",
+        ) from None
+    except TimeoutError:
+        logger.info(
+            "passport-ocr recognize request_id=%s status=%d lines=%d duration_ms=%d",
+            request_id,
+            429,
+            0,
+            0,
+        )
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "OCR meşgul, tekrar deneyin.", "state": "busy"},
+            headers={"Retry-After": "2"},
+        )
+    except EngineUnavailable as exc:
+        logger.info(
+            "passport-ocr recognize request_id=%s status=%d lines=%d duration_ms=%d",
+            request_id,
+            503,
+            0,
+            0,
+        )
+        return _passport_ocr_http_error(
+            exc.state, exc.detail, status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+    logger.info(
+        "passport-ocr recognize request_id=%s status=%d lines=%d duration_ms=%d",
+        request_id,
+        200,
+        len(payload.get("lines") or []),
+        payload.get("duration_ms") or 0,
+    )
+    return payload
+
+
 @app.post("/api/dev-agent/v1/apply")
 def dev_agent_apply(
     _actor: Actor = Depends(require_assistant_session),
@@ -677,19 +790,28 @@ async def assistant_chat(
 
 
 # ---------------------------------------------------------------- authentication
-def _set_session_cookie(response: Response, token: str) -> None:
+def _cookie_secure(request: Request) -> bool:
+    """Keep production cookies usable on plain HTTP loopback workstations."""
+    if os.environ.get("APP_ENV", "development").lower() != "production":
+        return False
+    return not (request.url.scheme == "http" and is_loopback_client(request))
+
+
+def _set_session_cookie(request: Request, response: Response, token: str) -> None:
     response.set_cookie(
         key=SESSION_COOKIE,
         value=token,
         max_age=SESSION_DAYS * 24 * 60 * 60,
         httponly=True,
-        secure=os.environ.get("APP_ENV", "development").lower() == "production",
+        secure=_cookie_secure(request),
         samesite="lax",
         path="/",
     )
 
 
-def _clear_legacy_assistant_session_cookies(response: Response) -> None:
+def _clear_legacy_assistant_session_cookies(
+    request: Request, response: Response
+) -> None:
     """Remove session cookies left at paths this app no longer issues under.
 
     Cookies are keyed by name *and* path, so a build that changes the path
@@ -701,20 +823,22 @@ def _clear_legacy_assistant_session_cookies(response: Response) -> None:
         response.delete_cookie(
             ASSISTANT_SESSION_COOKIE,
             path=legacy_path,
-            secure=os.environ.get("APP_ENV", "development").lower() == "production",
+            secure=_cookie_secure(request),
             httponly=True,
             samesite="strict",
         )
 
 
-def _set_assistant_session_cookie(response: Response, token: str) -> None:
-    _clear_legacy_assistant_session_cookies(response)
+def _set_assistant_session_cookie(
+    request: Request, response: Response, token: str
+) -> None:
+    _clear_legacy_assistant_session_cookies(request, response)
     response.set_cookie(
         key=ASSISTANT_SESSION_COOKIE,
         value=token,
         max_age=ASSISTANT_SESSION_SECONDS,
         httponly=True,
-        secure=os.environ.get("APP_ENV", "development").lower() == "production",
+        secure=_cookie_secure(request),
         samesite="strict",
         path=ASSISTANT_SESSION_PATH,
     )
@@ -731,10 +855,12 @@ def auth_status(request: Request) -> AuthStatusResponse:
 
 
 @app.post("/api/auth/setup", response_model=AuthStatusResponse)
-def auth_setup(payload: AuthSetupRequest, response: Response) -> AuthStatusResponse:
+def auth_setup(
+    payload: AuthSetupRequest, request: Request, response: Response
+) -> AuthStatusResponse:
     require_bootstrap_token(payload.bootstrap_token)
     actor = setup_admin(payload.display_name, payload.pin)
-    _set_session_cookie(response, issue_session(actor))
+    _set_session_cookie(request, response, issue_session(actor))
     return AuthStatusResponse(
         setup_required=False,
         authenticated=True,
@@ -745,7 +871,7 @@ def auth_setup(payload: AuthSetupRequest, response: Response) -> AuthStatusRespo
 @app.post("/api/auth/login", response_model=AuthStatusResponse)
 def auth_login(payload: AuthLoginRequest, request: Request, response: Response) -> AuthStatusResponse:
     actor = authenticate(payload.pin, request.client.host if request.client else "unknown")
-    _set_session_cookie(response, issue_session(actor))
+    _set_session_cookie(request, response, issue_session(actor))
     return AuthStatusResponse(
         setup_required=False,
         authenticated=True,

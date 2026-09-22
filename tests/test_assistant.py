@@ -1061,6 +1061,42 @@ def test_open_access_connects_sonnet_without_an_access_code(monkeypatch):
     assert status_body["open_access"] is True
 
 
+def _issued_assistant_cookie(headers: list[str]) -> str:
+    issued = [
+        header
+        for header in headers
+        if header.lower().startswith(f"{ASSISTANT_SESSION_COOKIE}=")
+        and "max-age=0" not in header.lower()
+    ]
+    assert issued, headers
+    return issued[0]
+
+
+def test_production_loopback_http_session_cookie_is_not_secure(monkeypatch):
+    """Production on http://127.0.0.1 must not issue a browser-dropped cookie."""
+    _open_access_env(monkeypatch)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("EXCELBASE_ASSISTANT_ALLOWED_IPS", raising=False)
+    reset_assistant_runtime()
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        session = client.get("/api/assistant/v1/session")
+    assert session.status_code == 200
+    cookie = _issued_assistant_cookie(session.headers.get_list("set-cookie"))
+    assert "secure" not in cookie.lower()
+
+
+def test_production_non_loopback_session_cookie_stays_secure(monkeypatch):
+    _open_access_env(monkeypatch)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("EXCELBASE_ASSISTANT_ALLOWED_IPS", raising=False)
+    reset_assistant_runtime()
+    with TestClient(app) as client:
+        session = client.get("/api/assistant/v1/session")
+    assert session.status_code == 200
+    cookie = _issued_assistant_cookie(session.headers.get_list("set-cookie"))
+    assert "secure" in cookie.lower()
+
+
 def test_assistant_cookie_reaches_dev_agent_routes_not_just_assistant_ones(monkeypatch):
     """The session cookie's Path is a browser-enforced allowlist: a request
     outside it is sent with no cookie at all, which the server cannot tell
