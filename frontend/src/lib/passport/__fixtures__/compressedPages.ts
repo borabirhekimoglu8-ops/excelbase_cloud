@@ -49,7 +49,7 @@ export const COMPRESSED_PAGE_DIAGNOSTICS: readonly CompressedPageDiagnostic[] = 
   },
   {
     pageNo: 5,
-    sha256: "a561d03eb535e97a85ee449b17f426b529546d434e279e1491d7f0a910b2b42",
+    sha256: "0a561d03eb535e97a85ee449b17f426b529546d434e279e1491d7f0a910b2b42",
     profileId: PASSPORT_ENGINE_PROFILE.id,
     success: false,
     stages: ["character_recognition"],

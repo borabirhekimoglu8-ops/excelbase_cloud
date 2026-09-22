@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { saveBlob } from "@/lib/offline/exporter";
 import {
   localPassportDeleteSource,
+  localPassportPurgeExpiredImages,
   localPassportStorePage,
   localPassportStoreSource,
 } from "@/lib/offline/localApi";
@@ -85,11 +86,13 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
     setBusy(true);
     setProgress({ done: 0, total: files.length, current: "OCR hazırlanıyor…" });
     try {
+      await localPassportPurgeExpiredImages();
       await localPassportStoreSource(batchId, files[0]);
       const nextRows = await scanPassportImages(files, setProgress, {
         batchId,
-        onPage: ({ batchId: pageBatchId, pageNo, blob }) =>
-          localPassportStorePage(pageBatchId, pageNo, blob),
+        onPage: async ({ batchId: pageBatchId, pageNo, blob }) => {
+          await localPassportStorePage(pageBatchId, pageNo, blob);
+        },
       });
       revokePassportScanPreviews(rows);
       setRows(nextRows);

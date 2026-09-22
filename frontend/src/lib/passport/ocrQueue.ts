@@ -34,6 +34,7 @@ type Pending<T> = {
 export class PassportOcrQueue<T> {
   private readonly pending: Pending<T>[] = [];
   private readonly enqueueInFlight = new Map<string, Promise<T>>();
+  private readonly sourceInFlight = new Map<string, Promise<T>>();
   private readonly completed = new Map<string, T>();
   private draining = false;
   private databasePromise: Promise<IDBPDatabase<QueueSchema>> | null = null;
@@ -56,12 +57,22 @@ export class PassportOcrQueue<T> {
     return this.databasePromise;
   }
 
-  async enqueue(page: Blob, pageSha256: string, profileId: string): Promise<T> {
+  enqueue(page: Blob, pageSha256: string, profileId: string): Promise<T> {
+    const sourceKey = `${pageSha256}:${profileId}`;
+    const existing = this.sourceInFlight.get(sourceKey);
+    if (existing) return existing;
+    const promise = this.enqueueResolved(page, pageSha256, profileId)
+      .finally(() => this.sourceInFlight.delete(sourceKey));
+    this.sourceInFlight.set(sourceKey, promise);
+    return promise;
+  }
+
+  private async enqueueResolved(page: Blob, pageSha256: string, profileId: string): Promise<T> {
     const id = await sha256Hex(`${pageSha256}${profileId}`);
     const finished = this.completed.get(id);
     if (finished !== undefined) return finished;
-    const existing = this.enqueueInFlight.get(id);
-    if (existing) return existing;
+    const existingJob = this.enqueueInFlight.get(id);
+    if (existingJob) return existingJob;
 
     const job: OcrQueueJob = {
       id,

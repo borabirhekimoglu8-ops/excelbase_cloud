@@ -417,8 +417,12 @@ export function searchCountries(query: string, limit = 12): CountryEntry[] {
     if (score < 0) return null;
     if (entry.kind === "special") score -= 15;
     if (entry.kind === "icao_alias") score -= 5;
-    return { entry, score };
-  }).filter((row): row is { entry: CountryEntry; score: number } => row !== null);
-  scored.sort((left, right) => right.score - left.score || left.entry.nameTr.localeCompare(right.entry.nameTr, "tr"));
+    return { entry, score, shortestName: Math.min(nameTr.length, nameEn.length) };
+  }).filter((row): row is { entry: CountryEntry; score: number; shortestName: number } => row !== null);
+  scored.sort((left, right) => (
+    right.score - left.score
+    || left.shortestName - right.shortestName
+    || left.entry.nameTr.localeCompare(right.entry.nameTr, "tr")
+  ));
   return scored.slice(0, limit).map((row) => row.entry);
 }

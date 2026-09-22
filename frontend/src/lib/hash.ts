@@ -17,6 +17,8 @@ export async function sha256Hex(
   } else {
     bytes = new Uint8Array(value);
   }
-  const digest = await (await webCrypto()).subtle.digest("SHA-256", bytes);
+  const stableBytes = new Uint8Array(new ArrayBuffer(bytes.byteLength));
+  stableBytes.set(bytes);
+  const digest = await (await webCrypto()).subtle.digest("SHA-256", stableBytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

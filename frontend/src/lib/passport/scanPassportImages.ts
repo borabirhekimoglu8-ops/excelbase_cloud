@@ -37,6 +37,7 @@ import {
 import { findMrzBand, splitLines, type MrzBand } from "@/lib/passport/mrzLocator";
 import { rasterizePdfToImages } from "@/lib/passport/pdfToImages";
 import { rowFromParsedMrz } from "@/lib/passport/parseMrzText";
+import { PASSPORT_ENGINE_PROFILE } from "@/lib/passport/engineProfile";
 import {
   DOCUMENT_TYPES,
   type PassportDocumentType,
@@ -45,6 +46,7 @@ import {
 } from "@/lib/passport/passportTypes";
 import { normalizePhoto } from "@/lib/photoNormalize";
 import { mergeMrzViz } from "./mergeMrzViz";
+import { PassportOcrQueue, transientQueueError } from "./ocrQueue";
 import { matchVizFields, type VizWord } from "./vizFields";
 
 export {
@@ -69,7 +71,7 @@ export type PassportScanOptions = {
   onPage?: (page: { batchId: string; pageNo: number; blob: Blob }) => void | Promise<void>;
 };
 
-type ImageInput = { filename: string; blob: Blob; pageNo?: number };
+type ImageInput = { filename: string; blob: Blob; pageNo?: number; sha256?: string };
 
 function isPdfFilename(filename: string): boolean {
   return filename.toLocaleLowerCase("en-US").endsWith(".pdf");
@@ -580,7 +582,9 @@ async function scanOne(image: ImageInput, slotIndex: number): Promise<PassportSc
   } catch (reason) {
     if (debugCropUrl?.startsWith("blob:")) URL.revokeObjectURL(debugCropUrl);
     const message = reason instanceof Error ? reason.message : "";
-    const friendly = /fetch|network|load|wasm|worker/i.test(message)
+    const transient = /fetch|network|load|wasm|worker|terminated|crash/i.test(message);
+    if (transient) throw transientQueueError("engine_crashed");
+    const friendly = transient
       ? "OCR motoru yüklenemedi — sayfayı yenileyip tekrar deneyin"
       : "OCR başarısız — alanlar boş bırakıldı";
     const row = rowFromMrz(image.filename, previewUrl, null, [friendly]);
@@ -601,7 +605,7 @@ export async function scanPassportImages(
     const hash = await sha256Hex(image.blob);
     if (seenHashes.has(hash)) continue;
     seenHashes.add(hash);
-    images.push(image);
+    images.push({ ...image, sha256: hash });
   }
   if (!images.length) {
     throw new Error(
@@ -609,19 +613,18 @@ export async function scanPassportImages(
     );
   }
   onProgress?.({ done: 0, total: images.length, current: "OCR hazırlanıyor…" });
-  try {
-    await getWorker(0);
-  } catch (reason) {
-    await terminatePassportOcr();
-    const detail = reason instanceof Error ? reason.message : "bilinmeyen hata";
-    throw new Error(`OCR motoru başlatılamadı (${detail}). Sayfayı yenileyip tekrar deneyin.`);
-  }
 
   const rows = new Array<PassportScanRow>(images.length);
   const batchId = options.batchId ?? `passport-${Date.now().toString(36)}`;
   let nextIndex = 0;
   let done = 0;
   const activeFilenames = new Map<number, string>();
+  const imageByHash = new Map(images.map((image) => [image.sha256 as string, image]));
+  const queue = new PassportOcrQueue<PassportScanRow>(async (blob, job) => {
+    const image = imageByHash.get(job.pageSha256);
+    if (!image) throw new Error("Kuyruktaki görüntü bulunamadı.");
+    return scanOne({ ...image, blob }, 0);
+  });
 
   const emitProgress = (preferredSlot?: number): void => {
     const current = preferredSlot === undefined
@@ -640,7 +643,21 @@ export async function scanPassportImages(
       await yieldToMainThread();
       const pageNo = index + 1;
       await options.onPage?.({ batchId, pageNo, blob: image.blob });
-      rows[index] = await scanOne({ ...image, pageNo }, slotIndex);
+      try {
+        rows[index] = await queue.enqueue(
+          image.blob,
+          image.sha256 as string,
+          PASSPORT_ENGINE_PROFILE.id,
+        );
+      } catch {
+        rows[index] = rowFromMrz(
+          image.filename,
+          URL.createObjectURL(image.blob),
+          null,
+          ["OCR motoru geçici hatalardan sonra çalıştırılamadı; sayfayı yeniden deneyin"],
+        );
+        rows[index].failureStage = "character_recognition";
+      }
       rows[index].batchId = batchId;
       rows[index].pageNo = pageNo;
       rows[index].sourceImageKey = `passport-page:${batchId}:${pageNo}`;
