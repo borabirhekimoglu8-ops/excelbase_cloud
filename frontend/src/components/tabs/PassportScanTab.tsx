@@ -440,7 +440,11 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
 
           <ul className="xb-passport-rows">
             {rows.map((row) => (
-              <li key={row.id} data-status={row.status}>
+              <li
+                key={row.id}
+                data-status={row.status}
+                data-review-status={row.reviewStatus}
+              >
                 <div className="xb-passport-thumb" aria-label={row.status === "ok" ? "Doğrulandı" : "Kontrol gerekli"}>
                   <strong aria-hidden="true">{row.status === "ok" ? "✓" : "!"}</strong>
                   <span>{row.status === "ok" ? "Doğrulandı" : "Kontrol"}</span>
@@ -523,6 +527,13 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
                   </label>
                   <p className="xb-passport-meta">
                     {row.filename}{row.warnings[0] ? ` · ${row.warnings[0]}` : ""}
+                  </p>
+                  <p className="xb-passport-meta" aria-label="Doğrulama durumu">
+                    {row.reviewStatus === "verified"
+                      ? "MRZ doğrulandı · otomatik kayıt"
+                      : row.reviewStatus === "reviewed"
+                        ? "Görsel taslak · kullanıcı kontrol etti"
+                        : "Görsel taslak · “Kontrol ettim” onayı gerekli"}
                   </p>
                   {row.nationalitySpecial ? (
                     <p className="xb-passport-special">

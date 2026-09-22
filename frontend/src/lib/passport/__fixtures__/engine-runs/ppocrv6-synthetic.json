@@ -1,14 +1,14 @@
 {
   "evidence": "actual_ppocrv6_synthetic_image_run",
-  "generated_at": "2026-09-22T19:25:56.718133+00:00",
+  "generated_at": "2026-09-22T19:53:56.573478+00:00",
   "synthetic_only": true,
   "variants": [
     {
-      "variant": "clean_png",
-      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/clean.png",
-      "source_sha256": "65e6c5bc22bf177d4fba27a276ea44de2bcfd3be536fa95e76a2c19ccee3dd7b",
+      "variant": "tur_clean_png",
+      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/tur-clean.png",
+      "source_sha256": "7f5d3dd4c756ac4fc1415a4c51a7ae1d631214707e81dfe4de0e99e836932855",
       "source_kind": "png",
-      "processed_image_sha256": "65e6c5bc22bf177d4fba27a276ea44de2bcfd3be536fa95e76a2c19ccee3dd7b",
+      "processed_image_sha256": "7f5d3dd4c756ac4fc1415a4c51a7ae1d631214707e81dfe4de0e99e836932855",
       "raster": null,
       "engine": {
         "name": "paddleocr",
@@ -22,352 +22,366 @@
           "paddlepaddle": "3.2.2"
         }
       },
-      "width": 1600,
-      "height": 1000,
+      "width": 2600,
+      "height": 1625,
       "lines": [
         {
           "text": "PASSPORT / PASAPORT",
           "box": [
             [
-              91.0,
-              74.0
-            ],
-            [
-              677.0,
-              74.0
-            ],
-            [
-              677.0,
+              143.0,
               121.0
             ],
             [
-              91.0,
+              1100.0,
               121.0
+            ],
+            [
+              1100.0,
+              199.0
+            ],
+            [
+              143.0,
+              199.0
             ]
           ],
-          "score": 0.9621951580047607
+          "score": 0.9718791842460632
         },
         {
           "text": "Surname / Soyadı",
           "box": [
             [
-              97.0,
-              170.0
+              158.0,
+              276.0
             ],
             [
-              339.0,
-              170.0
+              553.0,
+              278.0
             ],
             [
-              339.0,
-              202.0
+              553.0,
+              326.0
             ],
             [
-              97.0,
-              202.0
+              157.0,
+              324.0
             ]
           ],
-          "score": 0.9723712205886841
+          "score": 0.9991138577461243
         },
         {
           "text": "YILMAZ",
           "box": [
             [
-              514.0,
-              169.0
+              839.0,
+              279.0
             ],
             [
-              647.0,
-              169.0
+              1053.0,
+              279.0
             ],
             [
-              647.0,
-              205.0
+              1053.0,
+              335.0
             ],
             [
-              514.0,
-              205.0
+              839.0,
+              335.0
             ]
           ],
-          "score": 0.9999399781227112
+          "score": 0.9999262690544128
         },
         {
           "text": "Given names / Adları",
           "box": [
             [
-              98.0,
-              252.0
+              161.0,
+              412.0
             ],
             [
-              382.0,
-              252.0
+              620.0,
+              412.0
             ],
             [
-              382.0,
-              282.0
+              620.0,
+              456.0
             ],
             [
-              98.0,
-              282.0
+              161.0,
+              456.0
             ]
           ],
-          "score": 0.9995121955871582
+          "score": 0.998227596282959
         },
         {
           "text": "ADA",
           "box": [
             [
-              515.0,
-              252.0
+              838.0,
+              411.0
             ],
             [
-              597.0,
-              252.0
+              968.0,
+              411.0
             ],
             [
-              597.0,
-              289.0
+              968.0,
+              470.0
             ],
             [
-              515.0,
-              289.0
+              838.0,
+              470.0
             ]
           ],
-          "score": 0.9998326301574707
+          "score": 0.9994921684265137
         },
         {
           "text": "Passport No",
           "box": [
             [
-              98.0,
-              335.0
+              159.0,
+              545.0
             ],
             [
-              262.0,
-              335.0
+              424.0,
+              545.0
             ],
             [
-              262.0,
-              366.0
+              424.0,
+              593.0
             ],
             [
-              98.0,
-              366.0
+              159.0,
+              593.0
             ]
           ],
-          "score": 0.9999673366546631
+          "score": 0.9999781250953674
         },
         {
           "text": "U1000001",
           "box": [
             [
-              519.0,
-              337.0
+              841.0,
+              547.0
             ],
             [
-              695.0,
-              337.0
+              1129.0,
+              545.0
             ],
             [
-              695.0,
-              368.0
+              1130.0,
+              599.0
             ],
             [
-              519.0,
-              368.0
+              842.0,
+              602.0
             ]
           ],
-          "score": 0.9983812570571899
+          "score": 0.9990957379341125
         },
         {
           "text": "Nationality",
           "box": [
             [
-              97.0,
-              416.0
+              158.0,
+              678.0
             ],
             [
-              249.0,
-              416.0
+              402.0,
+              678.0
             ],
             [
-              249.0,
-              450.0
+              402.0,
+              727.0
             ],
             [
-              97.0,
-              450.0
+              158.0,
+              727.0
             ]
           ],
-          "score": 0.9999961853027344
+          "score": 0.9999961256980896
         },
         {
-          "text": "UTO",
+          "text": "TUR",
           "box": [
             [
-              516.0,
-              415.0
+              834.0,
+              676.0
             ],
             [
-              595.0,
-              415.0
+              962.0,
+              678.0
             ],
             [
-              595.0,
-              454.0
+              961.0,
+              738.0
             ],
             [
-              516.0,
-              454.0
+              833.0,
+              735.0
             ]
           ],
-          "score": 0.9999721646308899
+          "score": 0.9998989701271057
         },
         {
           "text": "Date of birth",
           "box": [
             [
-              99.0,
-              499.0
+              159.0,
+              811.0
             ],
             [
-              271.0,
-              499.0
+              441.0,
+              808.0
             ],
             [
-              271.0,
-              527.0
+              441.0,
+              853.0
             ],
             [
-              99.0,
-              527.0
+              160.0,
+              855.0
             ]
           ],
-          "score": 0.9999746680259705
+          "score": 0.9999119639396667
         },
         {
           "text": "01.01.1990",
           "box": [
             [
-              518.0,
-              499.0
+              843.0,
+              812.0
             ],
             [
-              715.0,
-              499.0
+              1160.0,
+              812.0
             ],
             [
-              715.0,
-              533.0
+              1160.0,
+              867.0
             ],
             [
-              518.0,
-              533.0
+              843.0,
+              867.0
             ]
           ],
-          "score": 0.9998955726623535
+          "score": 0.999900221824646
         },
         {
           "text": "Date of expiry",
           "box": [
             [
-              97.0,
-              580.0
+              159.0,
+              943.0
             ],
             [
-              293.0,
-              580.0
+              475.0,
+              946.0
             ],
             [
-              293.0,
-              614.0
+              474.0,
+              994.0
             ],
             [
-              97.0,
-              614.0
+              158.0,
+              991.0
             ]
           ],
-          "score": 0.9773112535476685
+          "score": 0.9855471849441528
         },
         {
           "text": "31.12.2030",
           "box": [
             [
-              519.0,
-              583.0
+              843.0,
+              945.0
             ],
             [
-              714.0,
-              583.0
+              1160.0,
+              945.0
             ],
             [
-              714.0,
-              614.0
+              1160.0,
+              1000.0
             ],
             [
-              519.0,
-              614.0
+              843.0,
+              1000.0
             ]
           ],
-          "score": 0.9999938011169434
+          "score": 0.9999963641166687
         },
         {
-          "text": "P<UT0YILMAZ<<ADA<<<<<<<<<<<<<<<<<<<<<<<<<<<<",
+          "text": "P<TURYILMAZ<<ADA<<<<<<<<<<<<<<<<<<<<<<<<<<<<",
           "box": [
             [
-              94.0,
-              812.0
+              152.0,
+              1319.0
             ],
             [
-              838.0,
-              812.0
+              1431.0,
+              1319.0
             ],
             [
-              838.0,
-              837.0
+              1431.0,
+              1363.0
             ],
             [
-              94.0,
-              837.0
+              152.0,
+              1363.0
             ]
           ],
-          "score": 0.9974687099456787
+          "score": 0.9938943386077881
         },
         {
-          "text": "U1000001<6UT09001011F301231610000000146<<<44",
+          "text": "U1000001<6TUR9001011F301231610000000146<<<44",
           "box": [
             [
-              94.0,
-              873.0
+              151.0,
+              1417.0
             ],
             [
-              837.0,
-              873.0
+              1427.0,
+              1417.0
             ],
             [
-              837.0,
-              897.0
+              1427.0,
+              1464.0
             ],
             [
-              94.0,
-              897.0
+              151.0,
+              1464.0
             ]
           ],
-          "score": 0.9996221661567688
+          "score": 0.9996376633644104
         }
       ],
       "parser_result": {
-        "pair_found": false,
-        "verified": false,
-        "status": "not_found",
-        "fields": {},
-        "checks": {}
+        "pair_found": true,
+        "verified": true,
+        "status": "verified",
+        "fields": {
+          "surname": "YILMAZ",
+          "given_names": "ADA",
+          "passport_no": "U1000001",
+          "nationality": "TUR",
+          "date_of_birth": "1990-01-01",
+          "date_of_expiry": "2030-12-31"
+        },
+        "checks": {
+          "passport_no": true,
+          "date_of_birth": true,
+          "date_of_expiry": true,
+          "personal_no": true,
+          "composite": true
+        },
+        "reject_reason": null
       },
       "expected_fields": {
         "surname": "YILMAZ",
         "given_names": "ADA",
         "passport_no": "U1000001",
-        "nationality": "UTO",
+        "nationality": "TUR",
         "date_of_birth": "1990-01-01",
         "date_of_birth_mrz": "900101",
         "date_of_expiry": "2030-12-31",
@@ -381,11 +395,411 @@
         "date_of_birth": "correct",
         "date_of_expiry": "correct"
       },
-      "duration_ms": 2790
+      "duration_ms": 5752
     },
     {
-      "variant": "jpeg_q35",
-      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/jpeg-q35.jpg",
+      "variant": "tur_image_pdf_raster_250dpi_2600_jpeg90",
+      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/tur-image-pdf-250dpi.pdf",
+      "source_sha256": "5f3095d9231ef4bcbc706932139fdf53cb2dcb012ff627c8007709e9854f18f9",
+      "source_kind": "image_pdf",
+      "processed_image_sha256": "9ce07856190a068b4bf3fd62dcdc81b812c0beb3376e0158d018e63b7215d1b3",
+      "raster": {
+        "dpi": 250,
+        "long_edge_max": 2600,
+        "jpeg_quality": 90,
+        "processed_width": 2600,
+        "processed_height": 1625
+      },
+      "engine": {
+        "name": "paddleocr",
+        "version": "PP-OCRv6",
+        "versions": [
+          "PP-OCRv6"
+        ],
+        "lang": "en",
+        "package_versions": {
+          "paddleocr": "3.7.0",
+          "paddlepaddle": "3.2.2"
+        }
+      },
+      "width": 2600,
+      "height": 1625,
+      "lines": [
+        {
+          "text": "PASSPORT / PASAPORT",
+          "box": [
+            [
+              141.0,
+              120.0
+            ],
+            [
+              1100.0,
+              120.0
+            ],
+            [
+              1100.0,
+              201.0
+            ],
+            [
+              141.0,
+              201.0
+            ]
+          ],
+          "score": 0.9817065000534058
+        },
+        {
+          "text": "Surname / Soyadı",
+          "box": [
+            [
+              158.0,
+              276.0
+            ],
+            [
+              553.0,
+              278.0
+            ],
+            [
+              553.0,
+              326.0
+            ],
+            [
+              157.0,
+              324.0
+            ]
+          ],
+          "score": 0.989304780960083
+        },
+        {
+          "text": "YILMAZ",
+          "box": [
+            [
+              837.0,
+              280.0
+            ],
+            [
+              1053.0,
+              278.0
+            ],
+            [
+              1053.0,
+              333.0
+            ],
+            [
+              838.0,
+              336.0
+            ]
+          ],
+          "score": 0.9999218583106995
+        },
+        {
+          "text": "Given names / Adları",
+          "box": [
+            [
+              160.0,
+              412.0
+            ],
+            [
+              621.0,
+              412.0
+            ],
+            [
+              621.0,
+              456.0
+            ],
+            [
+              160.0,
+              456.0
+            ]
+          ],
+          "score": 0.9927651286125183
+        },
+        {
+          "text": "ADA",
+          "box": [
+            [
+              838.0,
+              411.0
+            ],
+            [
+              968.0,
+              411.0
+            ],
+            [
+              968.0,
+              470.0
+            ],
+            [
+              838.0,
+              470.0
+            ]
+          ],
+          "score": 0.9998212456703186
+        },
+        {
+          "text": "Passport No",
+          "box": [
+            [
+              158.0,
+              545.0
+            ],
+            [
+              424.0,
+              545.0
+            ],
+            [
+              424.0,
+              593.0
+            ],
+            [
+              158.0,
+              593.0
+            ]
+          ],
+          "score": 0.9999897480010986
+        },
+        {
+          "text": "U1000001",
+          "box": [
+            [
+              842.0,
+              547.0
+            ],
+            [
+              1128.0,
+              545.0
+            ],
+            [
+              1129.0,
+              600.0
+            ],
+            [
+              843.0,
+              603.0
+            ]
+          ],
+          "score": 0.9993299245834351
+        },
+        {
+          "text": "Nationality",
+          "box": [
+            [
+              156.0,
+              675.0
+            ],
+            [
+              402.0,
+              675.0
+            ],
+            [
+              402.0,
+              727.0
+            ],
+            [
+              156.0,
+              727.0
+            ]
+          ],
+          "score": 0.9999961853027344
+        },
+        {
+          "text": "TUR",
+          "box": [
+            [
+              835.0,
+              677.0
+            ],
+            [
+              962.0,
+              677.0
+            ],
+            [
+              962.0,
+              736.0
+            ],
+            [
+              835.0,
+              736.0
+            ]
+          ],
+          "score": 0.999823272228241
+        },
+        {
+          "text": "Date of birth",
+          "box": [
+            [
+              159.0,
+              812.0
+            ],
+            [
+              441.0,
+              812.0
+            ],
+            [
+              441.0,
+              855.0
+            ],
+            [
+              159.0,
+              855.0
+            ]
+          ],
+          "score": 0.9999895691871643
+        },
+        {
+          "text": "01.01.1990",
+          "box": [
+            [
+              844.0,
+              812.0
+            ],
+            [
+              1161.0,
+              812.0
+            ],
+            [
+              1161.0,
+              867.0
+            ],
+            [
+              844.0,
+              867.0
+            ]
+          ],
+          "score": 0.9999746084213257
+        },
+        {
+          "text": "Date of expiry",
+          "box": [
+            [
+              158.0,
+              942.0
+            ],
+            [
+              478.0,
+              944.0
+            ],
+            [
+              477.0,
+              995.0
+            ],
+            [
+              157.0,
+              993.0
+            ]
+          ],
+          "score": 0.9999368786811829
+        },
+        {
+          "text": "31.12.2030",
+          "box": [
+            [
+              843.0,
+              945.0
+            ],
+            [
+              1161.0,
+              945.0
+            ],
+            [
+              1161.0,
+              1000.0
+            ],
+            [
+              843.0,
+              1000.0
+            ]
+          ],
+          "score": 0.9999974370002747
+        },
+        {
+          "text": "P<TURYILMAZ<<ADA<<<<<<<<<<<<<<<<<<<<<<<<<<<<",
+          "box": [
+            [
+              152.0,
+              1319.0
+            ],
+            [
+              1430.0,
+              1319.0
+            ],
+            [
+              1430.0,
+              1363.0
+            ],
+            [
+              152.0,
+              1363.0
+            ]
+          ],
+          "score": 0.9975953698158264
+        },
+        {
+          "text": "U1000001<6TUR9001011F301231610000000146<<<44",
+          "box": [
+            [
+              150.0,
+              1417.0
+            ],
+            [
+              1427.0,
+              1417.0
+            ],
+            [
+              1427.0,
+              1464.0
+            ],
+            [
+              150.0,
+              1464.0
+            ]
+          ],
+          "score": 0.9997730255126953
+        }
+      ],
+      "parser_result": {
+        "pair_found": true,
+        "verified": true,
+        "status": "verified",
+        "fields": {
+          "surname": "YILMAZ",
+          "given_names": "ADA",
+          "passport_no": "U1000001",
+          "nationality": "TUR",
+          "date_of_birth": "1990-01-01",
+          "date_of_expiry": "2030-12-31"
+        },
+        "checks": {
+          "passport_no": true,
+          "date_of_birth": true,
+          "date_of_expiry": true,
+          "personal_no": true,
+          "composite": true
+        },
+        "reject_reason": null
+      },
+      "expected_fields": {
+        "surname": "YILMAZ",
+        "given_names": "ADA",
+        "passport_no": "U1000001",
+        "nationality": "TUR",
+        "date_of_birth": "1990-01-01",
+        "date_of_birth_mrz": "900101",
+        "date_of_expiry": "2030-12-31",
+        "date_of_expiry_mrz": "301231"
+      },
+      "critical_fields": {
+        "passport_no": "correct",
+        "surname": "correct",
+        "given_names": "correct",
+        "nationality": "correct",
+        "date_of_birth": "correct",
+        "date_of_expiry": "correct"
+      },
+      "duration_ms": 5670
+    },
+    {
+      "variant": "uto_jpeg_q35",
+      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/uto-jpeg-q35.jpg",
       "source_sha256": "13e2862f1e47b9c11db8f0f9501908c7f030e69470e0a832f2ff6b1739cf665a",
       "source_kind": "jpeg",
       "processed_image_sha256": "13e2862f1e47b9c11db8f0f9501908c7f030e69470e0a832f2ff6b1739cf665a",
@@ -740,6 +1154,7 @@
         "pair_found": false,
         "verified": false,
         "status": "not_found",
+        "reject_reason": "line1_charset",
         "fields": {},
         "checks": {}
       },
@@ -761,11 +1176,11 @@
         "date_of_birth": "correct",
         "date_of_expiry": "correct"
       },
-      "duration_ms": 2333
+      "duration_ms": 2674
     },
     {
-      "variant": "skew_plus_3_png",
-      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/skew-plus-3.png",
+      "variant": "uto_skew_plus_3_png",
+      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/uto-skew-plus-3.png",
       "source_sha256": "83f40060bf509f8cf9a6cf7406757443583fdbcfc8f6848e7ed8f572c4181a70",
       "source_kind": "png",
       "processed_image_sha256": "83f40060bf509f8cf9a6cf7406757443583fdbcfc8f6848e7ed8f572c4181a70",
@@ -1120,6 +1535,7 @@
         "pair_found": false,
         "verified": false,
         "status": "not_found",
+        "reject_reason": "line1_charset",
         "fields": {},
         "checks": {}
       },
@@ -1141,11 +1557,11 @@
         "date_of_birth": "correct",
         "date_of_expiry": "correct"
       },
-      "duration_ms": 2939
+      "duration_ms": 2608
     },
     {
-      "variant": "skew_minus_3_png",
-      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/skew-minus-3.png",
+      "variant": "uto_skew_minus_3_png",
+      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/uto-skew-minus-3.png",
       "source_sha256": "7df43dd96b46dd306d91180dfe7c0a93ce776bc6c410f725753c90bdd1822323",
       "source_kind": "png",
       "processed_image_sha256": "7df43dd96b46dd306d91180dfe7c0a93ce776bc6c410f725753c90bdd1822323",
@@ -1500,6 +1916,7 @@
         "pair_found": false,
         "verified": false,
         "status": "not_found",
+        "reject_reason": "line1_charset",
         "fields": {},
         "checks": {}
       },
@@ -1521,400 +1938,14 @@
         "date_of_birth": "correct",
         "date_of_expiry": "correct"
       },
-      "duration_ms": 2725
-    },
-    {
-      "variant": "image_pdf_raster_250dpi_2600_jpeg90",
-      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/image-pdf-250dpi.pdf",
-      "source_sha256": "ef63dc0be71da7b7082aa34137c529b13cb717d01840be676b632542ab902aba",
-      "source_kind": "image_pdf",
-      "processed_image_sha256": "d05a2ea9bcf0738d34b3ea10a1a309d58f70b348a380b0d3bd04beed478b0d91",
-      "raster": {
-        "dpi": 250,
-        "long_edge_max": 2600,
-        "jpeg_quality": 90,
-        "processed_width": 2600,
-        "processed_height": 1625
-      },
-      "engine": {
-        "name": "paddleocr",
-        "version": "PP-OCRv6",
-        "versions": [
-          "PP-OCRv6"
-        ],
-        "lang": "en",
-        "package_versions": {
-          "paddleocr": "3.7.0",
-          "paddlepaddle": "3.2.2"
-        }
-      },
-      "width": 2600,
-      "height": 1625,
-      "lines": [
-        {
-          "text": "PASSPORT / PASAPORT",
-          "box": [
-            [
-              141.0,
-              117.0
-            ],
-            [
-              1106.0,
-              120.0
-            ],
-            [
-              1106.0,
-              204.0
-            ],
-            [
-              140.0,
-              202.0
-            ]
-          ],
-          "score": 0.9637033343315125
-        },
-        {
-          "text": "Surname / Soyadı",
-          "box": [
-            [
-              157.0,
-              277.0
-            ],
-            [
-              551.0,
-              277.0
-            ],
-            [
-              551.0,
-              328.0
-            ],
-            [
-              157.0,
-              328.0
-            ]
-          ],
-          "score": 0.9984453916549683
-        },
-        {
-          "text": "YILMAZ",
-          "box": [
-            [
-              840.0,
-              278.0
-            ],
-            [
-              1053.0,
-              278.0
-            ],
-            [
-              1053.0,
-              335.0
-            ],
-            [
-              840.0,
-              335.0
-            ]
-          ],
-          "score": 0.9999659657478333
-        },
-        {
-          "text": "Given names / Adları",
-          "box": [
-            [
-              160.0,
-              411.0
-            ],
-            [
-              621.0,
-              411.0
-            ],
-            [
-              621.0,
-              458.0
-            ],
-            [
-              160.0,
-              458.0
-            ]
-          ],
-          "score": 0.9937295913696289
-        },
-        {
-          "text": "ADA",
-          "box": [
-            [
-              838.0,
-              409.0
-            ],
-            [
-              970.0,
-              409.0
-            ],
-            [
-              970.0,
-              469.0
-            ],
-            [
-              838.0,
-              469.0
-            ]
-          ],
-          "score": 0.9999141693115234
-        },
-        {
-          "text": "Passport No",
-          "box": [
-            [
-              158.0,
-              546.0
-            ],
-            [
-              425.0,
-              546.0
-            ],
-            [
-              425.0,
-              594.0
-            ],
-            [
-              158.0,
-              594.0
-            ]
-          ],
-          "score": 0.9999857544898987
-        },
-        {
-          "text": "U1000001",
-          "box": [
-            [
-              843.0,
-              544.0
-            ],
-            [
-              1131.0,
-              544.0
-            ],
-            [
-              1131.0,
-              598.0
-            ],
-            [
-              843.0,
-              598.0
-            ]
-          ],
-          "score": 0.9993728399276733
-        },
-        {
-          "text": "Nationality",
-          "box": [
-            [
-              156.0,
-              675.0
-            ],
-            [
-              404.0,
-              675.0
-            ],
-            [
-              404.0,
-              730.0
-            ],
-            [
-              156.0,
-              730.0
-            ]
-          ],
-          "score": 0.9999960064888
-        },
-        {
-          "text": "UTO",
-          "box": [
-            [
-              839.0,
-              674.0
-            ],
-            [
-              969.0,
-              674.0
-            ],
-            [
-              969.0,
-              738.0
-            ],
-            [
-              839.0,
-              738.0
-            ]
-          ],
-          "score": 0.9999730587005615
-        },
-        {
-          "text": "Date of birth",
-          "box": [
-            [
-              159.0,
-              812.0
-            ],
-            [
-              440.0,
-              812.0
-            ],
-            [
-              440.0,
-              856.0
-            ],
-            [
-              159.0,
-              856.0
-            ]
-          ],
-          "score": 0.9994477033615112
-        },
-        {
-          "text": "01.01.1990",
-          "box": [
-            [
-              844.0,
-              813.0
-            ],
-            [
-              1161.0,
-              813.0
-            ],
-            [
-              1161.0,
-              865.0
-            ],
-            [
-              844.0,
-              865.0
-            ]
-          ],
-          "score": 0.9999570846557617
-        },
-        {
-          "text": "Date of expiry",
-          "box": [
-            [
-              158.0,
-              942.0
-            ],
-            [
-              478.0,
-              945.0
-            ],
-            [
-              477.0,
-              997.0
-            ],
-            [
-              157.0,
-              994.0
-            ]
-          ],
-          "score": 0.9999684691429138
-        },
-        {
-          "text": "31.12.2030",
-          "box": [
-            [
-              843.0,
-              945.0
-            ],
-            [
-              1162.0,
-              945.0
-            ],
-            [
-              1162.0,
-              1000.0
-            ],
-            [
-              843.0,
-              1000.0
-            ]
-          ],
-          "score": 0.9999968409538269
-        },
-        {
-          "text": "P<UT0YILMAZ<<ADA<<<<<<<<<<<<<<<<<<<<<<<<<<<<",
-          "box": [
-            [
-              150.0,
-              1317.0
-            ],
-            [
-              1365.0,
-              1318.0
-            ],
-            [
-              1365.0,
-              1362.0
-            ],
-            [
-              150.0,
-              1361.0
-            ]
-          ],
-          "score": 0.9965864419937134
-        },
-        {
-          "text": "U1000001<6UT09001011F301231610000000146<<<44",
-          "box": [
-            [
-              150.0,
-              1416.0
-            ],
-            [
-              1361.0,
-              1416.0
-            ],
-            [
-              1361.0,
-              1460.0
-            ],
-            [
-              150.0,
-              1460.0
-            ]
-          ],
-          "score": 0.9997492432594299
-        }
-      ],
-      "parser_result": {
-        "pair_found": false,
-        "verified": false,
-        "status": "not_found",
-        "fields": {},
-        "checks": {}
-      },
-      "expected_fields": {
-        "surname": "YILMAZ",
-        "given_names": "ADA",
-        "passport_no": "U1000001",
-        "nationality": "UTO",
-        "date_of_birth": "1990-01-01",
-        "date_of_birth_mrz": "900101",
-        "date_of_expiry": "2030-12-31",
-        "date_of_expiry_mrz": "301231"
-      },
-      "critical_fields": {
-        "passport_no": "correct",
-        "surname": "correct",
-        "given_names": "correct",
-        "nationality": "correct",
-        "date_of_birth": "correct",
-        "date_of_expiry": "correct"
-      },
-      "duration_ms": 5956
+      "duration_ms": 2595
     },
     {
       "variant": "viz_only_xxa_crop_png",
       "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/viz-only-xxa-crop.png",
-      "source_sha256": "8d96d7168b7102e60ad88f2cff3f959c0915464ba3c164c49406a91a2908e65a",
+      "source_sha256": "068623af053a2ad4369925586df48bb7c06986000b6ed8628e6d44dcf33e4db6",
       "source_kind": "png",
-      "processed_image_sha256": "8d96d7168b7102e60ad88f2cff3f959c0915464ba3c164c49406a91a2908e65a",
+      "processed_image_sha256": "068623af053a2ad4369925586df48bb7c06986000b6ed8628e6d44dcf33e4db6",
       "raster": null,
       "engine": {
         "name": "paddleocr",
@@ -1929,73 +1960,73 @@
         }
       },
       "width": 1600,
-      "height": 520,
+      "height": 760,
       "lines": [
         {
           "text": "PASSPORT / PASAPORT",
           "box": [
             [
-              91.0,
+              89.0,
               74.0
             ],
             [
-              678.0,
-              74.0
+              679.0,
+              72.0
             ],
             [
-              678.0,
-              122.0
+              679.0,
+              123.0
             ],
             [
-              91.0,
-              122.0
+              89.0,
+              125.0
             ]
           ],
-          "score": 0.9963344931602478
+          "score": 0.9903030395507812
         },
         {
           "text": "Surname / Soyadı",
           "box": [
             [
               97.0,
-              169.0
+              170.0
             ],
             [
               339.0,
-              169.0
+              170.0
             ],
             [
               339.0,
-              200.0
+              201.0
             ],
             [
               97.0,
-              200.0
+              201.0
             ]
           ],
-          "score": 0.9987716674804688
+          "score": 0.9992826581001282
         },
         {
           "text": "YILMAZ",
           "box": [
             [
-              515.0,
-              171.0
+              516.0,
+              170.0
             ],
             [
-              648.0,
-              171.0
+              649.0,
+              170.0
             ],
             [
-              648.0,
-              206.0
+              649.0,
+              207.0
             ],
             [
-              515.0,
-              206.0
+              516.0,
+              207.0
             ]
           ],
-          "score": 0.9999554753303528
+          "score": 0.9999555945396423
         },
         {
           "text": "Given names / Adları",
@@ -2017,84 +2048,84 @@
               282.0
             ]
           ],
-          "score": 0.9985121488571167
+          "score": 0.9995121955871582
         },
         {
           "text": "ADA",
           "box": [
             [
-              514.0,
-              252.0
+              515.0,
+              251.0
             ],
             [
-              597.0,
-              252.0
+              596.0,
+              251.0
             ],
             [
-              597.0,
+              596.0,
               289.0
             ],
             [
-              514.0,
+              515.0,
               289.0
             ]
           ],
-          "score": 0.9998307824134827
+          "score": 0.9999265670776367
         },
         {
           "text": "Passport No",
           "box": [
             [
               97.0,
-              334.0
+              333.0
             ],
             [
-              262.0,
-              334.0
+              263.0,
+              333.0
             ],
             [
-              262.0,
-              366.0
+              263.0,
+              367.0
             ],
             [
               97.0,
-              366.0
+              367.0
             ]
           ],
-          "score": 0.9999889135360718
+          "score": 0.999936044216156
         },
         {
           "text": "U1000001",
           "box": [
             [
               518.0,
-              334.0
+              335.0
             ],
             [
               697.0,
-              334.0
+              335.0
             ],
             [
               697.0,
-              370.0
+              369.0
             ],
             [
               518.0,
-              370.0
+              369.0
             ]
           ],
-          "score": 0.9959351420402527
+          "score": 0.9981203079223633
         },
         {
           "text": "Nationality",
           "box": [
             [
               95.0,
-              412.0
+              413.0
             ],
             [
               248.0,
-              415.0
+              416.0
             ],
             [
               248.0,
@@ -2105,57 +2136,57 @@
               448.0
             ]
           ],
-          "score": 0.9999955892562866
+          "score": 0.9999962449073792
         },
         {
           "text": "XXA",
           "box": [
             [
               514.0,
-              415.0
+              416.0
             ],
             [
-              595.0,
-              415.0
+              594.0,
+              416.0
             ],
             [
-              595.0,
-              454.0
+              594.0,
+              453.0
             ],
             [
               514.0,
-              454.0
+              453.0
             ]
           ],
-          "score": 0.9996220469474792
+          "score": 0.9994929432868958
         },
         {
           "text": "Date of birth",
           "box": [
             [
               98.0,
-              499.0
+              498.0
             ],
             [
-              271.0,
-              499.0
+              272.0,
+              498.0
             ],
             [
-              271.0,
-              520.0
+              272.0,
+              528.0
             ],
             [
               98.0,
-              520.0
+              528.0
             ]
           ],
-          "score": 0.999691367149353
+          "score": 0.9999951720237732
         },
         {
           "text": "01.01.1990",
           "box": [
             [
-              519.0,
+              518.0,
               499.0
             ],
             [
@@ -2164,20 +2195,65 @@
             ],
             [
               715.0,
-              520.0
+              533.0
             ],
             [
-              519.0,
-              520.0
+              518.0,
+              533.0
             ]
           ],
-          "score": 0.9711955785751343
+          "score": 0.9998955726623535
+        },
+        {
+          "text": "Date of expiry",
+          "box": [
+            [
+              97.0,
+              580.0
+            ],
+            [
+              293.0,
+              580.0
+            ],
+            [
+              293.0,
+              614.0
+            ],
+            [
+              97.0,
+              614.0
+            ]
+          ],
+          "score": 0.9773112535476685
+        },
+        {
+          "text": "31.12.2030",
+          "box": [
+            [
+              518.0,
+              581.0
+            ],
+            [
+              715.0,
+              581.0
+            ],
+            [
+              715.0,
+              616.0
+            ],
+            [
+              518.0,
+              616.0
+            ]
+          ],
+          "score": 0.9999943971633911
         }
       ],
       "parser_result": {
         "pair_found": false,
         "verified": false,
         "status": "not_found",
+        "reject_reason": "not_found",
         "fields": {},
         "checks": {}
       },
@@ -2197,9 +2273,9 @@
         "given_names": "correct",
         "nationality": "correct",
         "date_of_birth": "correct",
-        "date_of_expiry": "wrong"
+        "date_of_expiry": "correct"
       },
-      "duration_ms": 1278
+      "duration_ms": 1780
     }
   ]
 }

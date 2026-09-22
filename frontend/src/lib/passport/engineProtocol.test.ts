@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { pairsFromOcrLines } from "./mrzFromOcrLines";
+import { exportBlockReason } from "./passportTypes";
 import { rowsFromOcrResult } from "./scanPassportImages";
 
 const directory = resolve(
@@ -49,6 +51,7 @@ describe("PP-OCRv6 synthetic image protocol evidence", () => {
           pair_found: boolean;
           verified: boolean;
           status: "verified" | "checksum_failed" | "not_found";
+          reject_reason: "line1_charset" | "not_found" | "checksum" | null;
         };
         expected_fields: {
           surname: string;
@@ -66,11 +69,11 @@ describe("PP-OCRv6 synthetic image protocol evidence", () => {
     expect(payload.evidence).toBe("actual_ppocrv6_synthetic_image_run");
     expect(payload.synthetic_only).toBe(true);
     expect(payload.variants.map((item) => item.variant)).toEqual([
-      "clean_png",
-      "jpeg_q35",
-      "skew_plus_3_png",
-      "skew_minus_3_png",
-      "image_pdf_raster_250dpi_2600_jpeg90",
+      "tur_clean_png",
+      "tur_image_pdf_raster_250dpi_2600_jpeg90",
+      "uto_jpeg_q35",
+      "uto_skew_plus_3_png",
+      "uto_skew_minus_3_png",
       "viz_only_xxa_crop_png",
     ]);
     for (const variant of payload.variants) {
@@ -97,6 +100,9 @@ describe("PP-OCRv6 synthetic image protocol evidence", () => {
       expect(Object.values(variant.critical_fields).every(
         (score) => ["correct", "wrong", "empty"].includes(score),
       )).toBe(true);
+      expect([null, "line1_charset", "not_found", "checksum"]).toContain(
+        variant.parser_result.reject_reason,
+      );
       expect(variant.expected_fields).toMatchObject({
         surname: "YILMAZ",
         given_names: "ADA",
@@ -112,8 +118,32 @@ describe("PP-OCRv6 synthetic image protocol evidence", () => {
       }
     }
 
+    const turVariants = payload.variants.filter(
+      (item) => item.expected_fields.nationality === "TUR",
+    );
+    expect(turVariants).toHaveLength(2);
+    for (const variant of turVariants) {
+      expect(variant.width).toBe(2600);
+      expect(variant.height).toBe(1625);
+      expect(variant.parser_result).toMatchObject({
+        pair_found: true,
+        verified: true,
+        status: "verified",
+        reject_reason: null,
+      });
+      const pairs = pairsFromOcrLines(variant.lines);
+      expect(pairs).toHaveLength(1);
+      expect(pairs[0].parsed).toMatchObject({
+        surname: "YILMAZ",
+        givenNames: "ADA",
+        passportNumber: "U1000001",
+        nationality: "TUR",
+        verified: true,
+      });
+    }
+
     const pdfRaster = payload.variants.find(
-      (item) => item.variant === "image_pdf_raster_250dpi_2600_jpeg90",
+      (item) => item.variant === "tur_image_pdf_raster_250dpi_2600_jpeg90",
     );
     expect(pdfRaster).toBeDefined();
     expect(pdfRaster!.source_kind).toBe("image_pdf");
@@ -128,7 +158,7 @@ describe("PP-OCRv6 synthetic image protocol evidence", () => {
     });
     expect(pdfRaster!.width).toBe(pdfRaster!.raster!.processed_width);
     expect(pdfRaster!.height).toBe(pdfRaster!.raster!.processed_height);
-    expect(pdfRaster!.parser_result.verified).toBe(false);
+    expect(pdfRaster!.parser_result.verified).toBe(true);
     const rows = rowsFromOcrResult(
       "synthetic-pdf-raster.jpg",
       "blob:synthetic",
@@ -143,13 +173,52 @@ describe("PP-OCRv6 synthetic image protocol evidence", () => {
         lines: pdfRaster!.lines,
       },
     );
-    expect(pdfRaster!.lines.some((line) => line.text.includes("U1000001"))).toBe(true);
-    expect(rows.length).toBeGreaterThan(0);
-    expect(rows.some((row) => row.status === "ok")).toBe(false);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      firstName: "ADA",
+      lastName: "YILMAZ",
+      passportNo: "U1000001",
+      nationality: "TUR",
+      countryCode2: "TR",
+      status: "ok",
+      reviewStatus: "verified",
+    });
     expect(rows[0].sourceImageSize).toEqual({
       width: pdfRaster!.width,
       height: pdfRaster!.height,
     });
+
+    const utoVariants = payload.variants.filter(
+      (item) => item.expected_fields.nationality === "UTO",
+    );
+    expect(utoVariants).toHaveLength(3);
+    expect(utoVariants.every((item) => !item.parser_result.verified)).toBe(true);
+    expect(utoVariants.every(
+      (item) => ["line1_charset", "not_found", "checksum"].includes(
+        String(item.parser_result.reject_reason),
+      ),
+    )).toBe(true);
+    expect(exportBlockReason({ nationality: "UTO" })).toContain("Ülke Kodu 2 yok");
+
+    const vizOnly = payload.variants.find(
+      (item) => item.variant === "viz_only_xxa_crop_png",
+    );
+    expect(vizOnly).toBeDefined();
+    expect(vizOnly!.height).toBeGreaterThanOrEqual(700);
+    expect(vizOnly!.expected_fields.nationality).toBe("XXA");
+    expect(vizOnly!.parser_result).toMatchObject({
+      pair_found: false,
+      verified: false,
+      reject_reason: "not_found",
+    });
+    expect(Object.values(vizOnly!.critical_fields)).toEqual([
+      "correct",
+      "correct",
+      "correct",
+      "correct",
+      "correct",
+      "correct",
+    ]);
   });
 
   it.skipIf(hasResult)("states clearly that image-engine evidence was not run", () => {
