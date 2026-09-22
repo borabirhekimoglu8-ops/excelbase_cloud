@@ -5,12 +5,12 @@
  * deletes, shifts, or harvests characters from unrelated page text.
  */
 
-import type { Cell } from "./mrzGrid";
 import {
   decodeLine1,
   decodeLine2,
   icaoCheckDigit,
   tcChecksum,
+  type Cell,
 } from "./td3Schema";
 
 export type MrzSex = "M" | "F" | "X" | "";
@@ -46,6 +46,33 @@ export type MrzParseResult = {
 /** ICAO check digit for a field (or the composite range on line 2). */
 export function mrzCheckDigit(field: string): string {
   return icaoCheckDigit(field);
+}
+
+function cellsFromLine(line: string): Cell[] {
+  return [...line].map((value, index) => ({
+    index,
+    x0: index,
+    x1: index + 1,
+    candidates: [{ value, confidence: 100, passes: ["text"] }],
+    disputed: false,
+  }));
+}
+
+/** Decode two exact 44-character TD3 text lines without OCR heuristics. */
+export function parseTd3FromLines(
+  line1: string,
+  line2: string,
+  today = new Date(),
+): MrzParseResult | null {
+  const upper = line1.trim().toUpperCase();
+  const lower = line2.trim().toUpperCase();
+  if (
+    upper.length !== 44
+    || lower.length !== 44
+    || !/^[A-Z<]{44}$/.test(upper)
+    || !/^[A-Z0-9<]{44}$/.test(lower)
+  ) return null;
+  return parseTd3FromCells(cellsFromLine(upper), cellsFromLine(lower), today);
 }
 
 /** YYMMDD → YYYY-MM-DD using the retained 1950–2049 display pivot. */

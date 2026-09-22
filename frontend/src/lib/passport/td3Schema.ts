@@ -1,4 +1,16 @@
-import type { Cell } from "./mrzGrid";
+export type CellCandidate = {
+  value: string;
+  confidence: number;
+  passes: string[];
+};
+
+export type Cell = {
+  index: number;
+  x0: number;
+  x1: number;
+  candidates: CellCandidate[];
+  disputed: boolean;
+};
 
 const WEIGHTS = [7, 3, 1] as const;
 const MAX_FIELD_SOLUTIONS = 50_000;

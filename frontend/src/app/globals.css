@@ -3230,6 +3230,51 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   height: 52px;
 }
 
+.xb-mrz-entry {
+  display: grid;
+  gap: 14px;
+}
+.xb-mrz-entry h2,
+.xb-mrz-entry p { margin: 0; }
+.xb-mrz-entry > div {
+  display: grid;
+  gap: 4px;
+}
+.xb-mrz-entry > div > p:last-child,
+.xb-mrz-help {
+  color: var(--ido-muted);
+  font-size: var(--type-12);
+  line-height: 1.5;
+}
+.xb-mrz-entry > label {
+  display: grid;
+  gap: 6px;
+}
+.xb-mrz-entry > label > span {
+  color: var(--ido-faint);
+  font-size: var(--type-11);
+  font-weight: 750;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.xb-mrz-entry textarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid var(--ido-border);
+  border-radius: var(--ido-radius-sm);
+  background: rgba(0,0,0,.22);
+  color: var(--ido-ink);
+  font: 14px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .02em;
+}
+.xb-mrz-entry textarea:focus-visible {
+  outline: 2px solid var(--ido-orange);
+  outline-offset: 2px;
+}
+.xb-mrz-entry > button { width: fit-content; }
+
 .xb-photo-drop {
   position: relative;
   display: grid;
@@ -3291,14 +3336,23 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 .xb-passport-thumb {
   display: grid;
   gap: 4px;
+  align-content: start;
   justify-items: center;
 }
-.xb-passport-thumb img {
+.xb-passport-thumb strong {
+  display: grid;
+  place-items: center;
   width: 72px;
   height: 72px;
-  object-fit: cover;
   border-radius: 8px;
-  background: #0a1a28;
+  background: rgba(61,214,140,.12);
+  color: var(--ido-success);
+  font-family: var(--font-display);
+  font-size: 30px;
+}
+.xb-passport-rows > li[data-status="weak"] .xb-passport-thumb strong {
+  background: rgba(244,119,33,.12);
+  color: var(--ido-orange);
 }
 .xb-passport-thumb span {
   color: var(--ido-muted);
@@ -3388,7 +3442,7 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
 @media (max-width: 420px) {
   .xb-passport-rows > li { grid-template-columns: 56px minmax(0, 1fr); }
   .xb-passport-rows > li > .danger { grid-column: 1 / -1; }
-  .xb-passport-thumb img { width: 56px; height: 56px; }
+  .xb-passport-thumb strong { width: 56px; height: 56px; }
 }
 
 .xb-photo-match-list {

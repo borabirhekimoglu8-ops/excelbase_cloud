@@ -85,7 +85,7 @@ export function QuickCreateSheet({
     { key: "passenger", label: "Yeni yolcu", detail: "Bilgi, biyometrik fotoğraf ve PDF", mark: "YO", run: onNewPassenger },
     { key: "document", label: "Evrak yükle", detail: "İşe, yolcuya veya arşive bağla", mark: "EV", run: onUploadDocument },
     { key: "bulk-import", label: "Toplu yolcu listesi", detail: "Excel, CSV, ODS veya ZIP içe aktar", mark: "XL", run: onBulkImport },
-    { key: "passport-scan", label: "Pasaport JPG → Excel", detail: "Toplu pasaport fotoğrafından liste üret", mark: "PS", run: onPassportScan },
+    { key: "passport-scan", label: "Pasaport MRZ → Excel", detail: "Yapıştırılan MRZ veya metin katmanlı PDF", mark: "PS", run: onPassportScan },
     { key: "bulk-photos", label: "Toplu fotoğraf eşleştir", detail: "Vesikalık / ZIP · otomatik isim-pasaport", mark: "FO", run: onBulkPhotos },
     { key: "petition", label: "Yeni dilekçe", detail: "Kayıttan resmi belge oluştur", mark: "Dİ", run: onNewPetition },
     { key: "task", label: "Yeni görev", detail: "Son tarih ve öncelik belirle", mark: "GR", run: onNewTask },

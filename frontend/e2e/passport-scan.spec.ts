@@ -1,37 +1,36 @@
 import { test, expect } from "@playwright/test";
-import path from "node:path";
 
 import { completeSetup, openGateVisa } from "./helpers";
 
-test("pasaport tarama ekranı açılır", async ({ page }) => {
+const LINE1 = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
+const LINE2 = "L898902C36UTO7408122F1204159ZE184226B<<<<<10";
+
+test("pasaport MRZ metin ekranı açılır", async ({ page }) => {
   await page.goto("/");
-  await completeSetup(page, "Pasaport Operatör");
+  await completeSetup(page, "Ada Yılmaz");
   await openGateVisa(page);
-  await page.getByRole("button", { name: /Pasaport JPG/i }).click();
-  await expect(page.getByRole("heading", { name: /Pasaport JPG → Excel/i })).toBeVisible();
-  await expect(page.getByText("Pasaport JPG, PDF veya ZIP")).toBeVisible();
+  await page.getByRole("button", { name: /Pasaport MRZ/i }).click();
+  await expect(page.getByRole("heading", { name: /Pasaport MRZ → Excel/i })).toBeVisible();
+  await expect(page.getByLabel("MRZ satırlarını yapıştır")).toBeVisible();
+  await expect(page.getByText("Metin katmanlı PDF veya TXT")).toBeVisible();
   await expect(page.locator(".xb-photo-drop input[type='file']")).toHaveAttribute(
     "accept",
-    /(?:^|,)\.pdf,application\/pdf(?:,|$)/,
+    ".pdf,application/pdf,.txt,text/plain",
   );
 });
 
-test("pasaport JPG MRZ okur", async ({ page }) => {
-  test.setTimeout(180_000);
+test("yapıştırılan MRZ alanlarını doğrular ve Excel indirir", async ({ page }) => {
   await page.goto("/");
-  await completeSetup(page, "Pasaport OCR");
+  await completeSetup(page, "Ada Yılmaz");
   await openGateVisa(page);
-  await page.getByRole("button", { name: /Pasaport JPG/i }).click();
-  await expect(page.getByRole("heading", { name: /Pasaport JPG → Excel/i })).toBeVisible();
-
-  // Repo fixture — CI has no /tmp sample image.
-  const sample = path.join(process.cwd(), "e2e", "fixtures", "mrz-sample.jpg");
-  await page.locator(".xb-photo-drop input[type='file']").setInputFiles(sample);
+  await page.getByRole("button", { name: /Pasaport MRZ/i }).click();
+  await page.getByLabel("MRZ satırlarını yapıştır").fill(`${LINE1}\n${LINE2}`);
+  await page.getByRole("button", { name: "Satırları işle" }).click();
 
   const lastName = page.locator(".xb-passport-rows input").nth(1);
-  await expect(lastName).toHaveValue(/ERIKSSON/i, { timeout: 120_000 });
+  await expect(lastName).toHaveValue(/ERIKSSON/i);
   const passportNo = page.locator(".xb-passport-rows input").nth(2);
-  await expect(passportNo).toHaveValue(/L898902C3/i, { timeout: 30_000 });
+  await expect(passportNo).toHaveValue(/L898902C3/i);
   const country = page.locator(".xb-passport-rows input").nth(3);
   // UTO is the fictional ICAO sample state. Unknown codes must stay blank.
   await expect(country).toHaveValue("");

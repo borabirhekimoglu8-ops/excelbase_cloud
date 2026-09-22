@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { icaoCountryToIso2 } from "./icaoCountries";
-import { type Cell } from "./mrzGrid";
 import {
   birthDateOracle,
   decodeLine1,
   decodeLine2,
   expiryDateOracle,
   tcChecksum,
+  type Cell,
 } from "./td3Schema";
 
 const LINE1 = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
