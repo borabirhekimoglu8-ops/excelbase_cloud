@@ -9,10 +9,15 @@ initialized, it records NOT RUN and skips.
 
 from __future__ import annotations
 
+import hashlib
 import io
+import importlib.metadata
 import json
+import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 from PIL import Image, ImageDraw, ImageFont
@@ -27,11 +32,22 @@ pytestmark = pytest.mark.engine
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = ROOT / "frontend/src/lib/passport/__fixtures__/engine-runs"
+SOURCE_DIR = OUTPUT_DIR / "sources"
 STATUS_FILE = OUTPUT_DIR / "README.md"
 RESULT_FILE = OUTPUT_DIR / "ppocrv6-synthetic.json"
 
 LINE1 = "P<UTOYILMAZ<<ADA<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
 LINE2 = "U1000001<6UTO9001011F301231610000000146<<<44"
+
+
+@dataclass(frozen=True)
+class Variant:
+    name: str
+    source_filename: str
+    source_kind: str
+    source_bytes: bytes
+    processed_image: bytes
+    raster: dict[str, int] | None = None
 
 
 def _font(size: int, mono: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -80,25 +96,212 @@ def _bytes(image: Image.Image, kind: str, quality: int = 90) -> bytes:
     return buffer.getvalue()
 
 
-def _variants() -> dict[str, bytes]:
+def _variants() -> list[Variant]:
     clean = _passport()
     plus = clean.rotate(3, expand=True, fillcolor="white")
     minus = clean.rotate(-3, expand=True, fillcolor="white")
 
     # Equivalent to the browser contract: 250 dpi, long edge <=2600, JPEG 0.9.
-    pdf_source = clean.resize((2600, 1625), Image.Resampling.LANCZOS)
+    pdf_raster = clean.resize((2600, 1625), Image.Resampling.LANCZOS)
     pdf_buffer = io.BytesIO()
-    pdf_source.save(pdf_buffer, format="PDF", resolution=250)
-    assert pdf_buffer.getvalue().startswith(b"%PDF")
+    pdf_raster.save(pdf_buffer, format="PDF", resolution=250)
+    pdf_bytes = pdf_buffer.getvalue()
+    assert pdf_bytes.startswith(b"%PDF")
 
-    return {
-        "clean_png": _bytes(clean, "PNG"),
-        "jpeg_q35": _bytes(clean, "JPEG", 35),
-        "skew_plus_3_png": _bytes(plus, "PNG"),
-        "skew_minus_3_png": _bytes(minus, "PNG"),
-        "image_pdf_raster_250dpi_2600_jpeg90": _bytes(pdf_source, "JPEG", 90),
-        "viz_only_xxa_crop_png": _bytes(_passport(viz_only=True), "PNG"),
+    def image_variant(
+        name: str,
+        filename: str,
+        source_kind: str,
+        image: Image.Image,
+        image_format: str,
+        quality: int = 90,
+    ) -> Variant:
+        source = _bytes(image, image_format, quality)
+        return Variant(name, filename, source_kind, source, source)
+
+    return [
+        image_variant("clean_png", "clean.png", "png", clean, "PNG"),
+        image_variant("jpeg_q35", "jpeg-q35.jpg", "jpeg", clean, "JPEG", 35),
+        image_variant("skew_plus_3_png", "skew-plus-3.png", "png", plus, "PNG"),
+        image_variant("skew_minus_3_png", "skew-minus-3.png", "png", minus, "PNG"),
+        Variant(
+            "image_pdf_raster_250dpi_2600_jpeg90",
+            "image-pdf-250dpi.pdf",
+            "image_pdf",
+            pdf_bytes,
+            _bytes(pdf_raster, "JPEG", 90),
+            {
+                "dpi": 250,
+                "long_edge_max": 2600,
+                "jpeg_quality": 90,
+                "processed_width": 2600,
+                "processed_height": 1625,
+            },
+        ),
+        image_variant(
+            "viz_only_xxa_crop_png",
+            "viz-only-xxa-crop.png",
+            "png",
+            _passport(viz_only=True),
+            "PNG",
+        ),
+    ]
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _package_version(distribution: str) -> str | None:
+    try:
+        return importlib.metadata.version(distribution)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _compact_mrz(text: str) -> str:
+    return re.sub(r"[^A-Z0-9<]", "", text.upper().replace("«", "<").replace("‹", "<"))
+
+
+def _repair_td3_length(value: str) -> list[str]:
+    if len(value) == 44:
+        return [value]
+    if len(value) == 43:
+        return [f"{value}<", f"<{value}"]
+    if len(value) == 45:
+        return [value[:44], value[1:]]
+    return []
+
+
+def _check_digit(value: str) -> str:
+    weights = (7, 3, 1)
+    total = 0
+    for index, character in enumerate(value):
+        if character.isdigit():
+            numeric = int(character)
+        elif "A" <= character <= "Z":
+            numeric = ord(character) - 55
+        elif character == "<":
+            numeric = 0
+        else:
+            return ""
+        total += numeric * weights[index % len(weights)]
+    return str(total % 10)
+
+
+def _mrz_date(raw: str) -> str:
+    if not re.fullmatch(r"\d{6}", raw):
+        return ""
+    year = 1900 + int(raw[:2]) if int(raw[:2]) >= 50 else 2000 + int(raw[:2])
+    try:
+        return datetime(year, int(raw[2:4]), int(raw[4:6]), tzinfo=UTC).date().isoformat()
+    except ValueError:
+        return ""
+
+
+def _parse_td3(line1: str, line2: str) -> dict[str, Any] | None:
+    if not re.fullmatch(r"[A-Z<]{44}", line1) or not re.fullmatch(r"[A-Z0-9<]{44}", line2):
+        return None
+    if not line1.startswith("P<"):
+        return None
+    names = line1[5:].split("<<", 1)
+    checks = {
+        "passport_no": _check_digit(line2[:9]) == line2[9],
+        "date_of_birth": _check_digit(line2[13:19]) == line2[19],
+        "date_of_expiry": _check_digit(line2[21:27]) == line2[27],
+        "personal_no": _check_digit(line2[28:42]) == line2[42],
+        "composite": _check_digit(line2[:10] + line2[13:20] + line2[21:43]) == line2[43],
     }
+    fields = {
+        "surname": names[0].replace("<", " ").strip(),
+        "given_names": (names[1] if len(names) > 1 else "").replace("<", " ").strip(),
+        "passport_no": line2[:9].replace("<", ""),
+        "nationality": line2[10:13].replace("<", ""),
+        "date_of_birth": _mrz_date(line2[13:19]),
+        "date_of_expiry": _mrz_date(line2[21:27]),
+    }
+    return {
+        "pair_found": True,
+        "verified": all(checks.values()),
+        "status": "verified" if all(checks.values()) else "checksum_failed",
+        "fields": fields,
+        "checks": checks,
+    }
+
+
+def _find_mrz_pair(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    compact = [_compact_mrz(str(line.get("text", ""))) for line in lines]
+    uppers = [line for line in compact if 40 <= len(line) <= 48 and line.startswith("P<")]
+    lowers = [
+        line
+        for line in compact
+        if 40 <= len(line) <= 48
+        and bool(re.fullmatch(r"[A-Z0-9<]+", line))
+        and any(character.isdigit() for character in line)
+        and not line.startswith(("P<", "PA", "PO"))
+    ]
+    fallback: dict[str, Any] | None = None
+    for upper in uppers:
+        for lower in lowers:
+            for repaired_upper in _repair_td3_length(upper):
+                for repaired_lower in _repair_td3_length(lower):
+                    parsed = _parse_td3(repaired_upper, repaired_lower)
+                    if parsed is None:
+                        continue
+                    fallback = parsed
+                    if parsed["verified"]:
+                        return parsed
+    return fallback or {
+        "pair_found": False,
+        "verified": False,
+        "status": "not_found",
+        "fields": {},
+        "checks": {},
+    }
+
+
+def _expected_fields(viz_only: bool) -> dict[str, str]:
+    return {
+        "surname": "YILMAZ",
+        "given_names": "ADA",
+        "passport_no": "U1000001",
+        "nationality": "XXA" if viz_only else "UTO",
+        "date_of_birth": "1990-01-01",
+        "date_of_birth_mrz": "900101",
+        "date_of_expiry": "2030-12-31",
+        "date_of_expiry_mrz": "301231",
+    }
+
+
+def _critical_field_scores(
+    lines: list[dict[str, Any]],
+    parser_result: dict[str, Any],
+    expected: dict[str, str],
+) -> dict[str, str]:
+    raw = "".join(_compact_mrz(str(line.get("text", ""))) for line in lines)
+    parsed_fields = parser_result.get("fields", {})
+    scores: dict[str, str] = {}
+    tokens = {
+        "passport_no": (expected["passport_no"],),
+        "surname": (expected["surname"],),
+        "given_names": (expected["given_names"],),
+        "nationality": (expected["nationality"],),
+        "date_of_birth": (
+            expected["date_of_birth"].replace("-", ""),
+            expected["date_of_birth_mrz"],
+            "01011990",
+        ),
+        "date_of_expiry": (
+            expected["date_of_expiry"].replace("-", ""),
+            expected["date_of_expiry_mrz"],
+            "31122030",
+        ),
+    }
+    for field, accepted in tokens.items():
+        observed = re.sub(r"[^A-Z0-9]", "", str(parsed_fields.get(field, "")).upper())
+        found = any(token.replace("-", "") in raw or token.replace("-", "") == observed for token in accepted)
+        scores[field] = "correct" if found else ("wrong" if lines or observed else "empty")
+    return scores
 
 
 def _settings() -> PassportOcrSettings:
@@ -142,19 +345,46 @@ def test_generate_and_run_ppocrv6_image_protocol() -> None:
         pytest.skip("PP-OCRv6 could not initialize; protocol NOT RUN")
 
     settings = _settings()
+    package_versions = {
+        "paddleocr": _package_version("paddleocr"),
+        "paddlepaddle": _package_version("paddlepaddle"),
+    }
     reset_engine_for_tests()
     set_engine_for_tests(engine)
     results = []
     try:
-        for name, image in _variants().items():
-            payload = recognize_image(image, name, settings)
+        SOURCE_DIR.mkdir(parents=True, exist_ok=True)
+        for variant in _variants():
+            source_path = SOURCE_DIR / variant.source_filename
+            source_path.write_bytes(variant.source_bytes)
+            payload = recognize_image(variant.processed_image, variant.name, settings)
+            expected = _expected_fields(variant.name == "viz_only_xxa_crop_png")
+            parser_result = _find_mrz_pair(payload["lines"])
             results.append(
                 {
-                    "variant": name,
-                    "engine": payload["engine"],
+                    "variant": variant.name,
+                    "source_path": source_path.relative_to(ROOT).as_posix(),
+                    "source_sha256": _sha256(variant.source_bytes),
+                    "source_kind": variant.source_kind,
+                    "processed_image_sha256": _sha256(variant.processed_image),
+                    "raster": variant.raster,
+                    "engine": {
+                        "name": payload["engine"]["name"],
+                        "version": payload["engine"]["version"],
+                        "versions": list(settings.versions),
+                        "lang": payload["engine"]["lang"],
+                        "package_versions": package_versions,
+                    },
                     "width": payload["width"],
                     "height": payload["height"],
                     "lines": payload["lines"],
+                    "parser_result": parser_result,
+                    "expected_fields": expected,
+                    "critical_fields": _critical_field_scores(
+                        payload["lines"],
+                        parser_result,
+                        expected,
+                    ),
                     "duration_ms": payload["duration_ms"],
                 }
             )
@@ -179,7 +409,8 @@ def test_generate_and_run_ppocrv6_image_protocol() -> None:
     STATUS_FILE.write_text(
         "# PP-OCRv6 synthetic image protocol\n\n"
         "RUN with the optional PaddleOCR engine. Evidence is in "
-        "`ppocrv6-synthetic.json`; all source images are synthetic.\n",
+        "`ppocrv6-synthetic.json`; all persisted source images and the image-only "
+        "PDF under `sources/` are synthetic.\n",
         encoding="utf-8",
     )
     assert len(results) == 6

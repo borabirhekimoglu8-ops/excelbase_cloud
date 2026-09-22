@@ -1,21 +1,27 @@
 # 8.2.0 pasaport OCR son durum raporu
 
-## Sonuç
+## “PDF görüntüsünden Excel’e kadar gerçekten hangi motor çalıştı ve bunu hangi görüntü tabanlı test kanıtlıyor?”
 
-PDF raster → OCR aşamasında çalışan motor PaddleOCR 3.7.0 üzerindeki
-**PP-OCRv6** oldu. Hiçbir motor bu koşuda PDF → doğrulanmış satır → Excel
-akışını tamamlamadı. Görüntü kanıtı,
-`tests/passport_ocr_protocol/generate_and_run.py` işaretli pytest protokolünün
-ürettiği `ppocrv6-synthetic.json` dosyasıdır. Protokol temiz PNG, JPEG q=35,
-±3° eğim, PDF-raster ve VIZ-only sentetik görüntüleri gerçek motordan geçirdi.
-Frontend `engineProtocol.test.ts`, PDF-raster sonucunu PP-OCR satır
-boru hattına verir ve bu kaydın doğrulanmadığını kilitler.
+Çalışan motor **PP-OCRv6 (PaddleOCR 3.7.x)** oldu.
+`tests/passport_ocr_protocol/generate_and_run.py`, Ada Yılmaz sentetik kaynak
+görüntülerini ve gerçek bir görüntü-PDF’den hazırlanmış PDF-raster eşdeğerini
+motora verir; kanıtı
+`frontend/src/lib/passport/__fixtures__/engine-runs/ppocrv6-synthetic.json`
+dosyasına yazar. JSON artık kaynak yolu/türü/SHA-256 değerini, motora gerçekten
+gönderilen görüntünün SHA-256 değerini, PDF raster ayarlarını ve işlenmiş
+boyutları, yüklü `paddleocr`/`paddlepaddle` paket sürümlerini, ham OCR
+satırlarını, ayrıştırıcı sonucunu, kritik alan skorlarını ve süreyi kaydeder.
 
-Motor çıktısındaki MRZ çifti kontrol basamaklarından geçmedi; ayrıca sentetik
-belge ülke olmayan UTO kodunu taşır. Bu nedenle Excel dosyasına alınmadı ve
-başarılı bir motor-kaynaklı Excel indirme iddiası yoktur. Depodaki `.txt`
-dosyaları ise yalnız
+Ancak hiçbir motor bu koşuda doğrulanmış MRZ → Excel akışını tamamlamadı.
+Özellikle PDF-raster motor çıktısındaki MRZ doğrulanmadı ve Excel’e alınmadı;
+PDF → Excel başarısı iddia edilmez. `frontend/src/lib/passport/engineProtocol.test.ts`
+bu olumsuz sonucu kilitler. Windows test edilmedi. İki-tarayıcı paket e2e testi
+mock OCR kullanır ve motor kanıtı değildir. Vault-sync çalıştırılmadı.
+`compressed-pages/*.txt` dosyaları görüntü OCR’ı değil, yalnız
 `text_fixture_expected_output` etiketli ayrıştırıcı beklenen çıktılarıdır.
+
+Sentetik belge ülke olmayan UTO kodunu taşır; bu da doğrulansa bile ilgili
+Excel şablonunun ISO-2 ülke alanına zorlanmaz.
 
 Uygulamanın görüntü yolu artık yalnız loopback FastAPI üzerindeki PaddleOCR /
 PP-OCRv6 servisidir. Tesseract çalışma zamanı, bağımlılığı, worker/WASM
@@ -38,6 +44,9 @@ Canlıya dağıtım: yok
 - Sentetik set Ada Yılmaz / `U1000001` / `UTO` / `XXA` kullanır; temiz PNG,
   JPEG q=35, ±3° eğim, 250 dpi / 2600 px / JPEG 0.9 PDF-raster eşdeğeri ve
   VIZ-only kırpımı kapsar.
+- Sentetik PNG/JPEG kaynakları ile `%PDF` başlıklı görüntü-PDF
+  `engine-runs/sources/` altında saklanır; kaynak/işlenmiş SHA-256 ve raster
+  parametreleri sonuç JSON’unda denetlenebilir.
 - `compressed-pages/*.txt` görüntü değildir. Hash ve ayrıştırıcı beklentileri
   `expectedOutputs.ts` ile kilitlenir; OCR motoru çalıştı iddiası taşımaz.
 
