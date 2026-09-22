@@ -103,7 +103,9 @@ Altı gerçek motor protokol varyantı için birbirini dışlayan sayılar:
 
 Gerçek tarayıcı zincirine alınan TUR görüntü-PDF alt kümesinde A=1, B=0, C=0.
 Bu kayıt otomatik doğrulandı; `flow-proof.json` içindeki `edited_fields` boş ve
-`excel_downloaded` true.
+`excel_downloaded` true. Linux’ta aynı Playwright koşusu yeniden geçti (mock yok).
+VIZ taslağı + kullanıcı teyidi + TUR, birim testte Excel’e hazır olur; XXA teyit
+edilse bile dışa aktarılmaz. Bu turda B motor kaydı üretilmedi.
 
 ## Uygulanan akış
 
