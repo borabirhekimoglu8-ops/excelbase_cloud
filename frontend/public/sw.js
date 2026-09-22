@@ -3,7 +3,7 @@
  * Passenger records are handled by the application data layer. This worker
  * only keeps the static application shell available when the network is down.
  */
-const SHELL_VERSION = "2026.09.21.2";
+const SHELL_VERSION = "2026.09.22.1";
 const CACHE_PREFIX = "excelbase-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const CORE_ASSETS = [
@@ -13,6 +13,14 @@ const CORE_ASSETS = [
   "/icon-512.png",
   "/apple-touch-icon.png",
   "/brand/ido-logo.jpg",
+];
+const OCR_ASSETS = [
+  "/tesseract/worker.min.js",
+  "/tesseract/tesseract-core-simd-lstm.wasm.js",
+  "/tesseract/tesseract-core-simd-lstm.wasm",
+  "/tesseract/tesseract-core-lstm.wasm.js",
+  "/tesseract/tesseract-core-lstm.wasm",
+  "/tesseract/lang-data/mrz.traineddata.gz",
 ];
 
 function isCacheableResponse(response) {
@@ -74,6 +82,7 @@ async function precacheShell() {
   // The generated Next.js bundles are essential. If one cannot be cached, the
   // installation is retried instead of reporting a misleading offline-ready state.
   await Promise.all(discoveredAssets.map((url) => fetchAndCache(cache, url)));
+  await Promise.all(OCR_ASSETS.map((url) => fetchAndCache(cache, url)));
   await Promise.allSettled(optionalAssets.map((url) => fetchAndCache(cache, url)));
 }
 

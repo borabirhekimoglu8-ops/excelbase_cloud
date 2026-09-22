@@ -1,12 +1,13 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { IMAGE_ACCEPT } from "@/lib/imageFormat";
 import { saveBlob } from "@/lib/offline/exporter";
 import { createPassportOperatorXlsxBlob } from "@/lib/passport/operatorExcel";
 import {
   DOCUMENT_TYPES,
+  prewarmPassportOcr,
   revokePassportScanPreviews,
   scanPassportImages,
   type PassportDocumentType,
@@ -37,16 +38,26 @@ function rowReady(row: PassportScanRow): boolean {
   );
 }
 
+async function yieldForProgressPaint(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
 export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
   const { notify } = useStore();
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<PassportScanProgress | null>(null);
   const [rows, setRows] = useState<PassportScanRow[]>([]);
+  const rowsRef = useRef<PassportScanRow[]>([]);
 
-  useEffect(() => () => {
-    revokePassportScanPreviews(rows);
+  useEffect(() => {
+    rowsRef.current = rows;
   }, [rows]);
+
+  useEffect(() => {
+    void prewarmPassportOcr();
+    return () => revokePassportScanPreviews(rowsRef.current);
+  }, []);
 
   const readyCount = useMemo(() => rows.filter(rowReady).length, [rows]);
 
@@ -55,6 +66,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
     setBusy(true);
     setProgress({ done: 0, total: files.length, current: "Hazırlanıyor…" });
     try {
+      await yieldForProgressPaint();
       const next = await scanPassportImages(files, setProgress);
       revokePassportScanPreviews(rows);
       setRows(next);
@@ -278,6 +290,20 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
                     {row.filename}
                     {row.warnings[0] ? ` · ${row.warnings[0]}` : ""}
                   </p>
+                  {row.status !== "ok" && (row.mrzCropUrl || row.rawLines?.some(Boolean)) ? (
+                    <details className="xb-passport-debug">
+                      <summary>MRZ ayrıntısı</summary>
+                      <div>
+                        {row.mrzCropUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={row.mrzCropUrl} alt={`${row.filename} MRZ kırpımı`} />
+                        ) : null}
+                        {row.rawLines?.some(Boolean) ? (
+                          <code>{row.rawLines.filter(Boolean).join("\n")}</code>
+                        ) : null}
+                      </div>
+                    </details>
+                  ) : null}
                 </div>
                 <button type="button" className="danger" onClick={() => removeRow(row.id)} aria-label="Satırı sil">
                   Sil

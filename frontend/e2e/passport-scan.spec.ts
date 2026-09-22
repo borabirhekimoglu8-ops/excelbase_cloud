@@ -1,14 +1,12 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
 
-import { completeSetup } from "./helpers";
+import { completeSetup, openGateVisa } from "./helpers";
 
 test("pasaport tarama ekranı açılır", async ({ page }) => {
   await page.goto("/");
   await completeSetup(page, "Pasaport Operatör");
-  await page.getByRole("navigation", { name: "Ana gezinme" })
-    .getByRole("button", { name: "KAPI", exact: true })
-    .click();
+  await openGateVisa(page);
   await page.getByRole("button", { name: /Pasaport JPG/i }).click();
   await expect(page.getByRole("heading", { name: /Pasaport JPG → Excel/i })).toBeVisible();
   await expect(page.getByText(/Pasaport JPG veya ZIP bırakın/i)).toBeVisible();
@@ -18,9 +16,7 @@ test("pasaport JPG MRZ okur", async ({ page }) => {
   test.setTimeout(180_000);
   await page.goto("/");
   await completeSetup(page, "Pasaport OCR");
-  await page.getByRole("navigation", { name: "Ana gezinme" })
-    .getByRole("button", { name: "KAPI", exact: true })
-    .click();
+  await openGateVisa(page);
   await page.getByRole("button", { name: /Pasaport JPG/i }).click();
   await expect(page.getByRole("heading", { name: /Pasaport JPG → Excel/i })).toBeVisible();
 
@@ -38,4 +34,11 @@ test("pasaport JPG MRZ okur", async ({ page }) => {
   // Visa date inputs were removed from the scan UI (template columns stay in Excel).
   await expect(page.getByLabel(/Vize Başlangıç/i)).toHaveCount(0);
   await expect(page.getByLabel(/Vize Bitiş/i)).toHaveCount(0);
+
+  const excelButton = page.getByRole("button", { name: "Excel indir" });
+  await expect(excelButton).toBeEnabled();
+  const downloadPromise = page.waitForEvent("download");
+  await excelButton.click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^pasaport-yolcu-listesi-\d{4}-\d{2}-\d{2}\.xlsx$/);
 });

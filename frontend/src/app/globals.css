@@ -3348,6 +3348,43 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.xb-passport-debug {
+  grid-column: 1 / -1;
+  color: var(--ido-muted);
+  font-size: 10px;
+}
+.xb-passport-debug summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--ido-orange);
+  font-weight: 750;
+}
+.xb-passport-debug > div {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+.xb-passport-debug img {
+  display: block;
+  width: min(100%, 520px);
+  max-height: 120px;
+  object-fit: contain;
+  object-position: left center;
+  border: 1px solid var(--ido-border);
+  border-radius: 6px;
+  background: #fff;
+}
+.xb-passport-debug code {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 6px;
+  border-radius: 6px;
+  background: rgba(0,0,0,.25);
+  color: var(--ido-ink);
+  font-size: 10px;
+  white-space: pre;
+}
 @media (max-width: 420px) {
   .xb-passport-rows > li { grid-template-columns: 56px minmax(0, 1fr); }
   .xb-passport-rows > li > .danger { grid-column: 1 / -1; }

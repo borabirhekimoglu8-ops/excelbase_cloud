@@ -197,6 +197,88 @@ export function parseTd3Mrz(line1Raw: string, line2Raw: string): MrzParseResult 
   };
 }
 
+function rawMrzAlphabet(line: string): string {
+  return line
+    .toUpperCase()
+    .replace(/[\u00AB\u00BB«»]/g, "<")
+    .replace(/[^A-Z0-9<]/g, "");
+}
+
+function repairCandidates(raw: string): string[] {
+  const line = rawMrzAlphabet(raw);
+  const candidates = new Set<string>();
+  if (!line) return [];
+  candidates.add(line);
+
+  if (line.length >= 44) {
+    for (let offset = 0; offset <= line.length - 44; offset += 1) {
+      candidates.add(line.slice(offset, offset + 44));
+    }
+  }
+
+  // One omitted filler is common when OCR merges adjacent chevrons.
+  if (line.length === 43) {
+    for (let position = 0; position <= line.length; position += 1) {
+      // Do not invent a filler inside an uninterrupted name/number. A missing
+      // non-filler cannot be reconstructed safely from length alone.
+      if (position < line.length && line[position] !== "<" && line[position - 1] !== "<") continue;
+      candidates.add(`${line.slice(0, position)}<${line.slice(position)}`);
+    }
+  }
+
+  // A duplicated glyph or a one-character prefix makes a 45-character line.
+  if (line.length === 45) {
+    for (let position = 0; position < line.length; position += 1) {
+      candidates.add(`${line.slice(0, position)}${line.slice(position + 1)}`);
+    }
+  }
+  return [...candidates];
+}
+
+function repairScore(parsed: MrzParseResult): number {
+  const personalField = parsed.line2.slice(28, 42);
+  const firstPersonalFiller = personalField.indexOf("<");
+  const hasEmbeddedPersonalFiller = firstPersonalFiller >= 0
+    && /[A-Z0-9]/.test(personalField.slice(firstPersonalFiller + 1));
+  return (parsed.valid ? 10_000 : 0)
+    - parsed.warnings.length * 100
+    - (hasEmbeddedPersonalFiller ? 250 : 0)
+    + Math.min(parsed.passportNumber.length, 9) * 4
+    + Math.min(parsed.surname.length, 20)
+    + Math.min(parsed.givenNames.length, 20)
+    + (parsed.issuingState.length === 3 ? 100 : 0)
+    + (parsed.nationality.length === 3 ? 100 : 0)
+    + (parsed.birthDate ? 20 : 0)
+    + (parsed.expiryDate ? 20 : 0);
+}
+
+/**
+ * Parse two line-oriented OCR results while repairing a single missing/extra
+ * glyph and junk prefixes. Check digits choose the repair; no passport fields
+ * are guessed independently.
+ */
+export function parseTd3WithRepair(line1Raw: string, line2Raw: string): MrzParseResult | null {
+  const firstCandidates = repairCandidates(line1Raw)
+    .filter((line) => /^P[A-Z<]/.test(normalizeMrzLine(line)));
+  const secondCandidates = repairCandidates(line2Raw)
+    .filter((line) => !/^P[A-Z<]/.test(normalizeMrzLine(line)));
+  let best: MrzParseResult | null = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const first of firstCandidates) {
+    for (const second of secondCandidates) {
+      const parsed = parseTd3Mrz(first, second);
+      if (!parsed) continue;
+      const score = repairScore(parsed);
+      if (score > bestScore) {
+        best = parsed;
+        bestScore = score;
+      }
+    }
+  }
+  return best;
+}
+
 /**
  * Pull the best TD3 pair out of free OCR text.
  *
