@@ -15,6 +15,7 @@ import {
   resolveCountrySelection,
   searchCountries,
 } from "./icaoCountries";
+import { exportBlockReason } from "./passportTypes";
 
 const PRE_REFACTOR_ISO2: Record<string, string> = {
   D: "DE",
@@ -67,6 +68,11 @@ describe("special and unknown codes", () => {
       expect(countryEntry(code)?.kind).toBe("special");
     }
     expect(ICAO_EXCEPTIONS.some((entry) => entry.alpha3 === "UTO")).toBe(true);
+    expect(exportBlockReason({ nationality: "UTO" })).toBe(
+      "Uyruk UTO (Ütopya (ICAO örnek belge)) bu şablonda temsil edilemiyor — Ülke Kodu 2 yok",
+    );
+    expect(exportBlockReason({ nationality: "XXA" })).toContain("bu şablonda temsil edilemiyor");
+    expect(exportBlockReason({ nationality: "TUR" })).toBe("");
   });
 
   it("leaves unknown codes blank and marks them for operator confirmation", () => {

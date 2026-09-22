@@ -424,9 +424,12 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
             <div>
               <p className="ops-eyebrow">Sonuç</p>
               <h2>{readyCount}/{rows.length} satır Excel’e hazır</h2>
+              {blockedExports[0] ? (
+                <p className="xb-passport-special">{blockedExports[0]} Dışa aktarma durduruldu.</p>
+              ) : null}
             </div>
             <div className="xb-passport-actions">
-              <button type="button" className="primary" disabled={!readyCount || busy} onClick={() => void downloadExcel()}>
+              <button type="button" className="primary" disabled={!readyCount || Boolean(blockedExports.length) || busy} onClick={() => void downloadExcel()}>
                 Excel indir
               </button>
               {onOpenImport ? (

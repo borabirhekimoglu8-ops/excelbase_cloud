@@ -107,6 +107,12 @@ describe("operatorExcel", () => {
       lastName: "YILMAZ",
       nationality: "UTO",
       passportNo: "U1000001",
-    }])).toThrow(/Ülke Kodu 2 bulunamadı/);
+    }])).toThrow("Uyruk UTO (Ütopya (ICAO örnek belge)) bu şablonda temsil edilemiyor — Ülke Kodu 2 yok");
+    expect(() => createPassportOperatorXlsxBlob([{
+      firstName: "ADA",
+      lastName: "YILMAZ",
+      nationality: "XXA",
+      passportNo: "U1000001",
+    }])).toThrow(/bu şablonda temsil edilemiyor/);
   });
 });

@@ -11,6 +11,7 @@
 import * as XLSX from "@e965/xlsx";
 
 import { icaoCountryToIso2 } from "./icaoCountries";
+import { exportBlockReason } from "./passportTypes";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -107,7 +108,10 @@ export function createPassportOperatorXlsxBlob(rows: readonly PassportOperatorRo
     const nationality = cell(row.nationality);
     const countryCode2 = icaoCountryToIso2(nationality);
     if (!countryCode2) {
-      throw new Error(`Uyruk ${nationality || "boş"} için Ülke Kodu 2 bulunamadı.`);
+      throw new Error(
+        exportBlockReason({ nationality })
+          || `Uyruk ${nationality || "boş"} bu şablonda temsil edilemiyor — Ülke Kodu 2 yok`,
+      );
     }
     return [
       cell(row.firstName),
