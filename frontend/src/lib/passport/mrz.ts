@@ -219,6 +219,9 @@ function repairCandidates(raw: string): string[] {
   // One omitted filler is common when OCR merges adjacent chevrons.
   if (line.length === 43) {
     for (let position = 0; position <= line.length; position += 1) {
+      // Do not invent a filler inside an uninterrupted name/number. A missing
+      // non-filler cannot be reconstructed safely from length alone.
+      if (position < line.length && line[position] !== "<" && line[position - 1] !== "<") continue;
       candidates.add(`${line.slice(0, position)}<${line.slice(position)}`);
     }
   }
@@ -233,11 +236,18 @@ function repairCandidates(raw: string): string[] {
 }
 
 function repairScore(parsed: MrzParseResult): number {
+  const personalField = parsed.line2.slice(28, 42);
+  const firstPersonalFiller = personalField.indexOf("<");
+  const hasEmbeddedPersonalFiller = firstPersonalFiller >= 0
+    && /[A-Z0-9]/.test(personalField.slice(firstPersonalFiller + 1));
   return (parsed.valid ? 10_000 : 0)
     - parsed.warnings.length * 100
+    - (hasEmbeddedPersonalFiller ? 250 : 0)
     + Math.min(parsed.passportNumber.length, 9) * 4
     + Math.min(parsed.surname.length, 20)
     + Math.min(parsed.givenNames.length, 20)
+    + (parsed.issuingState.length === 3 ? 100 : 0)
+    + (parsed.nationality.length === 3 ? 100 : 0)
     + (parsed.birthDate ? 20 : 0)
     + (parsed.expiryDate ? 20 : 0);
 }
@@ -264,7 +274,6 @@ export function parseTd3WithRepair(line1Raw: string, line2Raw: string): MrzParse
         best = parsed;
         bestScore = score;
       }
-      if (parsed.valid) return parsed;
     }
   }
   return best;

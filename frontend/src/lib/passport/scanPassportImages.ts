@@ -200,7 +200,7 @@ export async function terminatePassportOcr(): Promise<void> {
 async function ocrText(
   image: Blob | HTMLCanvasElement,
   slotIndex: number,
-  pageSegmentationMode: number,
+  pageSegmentationMode: number | string,
 ): Promise<string> {
   const worker = await getWorker(slotIndex);
   try {
@@ -338,7 +338,7 @@ type LineAttempt = {
 async function scanLinePair(
   crop: HTMLCanvasElement,
   slotIndex: number,
-  psmSingleLine: number,
+  psmSingleLine: number | string,
 ): Promise<LineAttempt> {
   const gray = canvasGray(crop);
   if (!gray) return { parsed: null, rawLines: [] };
