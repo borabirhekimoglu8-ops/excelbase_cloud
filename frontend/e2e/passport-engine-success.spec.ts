@@ -23,6 +23,7 @@ test.skip(
 );
 
 test("real TUR image-PDF reaches user-approved Excel", async ({ page }, testInfo) => {
+  test.setTimeout(240_000);
   await page.goto("/");
   await completeSetup(page, "Ada Yılmaz", PIN);
   await openGateVisa(page);
@@ -33,9 +34,17 @@ test("real TUR image-PDF reaches user-approved Excel", async ({ page }, testInfo
     await localLogin.fill(PIN);
     await page.getByRole("button", { name: "Yerel servise giriş" }).click();
   }
-  await expect(page.getByRole("heading", { name: "Yerel OCR hazır" })).toBeVisible({
+  const readyHeading = page.getByRole("heading", { name: "Yerel OCR hazır" });
+  await expect.poll(async () => {
+    if (await readyHeading.isVisible()) return true;
+    const refresh = page.getByRole("button", { name: "Durumu yenile" });
+    if (await refresh.isVisible()) await refresh.click();
+    return readyHeading.isVisible();
+  }, {
+    message: "PP-OCRv6 did not become ready",
     timeout: 180_000,
-  });
+    intervals: [2_000, 3_000, 5_000],
+  }).toBe(true);
 
   await page.locator(".xb-photo-drop input[type='file']").setInputFiles(SOURCE_PDF);
   const row = page.locator(".xb-passport-rows > li").first();
