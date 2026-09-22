@@ -96,6 +96,11 @@ export const passportOcrEngine: PassportOcrEngine = {
   terminate: () => terminatePassportOcrEngine(),
 };
 
+export async function prewarmPassportOcrEngine(): Promise<void> {
+  await loadWorker();
+  scheduleIdleTermination();
+}
+
 export async function terminatePassportOcrEngine(): Promise<void> {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = null;

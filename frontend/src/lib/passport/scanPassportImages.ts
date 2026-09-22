@@ -39,6 +39,12 @@ import { rasterizePdfToImages } from "@/lib/passport/pdfToImages";
 import { rowFromParsedMrz } from "@/lib/passport/parseMrzText";
 import { PASSPORT_ENGINE_PROFILE } from "@/lib/passport/engineProfile";
 import {
+  MAX_OCR_WORKERS,
+  passportOcrEngine,
+  prewarmPassportOcrEngine,
+  terminatePassportOcrEngine,
+} from "@/lib/passport/ocrEngine";
+import {
   DOCUMENT_TYPES,
   type PassportDocumentType,
   type PassportScanRow,
@@ -139,81 +145,18 @@ type TessBbox = { x0: number; y0: number; x1: number; y1: number };
 type TessSymbol = { text: string; confidence: number; bbox: TessBbox };
 type TessWord = { text?: string; confidence?: number; bbox?: TessBbox; symbols: TessSymbol[] };
 type TessBlock = { paragraphs: Array<{ lines: Array<{ words: TessWord[] }> }> };
-type TessWorker = {
-  recognize: (
-    image: Blob | File | string | HTMLCanvasElement,
-    options?: Record<string, never>,
-    output?: { blocks: boolean },
-  ) => Promise<{ data: { text: string; blocks: TessBlock[] | null } }>;
-  setParameters: (params: Record<string, string>) => Promise<void>;
-  reinitialize: (language: string) => Promise<void>;
-  terminate: () => Promise<void>;
-};
-
-type WorkerSlot = {
-  worker: TessWorker | null;
-  promise: Promise<TessWorker> | null;
-};
-
-export const MAX_OCR_WORKERS = 1;
-const workerSlots: WorkerSlot[] = Array.from(
-  { length: MAX_OCR_WORKERS },
-  () => ({ worker: null, promise: null }),
-);
-
-async function getWorker(slotIndex: number): Promise<TessWorker> {
-  const slot = workerSlots[slotIndex];
-  if (slot.worker) return slot.worker;
-  if (!slot.promise) {
-    slot.promise = (async () => {
-      const { createWorker, OEM, PSM } = await import("tesseract.js");
-      const worker = await createWorker("mrz", OEM.LSTM_ONLY, {
-        corePath: "/tesseract",
-        langPath: "/tesseract/lang-data",
-        workerPath: "/tesseract/worker.min.js",
-        logger: () => undefined,
-        errorHandler: () => {
-          slot.worker = null;
-          slot.promise = null;
-        },
-      }) as unknown as TessWorker;
-      await worker.setParameters({
-        tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",
-        tessedit_pageseg_mode: String(PSM.SINGLE_LINE),
-        user_defined_dpi: "300",
-        preserve_interword_spaces: "0",
-      });
-      slot.worker = worker;
-      return worker;
-    })().catch((reason) => {
-      slot.worker = null;
-      slot.promise = null;
-      throw reason;
-    });
-  }
-  return slot.promise;
-}
+export { MAX_OCR_WORKERS };
 
 export async function prewarmPassportOcr(): Promise<void> {
   try {
-    await getWorker(0);
+    await prewarmPassportOcrEngine();
   } catch {
     // The scan path retries and supplies the contextual operator message.
   }
 }
 
 export async function terminatePassportOcr(): Promise<void> {
-  const pending = workerSlots.map((slot) => (
-    slot.worker
-      ? Promise.resolve(slot.worker)
-      : slot.promise?.catch(() => null) ?? Promise.resolve(null)
-  ));
-  for (const slot of workerSlots) {
-    slot.worker = null;
-    slot.promise = null;
-  }
-  const workers = await Promise.all(pending);
-  await Promise.all(workers.map((worker) => worker?.terminate().catch(() => undefined)));
+  await terminatePassportOcrEngine();
 }
 
 async function recognizeSymbols(
@@ -222,32 +165,25 @@ async function recognizeSymbols(
   whitelist: string,
   pass: string,
 ): Promise<OcrSymbol[]> {
-  const worker = await getWorker(slotIndex);
-  try {
-    await worker.setParameters({ tessedit_char_whitelist: whitelist });
-    const result = await worker.recognize(image, {}, { blocks: true });
-    const symbols = result.data.blocks?.flatMap((block) => (
+  void slotIndex;
+  const result = await passportOcrEngine.recognize(image, "mrz", {
+    tessedit_char_whitelist: whitelist,
+    tessedit_pageseg_mode: "7",
+    preserve_interword_spaces: "0",
+  });
+  const symbols = (result.blocks as TessBlock[] | null)?.flatMap((block) => (
       block.paragraphs.flatMap((paragraph) => (
         paragraph.lines.flatMap((line) => line.words.flatMap((word) => word.symbols))
       ))
     )) ?? [];
-    return symbols
-      .filter((symbol) => /^[A-Z0-9<]$/i.test(symbol.text))
-      .map((symbol) => ({
-        text: symbol.text.toUpperCase(),
-        confidence: symbol.confidence,
-        bbox: symbol.bbox,
-        pass,
-      }));
-  } catch (reason) {
-    const slot = workerSlots[slotIndex];
-    if (slot.worker === worker) {
-      slot.worker = null;
-      slot.promise = null;
-    }
-    await worker.terminate().catch(() => undefined);
-    throw reason;
-  }
+  return symbols
+    .filter((symbol) => /^[A-Z0-9<]$/i.test(symbol.text))
+    .map((symbol) => ({
+      text: symbol.text.toUpperCase(),
+      confidence: symbol.confidence,
+      bbox: symbol.bbox,
+      pass,
+    }));
 }
 
 async function yieldToMainThread(): Promise<void> {
@@ -435,26 +371,18 @@ async function withVizDraft(
   slotIndex: number,
   pageNo: number,
 ): Promise<PassportScanRow> {
-  const active = await getWorker(slotIndex);
+  void slotIndex;
   try {
-    await active.reinitialize("eng");
-    await active.setParameters({
+    const result = await passportOcrEngine.recognize(source, "eng", {
       tessedit_char_whitelist: "",
       tessedit_pageseg_mode: "3",
-      user_defined_dpi: "300",
     });
-    const result = await active.recognize(source, {}, { blocks: true });
-    return mergeMrzViz(row, matchVizFields(wordsFromBlocks(result.data.blocks), pageNo)).row;
+    return mergeMrzViz(
+      row,
+      matchVizFields(wordsFromBlocks(result.blocks as TessBlock[] | null), pageNo),
+    ).row;
   } catch {
     return row;
-  } finally {
-    await active.reinitialize("mrz").catch(() => undefined);
-    await active.setParameters({
-      tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",
-      tessedit_pageseg_mode: "7",
-      user_defined_dpi: "300",
-      preserve_interword_spaces: "0",
-    }).catch(() => undefined);
   }
 }
 
