@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { pdfRasterScale, rasterizePdfToImages } from "./pdfToImages";
 
-function onePageBlankPdf(): Uint8Array {
+function onePageBlankPdf(): ArrayBuffer {
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -30,7 +30,8 @@ function onePageBlankPdf(): Uint8Array {
     "%%EOF",
     "",
   ].join("\n");
-  return new TextEncoder().encode(source);
+  const bytes = new TextEncoder().encode(source);
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
 const originalGlobals = {
