@@ -102,13 +102,14 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
 
   useEffect(() => {
     void probe();
-    void (async () => {
+    const recover = async () => {
       if (await vaultIsUnlocked()) {
         await markInterruptedPages();
         await reload();
       }
-    })();
-    const onVault = () => { void reload(); };
+    };
+    void recover();
+    const onVault = () => { void recover(); };
     window.addEventListener("excelbase:vault-change", onVault);
     return () => window.removeEventListener("excelbase:vault-change", onVault);
   }, [probe, reload]);

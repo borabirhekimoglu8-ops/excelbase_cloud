@@ -22,8 +22,8 @@ HEIF_BRANDS = {b"heic", b"heix", b"heif", b"mif1", b"msf1", b"avif"}
 
 _engine_lock = threading.Lock()
 _engine: OcrEngine | None = None
-_engine_state = "engine_missing"
-_engine_detail = "Motor henüz yüklenmedi."
+_engine_state = "engine_loading"
+_engine_detail = "Model yükleniyor."
 _engine_version = ""
 _engine_name = ""
 _load_thread: threading.Thread | None = None
@@ -98,8 +98,8 @@ def reset_engine_for_tests() -> None:
     global _engine, _engine_state, _engine_detail, _engine_version, _engine_name, _load_thread, _semaphore
     with _engine_lock:
         _engine = None
-        _engine_state = "engine_missing"
-        _engine_detail = "Motor henüz yüklenmedi."
+        _engine_state = "engine_loading"
+        _engine_detail = "Model yükleniyor."
         _engine_version = ""
         _engine_name = ""
         _load_thread = None
