@@ -69,6 +69,22 @@ if [ ! -f "$stamp" ] || [ requirements.txt -nt "$stamp" ] || [ backend/requireme
     touch "$stamp"
 fi
 
+# Pasaport OCR paketleri Render imajına girmez; yalnız bayrak açıkken yerel kurulur.
+ocr_stamp=.venv/.requirements-ocr-installed
+ocr_flag="$(printf '%s' "${EXCELBASE_PASSPORT_OCR:-0}" | tr '[:upper:]' '[:lower:]')"
+case "$ocr_flag" in
+    1|true|yes|on)
+        if [ ! -f "$ocr_stamp" ] || [ backend/requirements-ocr.txt -nt "$ocr_stamp" ]; then
+            echo "Yerel pasaport OCR bağımlılıkları kuruluyor (PP-OCRv6, ilk sefer uzun sürebilir)..."
+            if ./.venv/bin/python -m pip install -r backend/requirements-ocr.txt; then
+                touch "$ocr_stamp"
+            else
+                echo "  Pasaport OCR kurulamadı; uygulama OCR olmadan açılacak."
+            fi
+        fi
+        ;;
+esac
+
 # FastAPI, frontend/out içindeki statik çıktıyı servis eder. Kaynaklardan biri
 # derlemeden yeniyse yeniden derlenir; yoksa `git pull` ile gelen arayüz
 # değişikliği tarayıcıya hiç ulaşmaz ve "çalışmıyor" gibi görünür.
@@ -128,6 +144,17 @@ if [ -n "$dev_state" ] && [ "$dev_state" != "ready" ]; then
         *)                    reason="$dev_state" ;;
     esac
     echo "  Uygulama içi geliştirme kapalı: $reason"
+fi
+ocr_state=$(./.venv/bin/python -c \
+    'from backend.passportocr.service import ocr_state; print(ocr_state().get("state",""))' 2>/dev/null) || ocr_state=""
+if [ -n "$ocr_state" ]; then
+    case "$ocr_state" in
+        ready) echo "  Pasaport OCR: hazır (loopback, PP-OCRv6)" ;;
+        disabled) echo "  Pasaport OCR kapalı: .env içinde EXCELBASE_PASSPORT_OCR=1" ;;
+        engine_missing) echo "  Pasaport OCR: motor kurulu değil (requirements-ocr)." ;;
+        blocked_open_network) echo "  Pasaport OCR kapalı: açık ağ / EXCELBASE_ASSISTANT_OPEN_ACCESS" ;;
+        *) echo "  Pasaport OCR durumu: $ocr_state" ;;
+    esac
 fi
 echo "  Durdurmak için: Ctrl+C"
 echo

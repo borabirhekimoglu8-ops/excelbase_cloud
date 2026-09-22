@@ -80,6 +80,18 @@ describe("parseTd3FromLines", () => {
     expect(parsed?.verified).toBe(true);
   });
 
+  it("verifies the Turkish synthetic fixture and keeps nationality TUR", () => {
+    const [upper, lower] = turkishFixture();
+    const parsed = parseTd3FromLines(upper, lower, new Date("2026-09-22T00:00:00Z"));
+    expect(parsed).toMatchObject({
+      surname: "YILMAZ",
+      givenNames: "ADA",
+      passportNumber: "U1000001",
+      nationality: "TUR",
+      verified: true,
+    });
+  });
+
   it("rejects lines that are not exactly 44 MRZ characters", () => {
     expect(parseTd3FromLines(LINE1.slice(1), LINE2)).toBeNull();
     expect(parseTd3FromLines(LINE1, `${LINE2}!`)).toBeNull();

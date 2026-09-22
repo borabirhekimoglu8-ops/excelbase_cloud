@@ -47,7 +47,7 @@ describe("operatorExcel", () => {
         firstName: "ANNA MARIA",
         lastName: "ERIKSSON",
         birthDate: "1974-08-12",
-        countryCode2: icaoCountryToIso2("TUR"),
+        nationality: "TUR",
         passportExpiry: "2030-04-15",
         passportNo: "U12345678",
         sex: "F",
@@ -80,7 +80,7 @@ describe("operatorExcel", () => {
         firstName: "ADA",
         lastName: "YILMAZ",
         birthDate: "1990-01-02",
-        countryCode2: "TR",
+        nationality: "TUR",
         passportExpiry: "2031-01-02",
         passportNo: "U99887766",
         documentType: "ID CARD",
@@ -99,5 +99,20 @@ describe("operatorExcel", () => {
     expect(formatOperatorSex("M")).toBe("E");
     expect(formatOperatorSex("F")).toBe("K");
     expect(formatOperatorDate("2026-07-16")).toBe("16.07.2026");
+  });
+
+  it("refuses special nationalities that have no ISO-2 representation", () => {
+    expect(() => createPassportOperatorXlsxBlob([{
+      firstName: "ADA",
+      lastName: "YILMAZ",
+      nationality: "UTO",
+      passportNo: "U1000001",
+    }])).toThrow("Uyruk UTO (Ütopya (ICAO örnek belge)) bu şablonda temsil edilemiyor — Ülke Kodu 2 yok");
+    expect(() => createPassportOperatorXlsxBlob([{
+      firstName: "ADA",
+      lastName: "YILMAZ",
+      nationality: "XXA",
+      passportNo: "U1000001",
+    }])).toThrow(/bu şablonda temsil edilemiyor/);
   });
 });

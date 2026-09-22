@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { extractTextFromPdf, rowsFromPdfText } from "./pdfExtractText";
@@ -52,5 +55,17 @@ describe("PDF text-layer extraction", () => {
       passportNo: "L898902C3",
       status: "ok",
     });
+  });
+
+  it("keeps the committed TUR engine fixture image-only", async () => {
+    const bytes = readFileSync(resolve(
+      process.cwd(),
+      "src/lib/passport/__fixtures__/engine-runs/sources/tur-image-pdf-250dpi.pdf",
+    ));
+    expect(bytes.subarray(0, 4).toString()).toBe("%PDF");
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    const text = await extractTextFromPdf(new Blob([copy.buffer], { type: "application/pdf" }));
+    expect(text.trim()).toBe("");
   });
 });

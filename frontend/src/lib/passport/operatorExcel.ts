@@ -11,6 +11,7 @@
 import * as XLSX from "@e965/xlsx";
 
 import { icaoCountryToIso2 } from "./icaoCountries";
+import { exportBlockReason } from "./passportTypes";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -42,6 +43,9 @@ export type PassportOperatorRow = {
   firstName: string;
   lastName: string;
   birthDate?: string;
+  /** ICAO nationality from MRZ line 2 (or operator-confirmed replacement). */
+  nationality?: string;
+  /** @deprecated ignored for export; kept for caller compatibility. */
   countryCode2?: string;
   passportExpiry?: string;
   visaStart?: string;
@@ -100,24 +104,34 @@ function copyBuffer(bytes: Uint8Array): ArrayBuffer {
  * stay blank so the operator can fill vehicle / GSM later.
  */
 export function createPassportOperatorXlsxBlob(rows: readonly PassportOperatorRow[]): Blob {
-  const data = rows.map((row) => [
-    cell(row.firstName),
-    cell(row.lastName),
-    formatOperatorDate(cell(row.birthDate)),
-    icaoCountryToIso2(cell(row.countryCode2)),
-    formatOperatorDate(cell(row.passportExpiry)),
-    formatOperatorDate(cell(row.visaStart)),
-    formatOperatorDate(cell(row.visaEnd)),
-    cell(row.passportNo).toLocaleUpperCase("tr-TR"),
-    formatOperatorSex(cell(row.sex)),
-    cell(row.vehicleMake),
-    cell(row.vehicleModel),
-    cell(row.vehicleType),
-    cell(row.plate).toLocaleUpperCase("tr-TR"),
-    cell(row.gsm),
-    cell(row.tcNo),
-    cell(row.documentType) || "Passport",
-  ]);
+  const data = rows.map((row) => {
+    const nationality = cell(row.nationality);
+    const countryCode2 = icaoCountryToIso2(nationality);
+    if (!countryCode2) {
+      throw new Error(
+        exportBlockReason({ nationality })
+          || `Uyruk ${nationality || "boş"} bu şablonda temsil edilemiyor — Ülke Kodu 2 yok`,
+      );
+    }
+    return [
+      cell(row.firstName),
+      cell(row.lastName),
+      formatOperatorDate(cell(row.birthDate)),
+      countryCode2,
+      formatOperatorDate(cell(row.passportExpiry)),
+      formatOperatorDate(cell(row.visaStart)),
+      formatOperatorDate(cell(row.visaEnd)),
+      cell(row.passportNo).toLocaleUpperCase("tr-TR"),
+      formatOperatorSex(cell(row.sex)),
+      cell(row.vehicleMake),
+      cell(row.vehicleModel),
+      cell(row.vehicleType),
+      cell(row.plate).toLocaleUpperCase("tr-TR"),
+      cell(row.gsm),
+      cell(row.tcNo),
+      cell(row.documentType) || "Passport",
+    ];
+  });
 
   const worksheet = XLSX.utils.aoa_to_sheet([
     [...PASSPORT_OPERATOR_HEADERS],

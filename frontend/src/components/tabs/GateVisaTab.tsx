@@ -122,8 +122,8 @@ export function GateVisaTab({
             <button type="button" className="ic-gatevisa-primary" onClick={onPassportScan}>
               <span aria-hidden="true">▤</span>
               <span>
-                <strong>Pasaport MRZ → Excel</strong>
-                <small>Yapıştırılan MRZ veya metin katmanlı PDF’den liste</small>
+                <strong>Pasaport → Excel</strong>
+                <small>WhatsApp PDF veya pasaport fotoğraflarından liste</small>
               </span>
             </button>
           ) : null}

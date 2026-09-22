@@ -96,6 +96,25 @@ if ($needsInstall) {
     New-Item -ItemType File -Path $stamp -Force | Out-Null
 }
 
+$ocrStamp = ".venv\.requirements-ocr-installed"
+$ocrFlag = if ($env:EXCELBASE_PASSPORT_OCR) { $env:EXCELBASE_PASSPORT_OCR.Trim().ToLower() } else { "0" }
+if ($ocrFlag -in @("1", "true", "yes", "on")) {
+    $ocrNeedsInstall = -not (Test-Path $ocrStamp)
+    if (-not $ocrNeedsInstall) {
+        $ocrStampTime = (Get-Item $ocrStamp).LastWriteTimeUtc
+        if ((Get-Item "backend\requirements-ocr.txt").LastWriteTimeUtc -gt $ocrStampTime) { $ocrNeedsInstall = $true }
+    }
+    if ($ocrNeedsInstall) {
+        Write-Host "Yerel pasaport OCR bagimliliklari kuruluyor (PP-OCRv6, ilk sefer uzun surebilir)..." -ForegroundColor Cyan
+        & .\.venv\Scripts\python.exe -m pip install -r backend\requirements-ocr.txt
+        if ($LASTEXITCODE -eq 0) {
+            New-Item -ItemType File -Path $ocrStamp -Force | Out-Null
+        } else {
+            Write-Host "  Pasaport OCR kurulamadi; uygulama OCR olmadan acilacak." -ForegroundColor Yellow
+        }
+    }
+}
+
 # --- frontend --------------------------------------------------------------
 # FastAPI, frontend/out icindeki statik ciktiyi servis eder. Kaynaklardan biri
 # derlemeden yeniyse yeniden derlenir; yoksa `git pull` ile gelen arayuz
@@ -157,6 +176,16 @@ if ($devState -and $devState -ne "ready") {
         default                { $devState }
     }
     Write-Host "  Uygulama ici gelistirme kapali: $devReason" -ForegroundColor Yellow
+}
+$ocrState = & .\.venv\Scripts\python.exe -c "from backend.passportocr.service import ocr_state; print(ocr_state().get('state',''))" 2>$null
+if ($ocrState) {
+    switch ($ocrState) {
+        "ready" { Write-Host "  Pasaport OCR: hazir (loopback, PP-OCRv6)" -ForegroundColor Cyan }
+        "disabled" { Write-Host "  Pasaport OCR kapali: .env icinde EXCELBASE_PASSPORT_OCR=1" -ForegroundColor Yellow }
+        "engine_missing" { Write-Host "  Pasaport OCR: motor kurulu degil (requirements-ocr)." -ForegroundColor Yellow }
+        "blocked_open_network" { Write-Host "  Pasaport OCR kapali: acik ag / EXCELBASE_ASSISTANT_OPEN_ACCESS" -ForegroundColor Yellow }
+        default { Write-Host "  Pasaport OCR durumu: $ocrState" -ForegroundColor Yellow }
+    }
 }
 Write-Host "  Durdurmak icin: Ctrl+C"
 Write-Host ""

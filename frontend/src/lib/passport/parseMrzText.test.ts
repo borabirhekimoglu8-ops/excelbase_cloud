@@ -49,6 +49,7 @@ describe("rowsFromMrzText", () => {
     const [line1, line2] = adaYilmazMrz();
     const [row] = rowsFromMrzText(`${line1}\n${line2}`, "sentetik.txt");
     expect(row).toMatchObject({
+      schema_version: 2,
       filename: "sentetik.txt",
       firstName: "ADA",
       lastName: "YILMAZ",
@@ -56,6 +57,13 @@ describe("rowsFromMrzText", () => {
       countryCode2: "TR",
       tcNo: "10000000146",
       status: "ok",
+      reviewStatus: "verified",
+      issuingState: "TUR",
+      nationality: "TUR",
+      nationalitySpecial: false,
+      provenance: {
+        passportNo: { source: "mrz", verification: "mrz_verified" },
+      },
     });
   });
 });
