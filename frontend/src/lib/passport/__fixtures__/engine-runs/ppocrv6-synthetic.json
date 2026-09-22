@@ -1,14 +1,26 @@
 {
   "evidence": "actual_ppocrv6_synthetic_image_run",
-  "generated_at": "2026-09-22T19:13:26.550620+00:00",
+  "generated_at": "2026-09-22T19:25:56.718133+00:00",
   "synthetic_only": true,
   "variants": [
     {
       "variant": "clean_png",
+      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/clean.png",
+      "source_sha256": "65e6c5bc22bf177d4fba27a276ea44de2bcfd3be536fa95e76a2c19ccee3dd7b",
+      "source_kind": "png",
+      "processed_image_sha256": "65e6c5bc22bf177d4fba27a276ea44de2bcfd3be536fa95e76a2c19ccee3dd7b",
+      "raster": null,
       "engine": {
         "name": "paddleocr",
         "version": "PP-OCRv6",
-        "lang": "en"
+        "versions": [
+          "PP-OCRv6"
+        ],
+        "lang": "en",
+        "package_versions": {
+          "paddleocr": "3.7.0",
+          "paddlepaddle": "3.2.2"
+        }
       },
       "width": 1600,
       "height": 1000,
@@ -344,14 +356,51 @@
           "score": 0.9996221661567688
         }
       ],
-      "duration_ms": 2995
+      "parser_result": {
+        "pair_found": false,
+        "verified": false,
+        "status": "not_found",
+        "fields": {},
+        "checks": {}
+      },
+      "expected_fields": {
+        "surname": "YILMAZ",
+        "given_names": "ADA",
+        "passport_no": "U1000001",
+        "nationality": "UTO",
+        "date_of_birth": "1990-01-01",
+        "date_of_birth_mrz": "900101",
+        "date_of_expiry": "2030-12-31",
+        "date_of_expiry_mrz": "301231"
+      },
+      "critical_fields": {
+        "passport_no": "correct",
+        "surname": "correct",
+        "given_names": "correct",
+        "nationality": "correct",
+        "date_of_birth": "correct",
+        "date_of_expiry": "correct"
+      },
+      "duration_ms": 2790
     },
     {
       "variant": "jpeg_q35",
+      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/jpeg-q35.jpg",
+      "source_sha256": "13e2862f1e47b9c11db8f0f9501908c7f030e69470e0a832f2ff6b1739cf665a",
+      "source_kind": "jpeg",
+      "processed_image_sha256": "13e2862f1e47b9c11db8f0f9501908c7f030e69470e0a832f2ff6b1739cf665a",
+      "raster": null,
       "engine": {
         "name": "paddleocr",
         "version": "PP-OCRv6",
-        "lang": "en"
+        "versions": [
+          "PP-OCRv6"
+        ],
+        "lang": "en",
+        "package_versions": {
+          "paddleocr": "3.7.0",
+          "paddlepaddle": "3.2.2"
+        }
       },
       "width": 1600,
       "height": 1000,
@@ -687,14 +736,51 @@
           "score": 0.9995223879814148
         }
       ],
-      "duration_ms": 2508
+      "parser_result": {
+        "pair_found": false,
+        "verified": false,
+        "status": "not_found",
+        "fields": {},
+        "checks": {}
+      },
+      "expected_fields": {
+        "surname": "YILMAZ",
+        "given_names": "ADA",
+        "passport_no": "U1000001",
+        "nationality": "UTO",
+        "date_of_birth": "1990-01-01",
+        "date_of_birth_mrz": "900101",
+        "date_of_expiry": "2030-12-31",
+        "date_of_expiry_mrz": "301231"
+      },
+      "critical_fields": {
+        "passport_no": "correct",
+        "surname": "correct",
+        "given_names": "correct",
+        "nationality": "correct",
+        "date_of_birth": "correct",
+        "date_of_expiry": "correct"
+      },
+      "duration_ms": 2333
     },
     {
       "variant": "skew_plus_3_png",
+      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/skew-plus-3.png",
+      "source_sha256": "83f40060bf509f8cf9a6cf7406757443583fdbcfc8f6848e7ed8f572c4181a70",
+      "source_kind": "png",
+      "processed_image_sha256": "83f40060bf509f8cf9a6cf7406757443583fdbcfc8f6848e7ed8f572c4181a70",
+      "raster": null,
       "engine": {
         "name": "paddleocr",
         "version": "PP-OCRv6",
-        "lang": "en"
+        "versions": [
+          "PP-OCRv6"
+        ],
+        "lang": "en",
+        "package_versions": {
+          "paddleocr": "3.7.0",
+          "paddlepaddle": "3.2.2"
+        }
       },
       "width": 1652,
       "height": 1084,
@@ -1030,14 +1116,51 @@
           "score": 0.9995912909507751
         }
       ],
-      "duration_ms": 2819
+      "parser_result": {
+        "pair_found": false,
+        "verified": false,
+        "status": "not_found",
+        "fields": {},
+        "checks": {}
+      },
+      "expected_fields": {
+        "surname": "YILMAZ",
+        "given_names": "ADA",
+        "passport_no": "U1000001",
+        "nationality": "UTO",
+        "date_of_birth": "1990-01-01",
+        "date_of_birth_mrz": "900101",
+        "date_of_expiry": "2030-12-31",
+        "date_of_expiry_mrz": "301231"
+      },
+      "critical_fields": {
+        "passport_no": "correct",
+        "surname": "correct",
+        "given_names": "correct",
+        "nationality": "correct",
+        "date_of_birth": "correct",
+        "date_of_expiry": "correct"
+      },
+      "duration_ms": 2939
     },
     {
       "variant": "skew_minus_3_png",
+      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/skew-minus-3.png",
+      "source_sha256": "7df43dd96b46dd306d91180dfe7c0a93ce776bc6c410f725753c90bdd1822323",
+      "source_kind": "png",
+      "processed_image_sha256": "7df43dd96b46dd306d91180dfe7c0a93ce776bc6c410f725753c90bdd1822323",
+      "raster": null,
       "engine": {
         "name": "paddleocr",
         "version": "PP-OCRv6",
-        "lang": "en"
+        "versions": [
+          "PP-OCRv6"
+        ],
+        "lang": "en",
+        "package_versions": {
+          "paddleocr": "3.7.0",
+          "paddlepaddle": "3.2.2"
+        }
       },
       "width": 1652,
       "height": 1084,
@@ -1373,14 +1496,57 @@
           "score": 0.9896760582923889
         }
       ],
-      "duration_ms": 2537
+      "parser_result": {
+        "pair_found": false,
+        "verified": false,
+        "status": "not_found",
+        "fields": {},
+        "checks": {}
+      },
+      "expected_fields": {
+        "surname": "YILMAZ",
+        "given_names": "ADA",
+        "passport_no": "U1000001",
+        "nationality": "UTO",
+        "date_of_birth": "1990-01-01",
+        "date_of_birth_mrz": "900101",
+        "date_of_expiry": "2030-12-31",
+        "date_of_expiry_mrz": "301231"
+      },
+      "critical_fields": {
+        "passport_no": "correct",
+        "surname": "correct",
+        "given_names": "correct",
+        "nationality": "correct",
+        "date_of_birth": "correct",
+        "date_of_expiry": "correct"
+      },
+      "duration_ms": 2725
     },
     {
       "variant": "image_pdf_raster_250dpi_2600_jpeg90",
+      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/image-pdf-250dpi.pdf",
+      "source_sha256": "ef63dc0be71da7b7082aa34137c529b13cb717d01840be676b632542ab902aba",
+      "source_kind": "image_pdf",
+      "processed_image_sha256": "d05a2ea9bcf0738d34b3ea10a1a309d58f70b348a380b0d3bd04beed478b0d91",
+      "raster": {
+        "dpi": 250,
+        "long_edge_max": 2600,
+        "jpeg_quality": 90,
+        "processed_width": 2600,
+        "processed_height": 1625
+      },
       "engine": {
         "name": "paddleocr",
         "version": "PP-OCRv6",
-        "lang": "en"
+        "versions": [
+          "PP-OCRv6"
+        ],
+        "lang": "en",
+        "package_versions": {
+          "paddleocr": "3.7.0",
+          "paddlepaddle": "3.2.2"
+        }
       },
       "width": 2600,
       "height": 1625,
@@ -1716,14 +1882,51 @@
           "score": 0.9997492432594299
         }
       ],
-      "duration_ms": 5366
+      "parser_result": {
+        "pair_found": false,
+        "verified": false,
+        "status": "not_found",
+        "fields": {},
+        "checks": {}
+      },
+      "expected_fields": {
+        "surname": "YILMAZ",
+        "given_names": "ADA",
+        "passport_no": "U1000001",
+        "nationality": "UTO",
+        "date_of_birth": "1990-01-01",
+        "date_of_birth_mrz": "900101",
+        "date_of_expiry": "2030-12-31",
+        "date_of_expiry_mrz": "301231"
+      },
+      "critical_fields": {
+        "passport_no": "correct",
+        "surname": "correct",
+        "given_names": "correct",
+        "nationality": "correct",
+        "date_of_birth": "correct",
+        "date_of_expiry": "correct"
+      },
+      "duration_ms": 5956
     },
     {
       "variant": "viz_only_xxa_crop_png",
+      "source_path": "frontend/src/lib/passport/__fixtures__/engine-runs/sources/viz-only-xxa-crop.png",
+      "source_sha256": "8d96d7168b7102e60ad88f2cff3f959c0915464ba3c164c49406a91a2908e65a",
+      "source_kind": "png",
+      "processed_image_sha256": "8d96d7168b7102e60ad88f2cff3f959c0915464ba3c164c49406a91a2908e65a",
+      "raster": null,
       "engine": {
         "name": "paddleocr",
         "version": "PP-OCRv6",
-        "lang": "en"
+        "versions": [
+          "PP-OCRv6"
+        ],
+        "lang": "en",
+        "package_versions": {
+          "paddleocr": "3.7.0",
+          "paddlepaddle": "3.2.2"
+        }
       },
       "width": 1600,
       "height": 520,
@@ -1971,7 +2174,32 @@
           "score": 0.9711955785751343
         }
       ],
-      "duration_ms": 1380
+      "parser_result": {
+        "pair_found": false,
+        "verified": false,
+        "status": "not_found",
+        "fields": {},
+        "checks": {}
+      },
+      "expected_fields": {
+        "surname": "YILMAZ",
+        "given_names": "ADA",
+        "passport_no": "U1000001",
+        "nationality": "XXA",
+        "date_of_birth": "1990-01-01",
+        "date_of_birth_mrz": "900101",
+        "date_of_expiry": "2030-12-31",
+        "date_of_expiry_mrz": "301231"
+      },
+      "critical_fields": {
+        "passport_no": "correct",
+        "surname": "correct",
+        "given_names": "correct",
+        "nationality": "correct",
+        "date_of_birth": "correct",
+        "date_of_expiry": "wrong"
+      },
+      "duration_ms": 1278
     }
   ]
 }
