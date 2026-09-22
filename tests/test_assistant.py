@@ -1074,9 +1074,12 @@ def _issued_assistant_cookie(headers: list[str]) -> str:
 
 def test_production_loopback_http_session_cookie_is_not_secure(monkeypatch):
     """Production on http://127.0.0.1 must not issue a browser-dropped cookie."""
+    from backend import auth
+
     _open_access_env(monkeypatch)
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.delenv("EXCELBASE_ASSISTANT_ALLOWED_IPS", raising=False)
+    monkeypatch.setattr(auth, "_auth_database_required", lambda: False)
     reset_assistant_runtime()
     with TestClient(app, client=("127.0.0.1", 50000)) as client:
         session = client.get("/api/assistant/v1/session")
@@ -1086,9 +1089,12 @@ def test_production_loopback_http_session_cookie_is_not_secure(monkeypatch):
 
 
 def test_production_non_loopback_session_cookie_stays_secure(monkeypatch):
+    from backend import auth
+
     _open_access_env(monkeypatch)
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.delenv("EXCELBASE_ASSISTANT_ALLOWED_IPS", raising=False)
+    monkeypatch.setattr(auth, "_auth_database_required", lambda: False)
     reset_assistant_runtime()
     with TestClient(app) as client:
         session = client.get("/api/assistant/v1/session")
