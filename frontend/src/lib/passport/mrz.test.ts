@@ -5,6 +5,7 @@ import {
   mrzCheckDigit,
   mrzDateToIso,
   parseTd3Mrz,
+  parseTd3WithRepair,
 } from "./mrz";
 
 // ICAO sample TD3 from Doc 9303.
@@ -66,5 +67,23 @@ describe("extractTd3FromOcrText", () => {
     expect(parsed?.surname).toBe("ERIKSSON");
     expect(parsed?.nationality).toBe("UTO");
     expect(parsed?.valid).toBe(true);
+  });
+});
+
+describe("parseTd3WithRepair", () => {
+  it("removes one leading junk glyph from each line", () => {
+    const parsed = parseTd3WithRepair(`X${LINE1}`, `7${LINE2}`);
+    expect(parsed?.valid).toBe(true);
+    expect(parsed?.passportNumber).toBe("L898902C3");
+    expect(parsed?.surname).toBe("ERIKSSON");
+  });
+
+  it("restores one omitted filler without guessing passport fields", () => {
+    const shortenedLine1 = `${LINE1.slice(0, 40)}${LINE1.slice(41)}`;
+    const shortenedLine2 = `${LINE2.slice(0, 39)}${LINE2.slice(40)}`;
+    const parsed = parseTd3WithRepair(shortenedLine1, shortenedLine2);
+    expect(parsed?.valid).toBe(true);
+    expect(parsed?.line1).toBe(LINE1);
+    expect(parsed?.line2).toBe(LINE2);
   });
 });

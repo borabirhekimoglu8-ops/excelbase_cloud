@@ -34,4 +34,11 @@ test("pasaport JPG MRZ okur", async ({ page }) => {
   // Visa date inputs were removed from the scan UI (template columns stay in Excel).
   await expect(page.getByLabel(/Vize Başlangıç/i)).toHaveCount(0);
   await expect(page.getByLabel(/Vize Bitiş/i)).toHaveCount(0);
+
+  const excelButton = page.getByRole("button", { name: "Excel indir" });
+  await expect(excelButton).toBeEnabled();
+  const downloadPromise = page.waitForEvent("download");
+  await excelButton.click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^pasaport-yolcu-listesi-\d{4}-\d{2}-\d{2}\.xlsx$/);
 });

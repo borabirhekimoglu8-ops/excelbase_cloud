@@ -1,16 +1,36 @@
 /**
  * Read passport biodata pages with on-device OCR and turn them into rows.
  *
- * tesseract.js is loaded lazily so the rest of the PWA does not pay for the
- * WASM download until an operator opens this tool. Phone JPGs are normalized
- * (EXIF orientation, contrast, multi-band MRZ crops) before OCR.
+ * A small grayscale thumbnail locates the two MRZ lines by their geometry.
+ * OCR then runs on deskewed full-resolution line crops with the purpose-built
+ * MRZ model; no image or recognised text leaves the browser.
  */
 
 import { BlobReader, Uint8ArrayWriter, ZipReader } from "@zip.js/zip.js";
 
-import { IMAGE_EXTENSIONS, isImageFilename } from "@/lib/imageFormat";
+import {
+  IMAGE_EXTENSIONS,
+  isImageFilename,
+  sniffImageFormat,
+} from "@/lib/imageFormat";
 import { nationalityToCountryCode2 } from "@/lib/passport/operatorExcel";
-import { extractTd3FromOcrText, type MrzParseResult } from "@/lib/passport/mrz";
+import {
+  extractTd3FromOcrText,
+  parseTd3WithRepair,
+  type MrzParseResult,
+} from "@/lib/passport/mrz";
+import {
+  canvasGray,
+  cropDeskewed,
+  decodeBitmap,
+  grayThumbnail,
+  lineCanvas,
+  rotate180,
+  type GrayThumbnail,
+  type QuarterTurn,
+} from "@/lib/passport/mrzCanvas";
+import { findMrzBand, splitLines, type MrzBand } from "@/lib/passport/mrzLocator";
+import { normalizePhoto } from "@/lib/photoNormalize";
 
 export type PassportScanStatus = "ok" | "weak" | "failed";
 
@@ -36,13 +56,16 @@ export type PassportScanRow = {
   warnings: string[];
   mrzLine1: string;
   mrzLine2: string;
+  /** Local object URL for operator-only diagnostics. */
+  mrzCropUrl?: string;
+  /** Raw, line-oriented OCR shown only for weak/failed rows. */
+  rawLines?: string[];
 };
 
 /** MRZ document code → agency document type label. */
 export function documentTypeFromMrzCode(code: string): PassportDocumentType {
   const raw = code.trim().toUpperCase();
-  if (raw.startsWith("I")) return "ID CARD";
-  return "Passport";
+  return raw.startsWith("I") ? "ID CARD" : "Passport";
 }
 
 export type PassportScanProgress = {
@@ -53,50 +76,12 @@ export type PassportScanProgress = {
 
 type ImageInput = { filename: string; blob: Blob };
 
-/** Vertical start ratios for MRZ band crops (passport layout varies by phone framing). */
-const MRZ_BAND_TOPS = [0.72, 0.68, 0.75, 0.62, 0.55] as const;
-
-/** Put the band that worked most recently first without changing the fallback order. */
-export function orderedMrzBandTops(preferred: number | null): readonly number[] {
-  if (preferred === null || !MRZ_BAND_TOPS.includes(preferred as (typeof MRZ_BAND_TOPS)[number])) {
-    return MRZ_BAND_TOPS;
-  }
-  return [preferred, ...MRZ_BAND_TOPS.filter((top) => top !== preferred)];
-}
-
-/** A substantial MRZ-like line is enough evidence that the page is already upright. */
-export function hasMrzLikeSignal(text: string): boolean {
-  return text.split(/\r?\n/).some((rawLine) => {
-    const line = rawLine.toUpperCase().replace(/[^A-Z0-9<]/g, "");
-    if (line.length < 30) return false;
-    const alphanumerics = line.match(/[A-Z0-9]/g)?.length ?? 0;
-    const fillers = line.match(/</g)?.length ?? 0;
-    return alphanumerics >= 20 && fillers >= 3 && fillers / line.length < 0.5;
-  });
-}
-
-/** True when a parse is strong enough to skip more expensive OCR fallbacks. */
-export function isUsefulMrzParse(best: MrzParseResult | null): boolean {
-  if (!best) return false;
-  if (best.valid) return true;
-  const passportNumber = best.passportNumber.trim();
-  return passportNumber.length >= 6
-    && best.surname.trim().length >= 2
-    && /[A-Z0-9]/.test(passportNumber);
-}
-
-/** Do not rotate a weak-but-useful passport parse into a worse result. */
-export function shouldTryPassportRotations(best: MrzParseResult | null, sawMrzSignal: boolean): boolean {
-  if (isUsefulMrzParse(best)) return false;
-  return best === null || !sawMrzSignal;
-}
-
 function newId(): string {
   return `ps-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 async function collectImages(files: File[]): Promise<ImageInput[]> {
-  const out: ImageInput[] = [];
+  const output: ImageInput[] = [];
   for (const file of files) {
     const lower = file.name.toLocaleLowerCase("en-US");
     if (lower.endsWith(".zip") || file.type === "application/zip") {
@@ -104,139 +89,42 @@ async function collectImages(files: File[]): Promise<ImageInput[]> {
       try {
         const entries = await reader.getEntries();
         for (const entry of entries) {
-          if (entry.directory || !isImageFilename(entry.filename)) continue;
+          if (entry.directory || !isImageFilename(entry.filename) || !entry.getData) continue;
           const leaf = entry.filename.split("/").pop() || entry.filename;
           if (leaf.startsWith(".")) continue;
-          if (!entry.getData) continue;
           const bytes = await entry.getData(new Uint8ArrayWriter());
           const copy = new Uint8Array(bytes);
-          out.push({ filename: leaf, blob: new Blob([copy], { type: "application/octet-stream" }) });
+          output.push({ filename: leaf, blob: new Blob([copy], { type: "application/octet-stream" }) });
         }
       } finally {
         await reader.close();
       }
       continue;
     }
-    const ext = lower.split(".").pop() ?? "";
-    // Some Android browsers send empty MIME for camera JPGs — trust the extension.
-    if (file.type.startsWith("image/") || IMAGE_EXTENSIONS.has(ext) || lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
-      out.push({ filename: file.name, blob: file });
+
+    const extension = lower.split(".").pop() ?? "";
+    // Android browsers can send an empty MIME type for camera files.
+    if (file.type.startsWith("image/") || IMAGE_EXTENSIONS.has(extension)) {
+      output.push({ filename: file.name, blob: file });
     }
   }
-  return out;
+  return output;
 }
 
-type BitmapOpts = { imageOrientation?: "from-image" | "none" };
+const DIRECT_CANVAS_FORMATS = new Set(["jpg", "png", "webp", "gif", "bmp"]);
 
-async function decodeBitmap(source: Blob): Promise<ImageBitmap | null> {
-  if (typeof createImageBitmap !== "function") return null;
-  try {
-    return await createImageBitmap(source, { imageOrientation: "from-image" } as BitmapOpts);
-  } catch {
-    try {
-      return await createImageBitmap(source);
-    } catch {
-      return null;
-    }
-  }
-}
-
-/**
- * Decode with EXIF orientation and only upscale genuinely small phone crops.
- * Contrast work is delayed until a much smaller MRZ band is needed.
- */
-async function preparePassportCanvas(source: Blob): Promise<HTMLCanvasElement | null> {
-  const bitmap = await decodeBitmap(source);
-  if (!bitmap) return null;
-  try {
-    const minWidth = 1200;
-    const scale = bitmap.width < minWidth ? minWidth / bitmap.width : 1;
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(bitmap, 0, 0, width, height);
-    return canvas;
-  } finally {
-    bitmap.close();
-  }
-}
-
-function boostOcrContrast(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-  const image = ctx.getImageData(0, 0, width, height);
-  const { data } = image;
-  let min = 255;
-  let max = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
-    data[i] = gray;
-    data[i + 1] = gray;
-    data[i + 2] = gray;
-    if (gray < min) min = gray;
-    if (gray > max) max = gray;
-  }
-  const range = Math.max(1, max - min);
-  for (let i = 0; i < data.length; i += 4) {
-    const stretched = Math.round(((data[i] - min) / range) * 255);
-    // Soft threshold toward black/white without fully binarizing thin strokes.
-    const boosted = stretched < 140 ? Math.max(0, stretched - 25) : Math.min(255, stretched + 20);
-    data[i] = boosted;
-    data[i + 1] = boosted;
-    data[i + 2] = boosted;
-  }
-  ctx.putImageData(image, 0, 0);
-}
-
-function cropBand(
-  canvas: HTMLCanvasElement,
-  topRatio: number,
-  band: HTMLCanvasElement,
-): HTMLCanvasElement | null {
-  const bandTop = Math.floor(canvas.height * topRatio);
-  const bandHeight = Math.max(48, canvas.height - bandTop);
-  band.width = canvas.width;
-  band.height = bandHeight;
-  const ctx = band.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
-  ctx.drawImage(canvas, 0, bandTop, canvas.width, bandHeight, 0, 0, canvas.width, bandHeight);
-  boostOcrContrast(ctx, band.width, band.height);
-  return band;
-}
-
-function prepareFullPageFallback(canvas: HTMLCanvasElement): HTMLCanvasElement | null {
-  const full = document.createElement("canvas");
-  full.width = canvas.width;
-  full.height = canvas.height;
-  const ctx = full.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
-  ctx.drawImage(canvas, 0, 0);
-  boostOcrContrast(ctx, full.width, full.height);
-  return full;
-}
-
-async function rotateCanvas(source: HTMLCanvasElement, quarterTurns: 1 | 3): Promise<HTMLCanvasElement> {
-  const rotated = document.createElement("canvas");
-  const width = source.width;
-  const height = source.height;
-  rotated.width = height;
-  rotated.height = width;
-  const ctx = rotated.getContext("2d");
-  if (!ctx) return source;
-  ctx.translate(rotated.width / 2, rotated.height / 2);
-  ctx.rotate((quarterTurns * Math.PI) / 2);
-  ctx.drawImage(source, -width / 2, -height / 2);
-  return rotated;
+async function normalizePassportImage(blob: Blob): Promise<Blob> {
+  const format = await sniffImageFormat(blob).catch(() => null);
+  if (!format || DIRECT_CANVAS_FORMATS.has(format.extension)) return blob;
+  // In particular, Safari can decode HEIC and photoNormalize converts it to a
+  // portable JPEG before ImageBitmap/Tesseract use it.
+  const normalized = await normalizePhoto(blob, format);
+  return normalized.blob;
 }
 
 type TessWorker = {
   recognize: (
     image: Blob | File | string | HTMLCanvasElement,
-    options?: Record<string, unknown>,
   ) => Promise<{ data: { text: string } }>;
   setParameters: (params: Record<string, string>) => Promise<void>;
   terminate: () => Promise<void>;
@@ -258,25 +146,22 @@ async function getWorker(slotIndex: number): Promise<TessWorker> {
   if (slot.worker) return slot.worker;
   if (!slot.promise) {
     slot.promise = (async () => {
-      const { createWorker, PSM } = await import("tesseract.js");
-      const worker = await createWorker("eng", 1, {
-        // Local copies so OCR works offline after the PWA shell is cached.
-        workerPath: "/tesseract/worker.min.js",
-        corePath: "/tesseract/tesseract-core-simd-lstm.wasm.js",
+      const { createWorker, OEM, PSM } = await import("tesseract.js");
+      const worker = await createWorker("mrz", OEM.LSTM_ONLY, {
+        corePath: "/tesseract",
         langPath: "/tesseract/lang-data",
+        workerPath: "/tesseract/worker.min.js",
         logger: () => undefined,
-        errorHandler: (error: unknown) => {
-          // Reset sticky failure so the next scan can retry WASM load.
+        errorHandler: () => {
           slot.worker = null;
           slot.promise = null;
-          console.error("passport OCR worker error", error);
         },
       }) as unknown as TessWorker;
       await worker.setParameters({
         tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",
+        tessedit_pageseg_mode: String(PSM.SINGLE_LINE),
+        user_defined_dpi: "300",
         preserve_interword_spaces: "0",
-        // MRZ is two dense lines — treat the crop as one text block.
-        tessedit_pageseg_mode: String(PSM.SINGLE_BLOCK),
       });
       slot.worker = worker;
       return worker;
@@ -287,6 +172,15 @@ async function getWorker(slotIndex: number): Promise<TessWorker> {
     });
   }
   return slot.promise;
+}
+
+/** Begin loading the local OCR engine without delaying the first scan render. */
+export async function prewarmPassportOcr(): Promise<void> {
+  try {
+    await getWorker(0);
+  } catch {
+    // scanPassportImages retries and presents a contextual operator message.
+  }
 }
 
 export async function terminatePassportOcr(): Promise<void> {
@@ -303,13 +197,17 @@ export async function terminatePassportOcr(): Promise<void> {
   await Promise.all(workers.map((worker) => worker?.terminate().catch(() => undefined)));
 }
 
-async function ocrText(image: Blob | HTMLCanvasElement, slotIndex: number): Promise<string> {
+async function ocrText(
+  image: Blob | HTMLCanvasElement,
+  slotIndex: number,
+  pageSegmentationMode: number,
+): Promise<string> {
   const worker = await getWorker(slotIndex);
   try {
+    await worker.setParameters({ tessedit_pageseg_mode: String(pageSegmentationMode) });
     const result = await worker.recognize(image);
     return result.data.text ?? "";
   } catch (reason) {
-    // Reset only this lane; the other image can keep making progress.
     const slot = workerSlots[slotIndex];
     if (slot.worker === worker) {
       slot.worker = null;
@@ -320,7 +218,10 @@ async function ocrText(image: Blob | HTMLCanvasElement, slotIndex: number): Prom
   }
 }
 
-export function betterMrz(current: MrzParseResult | null, next: MrzParseResult | null): MrzParseResult | null {
+export function betterMrz(
+  current: MrzParseResult | null,
+  next: MrzParseResult | null,
+): MrzParseResult | null {
   if (!next) return current;
   if (!current) return next;
   if (next.valid && !current.valid) return next;
@@ -340,16 +241,22 @@ export function betterMrz(current: MrzParseResult | null, next: MrzParseResult |
   return current;
 }
 
-/** Let React paint progress and let pointer events run between OCR attempts. */
+/** Let React paint progress and pointer events run between OCR attempts. */
 async function yieldToMainThread(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
+
+type RowDebug = {
+  mrzCropUrl?: string;
+  rawLines?: string[];
+};
 
 function rowFromMrz(
   filename: string,
   previewUrl: string,
   mrz: MrzParseResult | null,
   extraWarnings: string[] = [],
+  debug: RowDebug = {},
 ): PassportScanRow {
   if (!mrz) {
     return {
@@ -369,16 +276,14 @@ function rowFromMrz(
       warnings: [...extraWarnings, "MRZ okunamadı — alanları elle doldurun"],
       mrzLine1: "",
       mrzLine2: "",
+      ...debug,
     };
   }
-  const given = mrz.givenNames.trim();
-  // Gate Visa NAME column is the first given name; keep the rest with it.
-  const firstName = given;
   return {
     id: newId(),
     filename,
     previewUrl,
-    firstName,
+    firstName: mrz.givenNames.trim(),
     lastName: mrz.surname,
     passportNo: mrz.passportNumber,
     countryCode2: nationalityToCountryCode2(mrz.nationality),
@@ -391,101 +296,178 @@ function rowFromMrz(
     warnings: [...mrz.warnings, ...extraWarnings],
     mrzLine1: mrz.line1,
     mrzLine2: mrz.line2,
+    ...debug,
   };
 }
 
-type CanvasScanResult = {
-  best: MrzParseResult | null;
-  sawMrzSignal: boolean;
-  successfulTopRatio: number | null;
+type LocatedBand = {
+  thumbnail: GrayThumbnail;
+  band: MrzBand;
 };
 
-async function scanCanvas(
-  canvas: HTMLCanvasElement,
+function locateMrz(bitmap: ImageBitmap): LocatedBand | null {
+  let best: LocatedBand | null = null;
+  // 0/180 and 90/270 have identical line geometry, but checking all four
+  // protects the local thresholding step from directional lighting/shadows.
+  const orientations: QuarterTurn[] = [0, 1, 3, 2];
+  for (const orientation of orientations) {
+    const thumbnail = grayThumbnail(bitmap, orientation);
+    if (!thumbnail) continue;
+    const band = findMrzBand(thumbnail.gray, thumbnail.width, thumbnail.height);
+    if (band && (!best || band.score > best.band.score)) best = { thumbnail, band };
+  }
+  return best;
+}
+
+function fallbackThumbnail(bitmap: ImageBitmap): GrayThumbnail | null {
+  // An upright passport page is landscape; a portrait bitmap is commonly a
+  // phone held sideways.
+  const orientation: QuarterTurn = bitmap.width >= bitmap.height ? 0 : 1;
+  return grayThumbnail(bitmap, orientation);
+}
+
+function conciseRawLine(text: string): string {
+  return text.toUpperCase().replace(/[^A-Z0-9<]/g, "").slice(0, 80);
+}
+
+type LineAttempt = {
+  parsed: MrzParseResult | null;
+  rawLines: string[];
+};
+
+async function scanLinePair(
+  crop: HTMLCanvasElement,
   slotIndex: number,
-  preferredTopRatio: number | null,
-): Promise<CanvasScanResult> {
-  let best: MrzParseResult | null = null;
-  let sawMrzSignal = false;
-  let successfulTopRatio: number | null = null;
-  const bandCanvas = document.createElement("canvas");
+  psmSingleLine: number,
+): Promise<LineAttempt> {
+  const gray = canvasGray(crop);
+  if (!gray) return { parsed: null, rawLines: [] };
+  const slices = splitLines(gray, crop.width, crop.height);
+  if (slices.length !== 2) return { parsed: null, rawLines: [] };
+  const first = lineCanvas(crop, slices[0]);
+  const second = lineCanvas(crop, slices[1]);
+  if (!first || !second) return { parsed: null, rawLines: [] };
+  await yieldToMainThread();
+  const firstText = await ocrText(first, slotIndex, psmSingleLine);
+  await yieldToMainThread();
+  const secondText = await ocrText(second, slotIndex, psmSingleLine);
+  return {
+    parsed: parseTd3WithRepair(firstText, secondText),
+    rawLines: [conciseRawLine(firstText), conciseRawLine(secondText)],
+  };
+}
 
-  for (const top of orderedMrzBandTops(preferredTopRatio)) {
-    const band = cropBand(canvas, top, bandCanvas);
-    if (!band) continue;
-    await yieldToMainThread();
-    const text = await ocrText(band, slotIndex);
-    sawMrzSignal ||= hasMrzLikeSignal(text);
-    const parsed = extractTd3FromOcrText(text);
-    const nextBest = betterMrz(best, parsed);
-    if (nextBest === parsed && parsed?.valid) successfulTopRatio = top;
-    best = nextBest;
-    if (best?.valid) return { best, sawMrzSignal, successfulTopRatio };
-  }
-
-  // A weak band parse is still more useful than paying for another full-page OCR.
-  if (!isUsefulMrzParse(best)) {
-    const fullPage = prepareFullPageFallback(canvas);
-    if (fullPage) {
-      await yieldToMainThread();
-      const text = await ocrText(fullPage, slotIndex);
-      sawMrzSignal ||= hasMrzLikeSignal(text);
-      best = betterMrz(best, extractTd3FromOcrText(text));
+function canvasObjectUrl(canvas: HTMLCanvasElement): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    try {
+      canvas.toBlob(
+        (blob) => resolve(blob ? URL.createObjectURL(blob) : undefined),
+        "image/jpeg",
+        0.82,
+      );
+    } catch {
+      resolve(undefined);
     }
-  }
-  return { best, sawMrzSignal, successfulTopRatio };
+  });
 }
 
 type ScanOneResult = {
   row: PassportScanRow;
-  successfulTopRatio: number | null;
 };
 
-async function scanOne(
-  image: ImageInput,
-  slotIndex: number,
-  preferredTopRatio: number | null,
-): Promise<ScanOneResult> {
-  const previewUrl = URL.createObjectURL(image.blob);
+async function scanOne(image: ImageInput, slotIndex: number): Promise<ScanOneResult> {
+  const source = await normalizePassportImage(image.blob);
+  const previewUrl = URL.createObjectURL(source);
+  let debugCropUrl: string | undefined;
   try {
-    const prepared = await preparePassportCanvas(image.blob);
-    if (!prepared) {
-      // Canvas unavailable (rare) — fall back to raw blob OCR.
+    const { PSM } = await import("tesseract.js");
+    const bitmap = await decodeBitmap(source);
+    if (!bitmap) {
       await yieldToMainThread();
-      const raw = extractTd3FromOcrText(await ocrText(image.blob, slotIndex));
+      const raw = extractTd3FromOcrText(await ocrText(source, slotIndex, PSM.SINGLE_BLOCK));
       return {
-        row: rowFromMrz(image.filename, previewUrl, raw, raw ? [] : ["Görüntü işlenemedi; ham OCR denendi"]),
-        successfulTopRatio: null,
+        row: rowFromMrz(
+          image.filename,
+          previewUrl,
+          raw,
+          raw ? [] : ["Görüntü işlenemedi; ham OCR denendi"],
+        ),
       };
     }
 
-    const upright = await scanCanvas(prepared, slotIndex, preferredTopRatio);
-    let best = upright.best;
-    let successfulTopRatio = upright.successfulTopRatio;
+    try {
+      const located = locateMrz(bitmap);
+      const fallback = located?.thumbnail ?? fallbackThumbnail(bitmap);
+      let best: MrzParseResult | null = null;
+      let rawLines: string[] = [];
+      let debugCrop: HTMLCanvasElement | null = null;
+      let selectedCrop: HTMLCanvasElement | null = null;
 
-    // Sideways phone photos: rotate only when upright OCR had essentially no MRZ signal.
-    if (shouldTryPassportRotations(best, upright.sawMrzSignal)) {
-      for (const turns of [1, 3] as const) {
-        const rotated = await rotateCanvas(prepared, turns);
-        const rotatedResult = await scanCanvas(rotated, slotIndex, preferredTopRatio);
-        best = betterMrz(best, rotatedResult.best);
-        successfulTopRatio = rotatedResult.successfulTopRatio ?? successfulTopRatio;
-        if (isUsefulMrzParse(best)) break;
+      if (located) {
+        const crop = cropDeskewed(bitmap, located.band, located.thumbnail);
+        if (crop) {
+          selectedCrop = crop;
+          debugCrop = crop;
+          const upright = await scanLinePair(crop, slotIndex, PSM.SINGLE_LINE);
+          best = betterMrz(best, upright.parsed);
+          if (best === upright.parsed) rawLines = upright.rawLines;
+
+          if (!best?.valid) {
+            const flipped = rotate180(crop);
+            if (flipped) {
+              const reverse = await scanLinePair(flipped, slotIndex, PSM.SINGLE_LINE);
+              const next = betterMrz(best, reverse.parsed);
+              if (next === reverse.parsed) {
+                rawLines = reverse.rawLines;
+                selectedCrop = flipped;
+                debugCrop = flipped;
+              }
+              best = next;
+            }
+          }
+
+          if (!best?.valid && selectedCrop) {
+            await yieldToMainThread();
+            const blockText = await ocrText(selectedCrop, slotIndex, PSM.SINGLE_BLOCK);
+            best = betterMrz(best, extractTd3FromOcrText(blockText));
+          }
+        }
       }
-    }
 
-    return {
-      row: rowFromMrz(image.filename, previewUrl, best),
-      successfulTopRatio,
-    };
+      // Exactly one downscaled full-page attempt is the final fallback.
+      if (!best?.valid && fallback) {
+        const fullPage = cropDeskewed(bitmap, {
+          x: 0,
+          y: 0,
+          width: fallback.width,
+          height: fallback.height,
+          angle: 0,
+        }, fallback, 1600);
+        if (fullPage) {
+          await yieldToMainThread();
+          const fullText = await ocrText(fullPage, slotIndex, PSM.SINGLE_BLOCK);
+          best = betterMrz(best, extractTd3FromOcrText(fullText));
+        }
+      }
+
+      if (debugCrop) debugCropUrl = await canvasObjectUrl(debugCrop);
+      return {
+        row: rowFromMrz(image.filename, previewUrl, best, [], {
+          mrzCropUrl: debugCropUrl,
+          rawLines: rawLines.some(Boolean) ? rawLines : undefined,
+        }),
+      };
+    } finally {
+      bitmap.close();
+    }
   } catch (reason) {
-    const message = reason instanceof Error ? reason.message : "OCR başarısız";
+    if (debugCropUrl?.startsWith("blob:")) URL.revokeObjectURL(debugCropUrl);
+    const message = reason instanceof Error ? reason.message : "";
     const friendly = /fetch|network|load|wasm|worker/i.test(message)
       ? "OCR motoru yüklenemedi — sayfayı yenileyip tekrar deneyin"
-      : message;
+      : "OCR başarısız — fotoğrafı kontrol edip tekrar deneyin";
     return {
       row: rowFromMrz(image.filename, previewUrl, null, [friendly]),
-      successfulTopRatio: null,
     };
   }
 }
@@ -493,8 +475,7 @@ async function scanOne(
 /**
  * OCR every passport image (or ZIP of images) and return editable rows.
  *
- * Preview object URLs must be revoked by the caller when the screen unmounts
- * (`revokePassportScanPreviews`).
+ * Preview object URLs must be revoked by the caller when the screen unmounts.
  */
 export async function scanPassportImages(
   files: File[],
@@ -505,8 +486,6 @@ export async function scanPassportImages(
     throw new Error("Pasaport görüntüsü bulunamadı. JPG/PNG veya bunları içeren ZIP seçin.");
   }
   const wantsSecondWorker = images.length > 1;
-  // Only the first worker blocks startup. A second lane may join after its
-  // worker is ready; if that initialization fails, lane zero drains the queue.
   try {
     await getWorker(0);
   } catch (reason) {
@@ -518,7 +497,6 @@ export async function scanPassportImages(
   const rows = new Array<PassportScanRow>(images.length);
   let nextIndex = 0;
   let done = 0;
-  let preferredTopRatio: number | null = null;
   const activeFilenames = new Map<number, string>();
 
   const emitProgress = (preferredSlot?: number): void => {
@@ -528,7 +506,7 @@ export async function scanPassportImages(
     onProgress?.({ done, total: images.length, current });
   };
 
-  // Each lane owns one worker: images overlap, but crops for one image stay serial.
+  // Each lane owns one worker; images overlap while attempts for one image stay serial.
   const runLane = async (slotIndex: number): Promise<void> => {
     while (nextIndex < images.length) {
       const index = nextIndex;
@@ -537,9 +515,8 @@ export async function scanPassportImages(
       activeFilenames.set(slotIndex, image.filename);
       emitProgress(slotIndex);
       await yieldToMainThread();
-      const result = await scanOne(image, slotIndex, preferredTopRatio);
+      const result = await scanOne(image, slotIndex);
       rows[index] = result.row;
-      if (result.successfulTopRatio !== null) preferredTopRatio = result.successfulTopRatio;
       done += 1;
       activeFilenames.delete(slotIndex);
       emitProgress();
@@ -548,10 +525,7 @@ export async function scanPassportImages(
 
   const lanes: Promise<void>[] = [runLane(0)];
   if (wantsSecondWorker) {
-    const secondLane = getWorker(1)
-      .then(() => runLane(1))
-      .catch(() => undefined);
-    lanes.push(secondLane);
+    lanes.push(getWorker(1).then(() => runLane(1)).catch(() => undefined));
   }
   await Promise.all(lanes);
   return rows;
@@ -560,5 +534,6 @@ export async function scanPassportImages(
 export function revokePassportScanPreviews(rows: readonly PassportScanRow[]): void {
   for (const row of rows) {
     if (row.previewUrl.startsWith("blob:")) URL.revokeObjectURL(row.previewUrl);
+    if (row.mrzCropUrl?.startsWith("blob:")) URL.revokeObjectURL(row.mrzCropUrl);
   }
 }
