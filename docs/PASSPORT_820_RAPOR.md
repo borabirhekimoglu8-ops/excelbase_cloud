@@ -71,9 +71,10 @@ Excel `Ülke Kodu 2` yalnız MRZ satır 2 uyruğundan türetilir. UTO, XXA ve di
 
 `Uyruk UTO (Ütopya (ICAO örnek belge)) bu şablonda temsil edilemiyor — Ülke Kodu 2 yok`
 
-Bu satırlar Excel’den atlanır. Dışa aktarılabilir başka satır yoksa Excel
-düğmesi kapalı kalır. Ülke seçici özel durumları listeler; operatör daha önce
-değiştirilmiş bir satırı gerçek özel durumuna geri alabilir.
+Böyle bir satır varken Excel dışa aktarımı tamamen durur; satır sessizce
+atlanmaz. Operatör satırı siler veya ayrı işler, sonra dışa aktarır. Ülke seçici
+özel durumları listeler; operatör daha önce değiştirilmiş bir satırı gerçek özel
+durumuna geri alabilir.
 
 ## Şifreli iki-tarayıcı paketi
 
