@@ -3,7 +3,7 @@
  * Passenger records are handled by the application data layer. This worker
  * only keeps the static application shell available when the network is down.
  */
-const SHELL_VERSION = "8.1.0";
+const SHELL_VERSION = "8.2.0";
 const CACHE_PREFIX = "excelbase-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const CORE_ASSETS = [
@@ -16,6 +16,15 @@ const CORE_ASSETS = [
 ];
 const DOCUMENT_ASSETS = [
   "/pdfjs/pdf.worker.min.mjs",
+];
+const OPTIONAL_OCR_ASSETS = [
+  "/tesseract/worker.min.js",
+  "/tesseract/tesseract-core-lstm.wasm.js",
+  "/tesseract/tesseract-core-lstm.wasm",
+  "/tesseract/tesseract-core-simd-lstm.wasm.js",
+  "/tesseract/tesseract-core-simd-lstm.wasm",
+  "/tesseract/lang-data/mrz.traineddata.gz",
+  "/tesseract/lang-data/eng.traineddata.gz",
 ];
 
 function isCacheableResponse(response) {
@@ -78,7 +87,7 @@ async function precacheShell() {
   // installation is retried instead of reporting a misleading offline-ready state.
   await Promise.all(discoveredAssets.map((url) => fetchAndCache(cache, url)));
   await Promise.all(DOCUMENT_ASSETS.map((url) => fetchAndCache(cache, url)));
-  await Promise.allSettled(optionalAssets.map((url) => fetchAndCache(cache, url)));
+  await Promise.allSettled([...optionalAssets, ...OPTIONAL_OCR_ASSETS].map((url) => fetchAndCache(cache, url)));
 }
 
 self.addEventListener("install", (event) => {

@@ -1,29 +1,22 @@
-import { icaoCountryToIso2 } from "./icaoCountries";
+import { icaoCountryToIso2, isSpecialNationality } from "./icaoCountries";
 import { parseTd3FromLines, type MrzParseResult } from "./mrz";
+import {
+  DOCUMENT_TYPES,
+  PASSPORT_SCHEMA_VERSION,
+  deriveReviewStatus,
+  type FieldProvenance,
+  type PassportDocumentType,
+  type PassportFieldName,
+  type PassportScanRow,
+  type PassportScanStatus,
+} from "./passportTypes";
 
-export type PassportScanStatus = "ok" | "weak";
-
-export const DOCUMENT_TYPES = ["Passport", "ID CARD"] as const;
-export type PassportDocumentType = (typeof DOCUMENT_TYPES)[number];
-
-export type PassportScanRow = {
-  id: string;
-  filename: string;
-  firstName: string;
-  lastName: string;
-  passportNo: string;
-  countryCode2: string;
-  nationality: string;
-  birthDate: string;
-  sex: string;
-  expiryDate: string;
-  tcNo: string;
-  documentType: PassportDocumentType;
-  status: PassportScanStatus;
-  warnings: string[];
-  mrzLine1: string;
-  mrzLine2: string;
-};
+export {
+  DOCUMENT_TYPES,
+  type PassportDocumentType,
+  type PassportScanRow,
+  type PassportScanStatus,
+} from "./passportTypes";
 
 export type Td3TextLines = {
   line1: string;
@@ -106,25 +99,64 @@ function newId(): string {
   return `ps-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function rowFromMrz(sourceLabel: string, mrz: MrzParseResult): PassportScanRow {
-  return {
+type ParsedRowOptions = {
+  previewUrl?: string;
+  batchId?: string;
+  pageNo?: number;
+};
+
+function mrzProvenance(mrz: MrzParseResult, pageNo: number): PassportScanRow["provenance"] {
+  const output: Partial<Record<PassportFieldName, FieldProvenance>> = {};
+  const set = (field: PassportFieldName, value: string) => {
+    if (value) output[field] = { source: "mrz", verification: "mrz_verified", pageNo };
+  };
+  set("firstName", mrz.givenNames);
+  set("lastName", mrz.surname);
+  set("passportNo", mrz.passportNumber);
+  set("nationality", mrz.nationality);
+  set("birthDate", mrz.birthDate);
+  set("sex", mrz.sex);
+  set("expiryDate", mrz.expiryDate);
+  set("tcNo", mrz.nationalId);
+  return output;
+}
+
+export function rowFromParsedMrz(
+  sourceLabel: string,
+  mrz: MrzParseResult | null,
+  options: ParsedRowOptions = {},
+): PassportScanRow {
+  const pageNo = options.pageNo ?? 1;
+  const status: PassportScanStatus = !mrz ? "failed" : mrz.verified ? "ok" : "weak";
+  const provenance = mrz ? mrzProvenance(mrz, pageNo) : {};
+  const row: PassportScanRow = {
+    schema_version: PASSPORT_SCHEMA_VERSION,
     id: newId(),
     filename: sourceLabel,
-    firstName: mrz.givenNames,
-    lastName: mrz.surname,
-    passportNo: mrz.passportNumber,
-    countryCode2: icaoCountryToIso2(mrz.nationality),
-    nationality: mrz.nationality,
-    birthDate: mrz.birthDate,
-    sex: mrz.sex,
-    expiryDate: mrz.expiryDate,
-    tcNo: mrz.nationality === "TUR" ? mrz.nationalId : "",
+    previewUrl: options.previewUrl ?? "",
+    batchId: options.batchId ?? `text-${Date.now().toString(36)}`,
+    pageNo,
+    firstName: mrz?.givenNames ?? "",
+    lastName: mrz?.surname ?? "",
+    passportNo: mrz?.passportNumber ?? "",
+    countryCode2: icaoCountryToIso2(mrz?.nationality ?? ""),
+    nationality: mrz?.nationality ?? "",
+    nationalitySpecial: isSpecialNationality(mrz?.nationality ?? ""),
+    issuingState: mrz?.issuingState ?? "",
+    birthDate: mrz?.birthDate ?? "",
+    sex: mrz?.sex ?? "",
+    expiryDate: mrz?.expiryDate ?? "",
+    tcNo: mrz?.nationality === "TUR" ? mrz.nationalId : "",
     documentType: "Passport",
-    status: mrz.verified ? "ok" : "weak",
-    warnings: mrz.warnings,
-    mrzLine1: mrz.line1,
-    mrzLine2: mrz.line2,
+    status,
+    reviewStatus: "failed",
+    provenance,
+    warnings: mrz?.warnings ?? ["MRZ okunamadı — görsel alanlar operatör kontrolü gerektirir"],
+    mrzLine1: mrz?.line1 ?? "",
+    mrzLine2: mrz?.line2 ?? "",
   };
+  row.reviewStatus = deriveReviewStatus(row);
+  return row;
 }
 
 /** Convert every TD3 pair found in pasted or PDF text into editable operator rows. */
@@ -133,6 +165,6 @@ export function rowsFromMrzText(text: string, sourceLabel: string): PassportScan
     const parsed = parseTd3FromLines(lines.line1, lines.line2);
     if (!parsed) return [];
     const label = found.length > 1 ? `${sourceLabel} · ${index + 1}` : sourceLabel;
-    return [rowFromMrz(label, parsed)];
+    return [rowFromParsedMrz(label, parsed, { pageNo: index + 1 })];
   });
 }

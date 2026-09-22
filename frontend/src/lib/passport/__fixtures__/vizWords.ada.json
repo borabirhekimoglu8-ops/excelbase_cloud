@@ -1,0 +1,20 @@
+[
+  { "text": "Surname", "confidence": 98, "rect": { "x": 80, "y": 120, "width": 82, "height": 20 } },
+  { "text": "YILMAZ", "confidence": 97, "rect": { "x": 220, "y": 120, "width": 92, "height": 20 } },
+  { "text": "Given", "confidence": 98, "rect": { "x": 80, "y": 160, "width": 54, "height": 20 } },
+  { "text": "names", "confidence": 98, "rect": { "x": 140, "y": 160, "width": 58, "height": 20 } },
+  { "text": "ADA", "confidence": 98, "rect": { "x": 220, "y": 160, "width": 48, "height": 20 } },
+  { "text": "Passport", "confidence": 97, "rect": { "x": 80, "y": 200, "width": 78, "height": 20 } },
+  { "text": "No", "confidence": 97, "rect": { "x": 164, "y": 200, "width": 26, "height": 20 } },
+  { "text": "U1000001", "confidence": 96, "rect": { "x": 220, "y": 200, "width": 110, "height": 20 } },
+  { "text": "Date", "confidence": 96, "rect": { "x": 80, "y": 240, "width": 42, "height": 20 } },
+  { "text": "of", "confidence": 96, "rect": { "x": 128, "y": 240, "width": 18, "height": 20 } },
+  { "text": "birth", "confidence": 96, "rect": { "x": 152, "y": 240, "width": 42, "height": 20 } },
+  { "text": "01.01.1990", "confidence": 95, "rect": { "x": 220, "y": 240, "width": 112, "height": 20 } },
+  { "text": "Date", "confidence": 96, "rect": { "x": 80, "y": 280, "width": 42, "height": 20 } },
+  { "text": "of", "confidence": 96, "rect": { "x": 128, "y": 280, "width": 18, "height": 20 } },
+  { "text": "expiry", "confidence": 96, "rect": { "x": 152, "y": 280, "width": 54, "height": 20 } },
+  { "text": "31.12.2030", "confidence": 95, "rect": { "x": 220, "y": 280, "width": 112, "height": 20 } },
+  { "text": "Nationality", "confidence": 94, "rect": { "x": 80, "y": 320, "width": 92, "height": 20 } },
+  { "text": "TÜRK", "confidence": 94, "rect": { "x": 220, "y": 320, "width": 55, "height": 20 } }
+]

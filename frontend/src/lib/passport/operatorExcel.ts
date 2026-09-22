@@ -42,6 +42,9 @@ export type PassportOperatorRow = {
   firstName: string;
   lastName: string;
   birthDate?: string;
+  /** ICAO nationality from MRZ line 2 (or operator-confirmed replacement). */
+  nationality?: string;
+  /** @deprecated ignored for export; kept for caller compatibility. */
   countryCode2?: string;
   passportExpiry?: string;
   visaStart?: string;
@@ -104,7 +107,7 @@ export function createPassportOperatorXlsxBlob(rows: readonly PassportOperatorRo
     cell(row.firstName),
     cell(row.lastName),
     formatOperatorDate(cell(row.birthDate)),
-    icaoCountryToIso2(cell(row.countryCode2)),
+    icaoCountryToIso2(cell(row.nationality)),
     formatOperatorDate(cell(row.passportExpiry)),
     formatOperatorDate(cell(row.visaStart)),
     formatOperatorDate(cell(row.visaEnd)),

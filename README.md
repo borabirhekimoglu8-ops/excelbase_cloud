@@ -20,6 +20,10 @@ Excelbase Operations; iş dosyalarını, C kodlarını, görevleri, notları, ev
 - Şifreli cihaz yedeği alır ve geri yükler.
 - Uygulama kabuğu ilk başarılı açılıştan sonra çevrimdışı çalışır.
 
+8.2.0 ile WhatsApp’tan gelen görüntü PDF’leri ve JPG/PNG/HEIC pasaport fotoğrafları,
+tek bir cihaz-içi OCR kuyruğunda Pasaport → Excel akışına alınır. Kaynak sayfalar
+şifreli kasada tutulur; Live Text ile MRZ yapıştırma yalnız alternatif yöntemdir.
+
 ## iPhone'a kurulum
 
 1. Yayın adresini iPhone'da **Safari** ile açın.

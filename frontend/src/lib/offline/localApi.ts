@@ -132,11 +132,13 @@ const META_LAST_UNDO = "last-undo";
 const META_AUDIT = "audit-trail";
 const META_LAST_BACKUP = "last-backup-at";
 const META_BATCH_PREFIX = "import-batch:";
-const APP_VERSION = "8.1.0-offline";
+const APP_VERSION = "8.2.0-offline";
 const SOURCE_PREFIX = "source:";
 const PHOTO_PREFIX = "photo:";
 const DOCUMENT_PREFIX = "document:";
 const OFFICE_DOCUMENT_PREFIX = "workspace-document:";
+const PASSPORT_SOURCE_PREFIX = "passport-source:";
+const PASSPORT_PAGE_PREFIX = "passport-page:";
 const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
 const MAX_PHOTO_BATCH_BYTES = 350 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
@@ -159,11 +161,14 @@ type BatchState = { started: boolean; replaceConsumed: boolean };
 type UndoState = { batchId: string; passengers: StoredPassenger[] };
 type UnmatchedRecord = { id: string; binaryId: string; filename: string; createdAt: string };
 type BinaryMetadata = {
-  kind: "source" | "photo" | "document" | "office-document";
+  kind: "source" | "photo" | "document" | "office-document" | "passport-source" | "passport-page";
   filename: string;
   mime: string;
   passengerId?: number;
   documentId?: string;
+  batchId?: string;
+  pageNo?: number;
+  expiresAt?: string;
 };
 
 const photoUrlCache = new Map<string, string>();
@@ -1389,8 +1394,58 @@ export async function localQueueImportFile(
   }
 }
 
+export async function localPassportStoreSource(batchId: string, file: File): Promise<string> {
+  const id = `${PASSPORT_SOURCE_PREFIX}${batchId}`;
+  await putBinary(id, file, {
+    kind: "passport-source",
+    filename: leafFilename(file.name, "pasaport-kaynagi"),
+    mime: file.type || "application/octet-stream",
+    batchId,
+  } satisfies BinaryMetadata);
+  return id;
+}
+
+export async function localPassportDeleteSource(batchId: string): Promise<void> {
+  await deleteBinary(`${PASSPORT_SOURCE_PREFIX}${batchId}`);
+}
+
+export async function localPassportStorePage(
+  batchId: string,
+  pageNo: number,
+  page: Blob,
+  expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+): Promise<string> {
+  const id = `${PASSPORT_PAGE_PREFIX}${batchId}:${pageNo}`;
+  await putBinary(id, page, {
+    kind: "passport-page",
+    filename: `passport-page-${pageNo}.jpg`,
+    mime: page.type || "image/jpeg",
+    batchId,
+    pageNo,
+    expiresAt: expiresAt.toISOString(),
+  } satisfies BinaryMetadata);
+  return id;
+}
+
+export async function localPassportPage(batchId: string, pageNo: number): Promise<Blob | null> {
+  return (await getBinary(`${PASSPORT_PAGE_PREFIX}${batchId}:${pageNo}`))?.data ?? null;
+}
+
+export async function localPassportPurgeExpiredImages(now = new Date()): Promise<number> {
+  const binaries = await listBinary();
+  const expired = binaries.filter((binary) => {
+    const metadata = binary.metadata as Partial<BinaryMetadata> | null;
+    return metadata?.kind === "passport-page"
+      && Boolean(metadata.expiresAt)
+      && new Date(metadata.expiresAt as string).getTime() <= now.getTime();
+  });
+  await Promise.all(expired.map((binary) => deleteBinary(binary.id)));
+  return expired.length;
+}
+
 export async function localQueueState(): Promise<ImportQueueResponse> {
-  const jobs = await listJobs<StoredImportJob>();
+  const jobs = (await listJobs<StoredImportJob>())
+    .filter((job) => !job.id.startsWith("passport-ocr:"));
   for (const job of jobs) {
     if (job.status === "processing" || job.status === "pending" || job.status === "waiting") {
       job.status = "error";
