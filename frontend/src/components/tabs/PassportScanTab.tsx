@@ -67,8 +67,10 @@ function isPdf(file: File): boolean {
 
 function isSupported(file: File): boolean {
   return isPdf(file)
-    || file.type.startsWith("image/")
-    || /\.(?:jpe?g|png|heic|heif|webp)$/i.test(file.name);
+    || ["image/jpeg", "image/png", "image/heic", "image/heif"].includes(
+      file.type.toLowerCase(),
+    )
+    || /\.(?:jpe?g|png|heic|heif)$/i.test(file.name);
 }
 
 function firstDraftRect(row: PassportScanRow) {

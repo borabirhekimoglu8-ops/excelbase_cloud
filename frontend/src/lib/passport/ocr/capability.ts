@@ -99,5 +99,5 @@ export function detectOcrCapability(input: {
 export function fileAcceptForCapability(capability: OcrCapability): string {
   const base = ".pdf,application/pdf";
   if (!capability.acceptImages) return base;
-  return `${base},.jpg,.jpeg,.png,.heic,image/jpeg,image/png,image/heic`;
+  return `${base},.jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif`;
 }

@@ -7,7 +7,7 @@
 import { BlobReader, Uint8ArrayWriter, ZipReader } from "@zip.js/zip.js";
 
 import { sha256Hex } from "@/lib/hash";
-import { IMAGE_EXTENSIONS, isImageFilename, sniffImageFormat } from "@/lib/imageFormat";
+import { sniffImageFormat } from "@/lib/imageFormat";
 import { normalizePhoto } from "@/lib/photoNormalize";
 
 import { passportEngineProfileId } from "./engineProfile";
@@ -62,6 +62,10 @@ function isPdfFilename(filename: string): boolean {
   return filename.toLocaleLowerCase("en-US").endsWith(".pdf");
 }
 
+function isPassportImageFilename(filename: string): boolean {
+  return /\.(?:jpe?g|png|heic|heif)$/i.test(filename);
+}
+
 async function collectSources(files: File[]): Promise<SourceInput[]> {
   const output: SourceInput[] = [];
   for (const file of files) {
@@ -72,7 +76,7 @@ async function collectSources(files: File[]): Promise<SourceInput[]> {
         for (const entry of await reader.getEntries()) {
           if (
             entry.directory
-            || (!isImageFilename(entry.filename) && !isPdfFilename(entry.filename))
+            || (!isPassportImageFilename(entry.filename) && !isPdfFilename(entry.filename))
             || !entry.getData
           ) continue;
           const leaf = entry.filename.split("/").pop() || entry.filename;
@@ -94,15 +98,19 @@ async function collectSources(files: File[]): Promise<SourceInput[]> {
       output.push({ filename: file.name, blob: file, kind: "pdf" });
       continue;
     }
-    const extension = lower.split(".").pop() ?? "";
-    if (file.type.startsWith("image/") || IMAGE_EXTENSIONS.has(extension)) {
+    if (
+      isPassportImageFilename(file.name)
+      || ["image/jpeg", "image/png", "image/heic", "image/heif"].includes(
+        file.type.toLocaleLowerCase("en-US"),
+      )
+    ) {
       output.push({ filename: file.name, blob: file, kind: "image" });
     }
   }
   return output;
 }
 
-const DIRECT_CANVAS_FORMATS = new Set(["jpg", "png", "webp", "gif", "bmp"]);
+const DIRECT_CANVAS_FORMATS = new Set(["jpg", "png"]);
 
 async function normalizePassportImage(blob: Blob): Promise<Blob> {
   const format = await sniffImageFormat(blob).catch(() => null);
