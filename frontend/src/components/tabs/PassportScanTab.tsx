@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, useMemo, useRef, useState } from "react";
 
 import { CountryPicker } from "@/components/passport/CountryPicker";
 import { PassportQueuePanel } from "@/components/passport/PassportQueuePanel";
@@ -10,6 +10,7 @@ import { saveBlob } from "@/lib/offline/exporter";
 import {
   localPassportDeleteSource,
   localPassportPurgeExpiredImages,
+  localPassportPutRow,
   localPassportStorePage,
   localPassportStoreSource,
 } from "@/lib/offline/localApi";
@@ -48,6 +49,10 @@ function isSupported(file: File): boolean {
     || /\.(?:jpe?g|png|heic|heif|webp)$/i.test(file.name);
 }
 
+function firstDraftRect(row: PassportScanRow) {
+  return Object.values(row.provenance).find((item) => item?.verification === "visual_draft" && item.rect)?.rect;
+}
+
 export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
   const { notify } = useStore();
   const [busy, setBusy] = useState(false);
@@ -55,6 +60,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
   const [mrzText, setMrzText] = useState("");
   const [progress, setProgress] = useState<PassportScanProgress | null>(null);
   const [rows, setRows] = useState<PassportScanRow[]>([]);
+  const enqueueInFlight = useRef<Promise<void> | null>(null);
   const readyCount = useMemo(() => rows.filter(rowReady).length, [rows]);
 
   function applyText(text: string, sourceLabel: string): PassportScanRow[] {
@@ -65,6 +71,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
     }
     revokePassportScanPreviews(rows);
     setRows(next);
+    void Promise.all(next.map((row) => localPassportPutRow(row)));
     const verified = next.filter((row) => row.status === "ok").length;
     notify(`${verified} doğrulandı · ${next.length - verified} kontrol gerekli`, "ok");
     return next;
@@ -76,6 +83,11 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
 
   async function runFiles(files: File[]) {
     if (!files.length) return;
+    if (enqueueInFlight.current) {
+      await enqueueInFlight.current;
+      notify("Bu dosya zaten sırada.", "error");
+      return;
+    }
     const unsupported = files.find((file) => !isSupported(file));
     if (unsupported) {
       notify("PDF, JPG, PNG veya HEIC pasaport görüntüsü seçin.", "error");
@@ -83,27 +95,36 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
     }
 
     const batchId = `passport-${Date.now().toString(36)}`;
-    setBusy(true);
-    setProgress({ done: 0, total: files.length, current: "OCR hazırlanıyor…" });
+    const work = (async () => {
+      setBusy(true);
+      setProgress({ done: 0, total: files.length, current: "OCR hazırlanıyor…" });
+      try {
+        await localPassportPurgeExpiredImages();
+        await localPassportStoreSource(batchId, files[0]);
+        const nextRows = await scanPassportImages(files, setProgress, {
+          batchId,
+          onPage: async ({ batchId: pageBatchId, pageNo, blob }) => {
+            await localPassportStorePage(pageBatchId, pageNo, blob);
+          },
+        });
+        revokePassportScanPreviews(rows);
+        setRows(nextRows);
+        await Promise.all(nextRows.map((row) => localPassportPutRow(row)));
+        const verified = nextRows.filter((row) => row.reviewStatus === "verified").length;
+        notify(`${verified} doğrulandı · ${nextRows.length - verified} operatör kontrolü gerekli`, "ok");
+      } catch (reason) {
+        notify(reason instanceof Error ? reason.message : "Pasaport görüntüleri okunamadı.", "error");
+      } finally {
+        await localPassportDeleteSource(batchId).catch(() => undefined);
+        setBusy(false);
+        setProgress(null);
+      }
+    })();
+    enqueueInFlight.current = work;
     try {
-      await localPassportPurgeExpiredImages();
-      await localPassportStoreSource(batchId, files[0]);
-      const nextRows = await scanPassportImages(files, setProgress, {
-        batchId,
-        onPage: async ({ batchId: pageBatchId, pageNo, blob }) => {
-          await localPassportStorePage(pageBatchId, pageNo, blob);
-        },
-      });
-      revokePassportScanPreviews(rows);
-      setRows(nextRows);
-      const verified = nextRows.filter((row) => row.reviewStatus === "verified").length;
-      notify(`${verified} doğrulandı · ${nextRows.length - verified} operatör kontrolü gerekli`, "ok");
-    } catch (reason) {
-      notify(reason instanceof Error ? reason.message : "Pasaport görüntüleri okunamadı.", "error");
+      await work;
     } finally {
-      await localPassportDeleteSource(batchId).catch(() => undefined);
-      setBusy(false);
-      setProgress(null);
+      enqueueInFlight.current = null;
     }
   }
 
@@ -116,16 +137,21 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
   function onDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault();
     setDragging(false);
+    if (busy || enqueueInFlight.current) return;
     void runFiles(Array.from(event.dataTransfer.files ?? []));
   }
 
   function patchRow(id: string, patch: Partial<PassportScanRow>) {
-    setRows((current) => current.map((row) => {
-      if (row.id !== id) return row;
-      const next = { ...row, ...patch };
-      if (!("reviewStatus" in patch)) next.reviewStatus = "needs_review";
-      return next;
-    }));
+    setRows((current) => {
+      const updated = current.map((row) => {
+        if (row.id !== id) return row;
+        const next = { ...row, ...patch };
+        if (!("reviewStatus" in patch)) next.reviewStatus = "needs_review";
+        void localPassportPutRow(next);
+        return next;
+      });
+      return updated;
+    });
   }
 
   function removeRow(id: string) {
@@ -224,8 +250,8 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
 
       {rows.length === 0 && !busy ? (
         <EmptyState
-          title="Henüz MRZ işlenmedi"
-          body="WhatsApp PDF’i veya pasaport fotoğrafı yükleyin."
+          title="Henüz pasaport işlenmedi"
+          body="WhatsApp PDF’ini seçin veya MRZ yapıştırın."
         />
       ) : null}
 
@@ -256,16 +282,28 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
                 <div className="xb-passport-fields">
                   <label>
                     <span>Yolcu Adı</span>
-                    <input value={row.firstName} onChange={(event) => patchRow(row.id, { firstName: event.target.value })} autoCapitalize="characters" />
+                    <input
+                      value={row.firstName}
+                      data-verification={row.provenance.firstName?.verification}
+                      onChange={(event) => patchRow(row.id, { firstName: event.target.value })}
+                      autoCapitalize="characters"
+                    />
                   </label>
                   <label>
                     <span>Yolcu Soyadı</span>
-                    <input value={row.lastName} onChange={(event) => patchRow(row.id, { lastName: event.target.value })} autoCapitalize="characters" />
+                    <input
+                      value={row.lastName}
+                      data-verification={row.provenance.lastName?.verification}
+                      onChange={(event) => patchRow(row.id, { lastName: event.target.value })}
+                      autoCapitalize="characters"
+                    />
                   </label>
                   <label>
                     <span>Pasaport No</span>
                     <input
                       value={row.passportNo}
+                      data-verification={row.provenance.passportNo?.verification}
+                      title={row.provenance.passportNo?.verification === "visual_draft" ? "Görselden okundu, MRZ ile doğrulanmadı" : undefined}
                       onChange={(event) => patchRow(row.id, { passportNo: event.target.value.toLocaleUpperCase("tr-TR") })}
                       autoCapitalize="characters"
                       autoCorrect="off"
@@ -331,6 +369,9 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
                       <PassportSourceViewer
                         src={row.previewUrl}
                         alt={`Pasaport kaynak sayfası ${row.pageNo}`}
+                        rect={firstDraftRect(row)}
+                        width={900}
+                        height={600}
                       />
                     </details>
                   ) : null}

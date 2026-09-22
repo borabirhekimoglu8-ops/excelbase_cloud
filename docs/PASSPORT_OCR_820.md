@@ -17,8 +17,10 @@ istisnalarının bağlantı/lisans notları `COUNTRY_TABLE_SOURCES` içindedir.
 
 ## Sabit sıkıştırılmış sayfa tanısı
 
-Profil: `tesseract-6-mrz-eng-lstm-300dpi-v1`. Sonuç gerçekte **2/5**; başarısız
-sayfalara başarı yakıştırılmaz.
+Orijinal operatör WhatsApp PDF’leri depoda yoktu; aynı beş sentetik dosya
+`frontend/src/lib/passport/__fixtures__/compressed-pages/` altında kilitlendi.
+Profil: `tesseract-6-mrz-eng-lstm-300dpi-v1`. Sonuç **2/5**; başarısız
+sayfalara başarı yakıştırılmaz. Hash’ler dosya baytlarından üretilir.
 
 | Sayfa | Sonuç | Aşama | Neden |
 |---|---|---|---|
@@ -28,5 +30,6 @@ sayfalara başarı yakıştırılmaz.
 | 4 | Başarısız | `text_detection` | Sıkıştırma sonrası MRZ bandı ayırt edilemedi |
 | 5 | Başarısız | `character_recognition` | Karakterler 44 hücreli ızgaraya oturmadı |
 
-Linux bulut VM’de birim kontrolleri çalıştırıldı. Windows ve macOS uçtan uca
-test edilmedi.
+Linux bulut VM’de birim kontrolleri çalıştırıldı. Windows ortamına erişim yok;
+Windows kurulumu ve uçtan uca test **yapılmadı**. macOS testi Windows
+pilotunun ön koşulu değildir ve macOS desteği iddia edilmez.

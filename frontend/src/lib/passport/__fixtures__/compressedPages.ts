@@ -3,6 +3,7 @@ import type { PassportFailureStage } from "../passportTypes";
 
 export type CompressedPageDiagnostic = {
   pageNo: number;
+  filename: string;
   sha256: string;
   profileId: string;
   success: boolean;
@@ -11,11 +12,18 @@ export type CompressedPageDiagnostic = {
   reason: string;
 };
 
-/** Fixed synthetic diagnostic manifest. It records observations; it does not claim OCR success. */
+/**
+ * Fixed synthetic WhatsApp-compressed page set.
+ *
+ * Original operator WhatsApp PDFs were not in the repository, so this is the
+ * reproducible stand-in: the same five files, hashes and engine profile are
+ * recorded. It does not invent OCR success on unseen bytes.
+ */
 export const COMPRESSED_PAGE_DIAGNOSTICS: readonly CompressedPageDiagnostic[] = Object.freeze([
   {
     pageNo: 1,
-    sha256: "1088e9fd5c94292f7167c5f5cd6208158f2694158ece657f65824eb65373d62b",
+    filename: "page-1.mrz.txt",
+    sha256: "a8a51a9765fe6563264d89475f38e1433dd33974b2886b11bda73035d4fcc7d2",
     profileId: PASSPORT_ENGINE_PROFILE.id,
     success: true,
     stages: [],
@@ -23,7 +31,8 @@ export const COMPRESSED_PAGE_DIAGNOSTICS: readonly CompressedPageDiagnostic[] = 
   },
   {
     pageNo: 2,
-    sha256: "4af6376ff5cb0e6306284c302122227fe70d3e166c38d2b27cc2fa93b935de68",
+    filename: "page-2.mrz.txt",
+    sha256: "f6bb7d8acf9aeadcd0da3881d3328bc3b639822f78f5425905797bd9748f99fb",
     profileId: PASSPORT_ENGINE_PROFILE.id,
     success: true,
     stages: [],
@@ -31,7 +40,8 @@ export const COMPRESSED_PAGE_DIAGNOSTICS: readonly CompressedPageDiagnostic[] = 
   },
   {
     pageNo: 3,
-    sha256: "e921265f18db10eefa490de1f34463442614aa49c0b55a8125eef70243c5f4ad",
+    filename: "page-3.name-line.txt",
+    sha256: "a74691bbe8918800d91cb98287981ce5fbfb3f04983cefc16bd527e983b8a9a7",
     profileId: PASSPORT_ENGINE_PROFILE.id,
     success: false,
     stages: ["mrz_parser", "field_matching"],
@@ -40,7 +50,8 @@ export const COMPRESSED_PAGE_DIAGNOSTICS: readonly CompressedPageDiagnostic[] = 
   },
   {
     pageNo: 4,
-    sha256: "329948b080e5759b819797ec946947d7280a203738793befcdf560e9a80b0352",
+    filename: "page-4.no-band.txt",
+    sha256: "bed8f3d209fc375b29a9b3c98a38a4a96bc5fc6cff52070e5e22d2ef3949acb8",
     profileId: PASSPORT_ENGINE_PROFILE.id,
     success: false,
     stages: ["text_detection"],
@@ -49,7 +60,8 @@ export const COMPRESSED_PAGE_DIAGNOSTICS: readonly CompressedPageDiagnostic[] = 
   },
   {
     pageNo: 5,
-    sha256: "0a561d03eb535e97a85ee449b17f426b529546d434e279e1491d7f0a910b2b42",
+    filename: "page-5.grid-fail.txt",
+    sha256: "00c2d409314dcde75c840fe6e7043ddd8f181607bec79e6c92574af5a8fe950b",
     profileId: PASSPORT_ENGINE_PROFILE.id,
     success: false,
     stages: ["character_recognition"],

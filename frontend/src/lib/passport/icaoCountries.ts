@@ -399,6 +399,24 @@ export function icaoCountryToIso2(value: string): string {
   return ICAO3_TO_ISO2[code] ?? "";
 }
 
+/** Accept ISO-2, ICAO-3 or a unique local name. Special/unknown codes stay unresolved. */
+export function resolveCountrySelection(query: string): CountryEntry | null {
+  const trimmed = query.trim();
+  if (!trimmed) return null;
+  const upper = trimmed.toUpperCase();
+  const byAlpha3 = countryEntry(upper);
+  if (byAlpha3) return byAlpha3.kind === "special" ? null : byAlpha3;
+  const iso2 = icaoCountryToIso2(upper);
+  if (iso2) {
+    return ICAO_COUNTRIES.find((entry) => entry.kind === "state" && entry.alpha2 === iso2) ?? null;
+  }
+  const matches = searchCountries(trimmed, 8).filter((entry) => entry.kind === "state");
+  const exact = matches.filter((entry) => fold(entry.nameTr) === fold(trimmed) || fold(entry.nameEn) === fold(trimmed));
+  if (exact.length === 1) return exact[0];
+  if (matches.length === 1) return matches[0];
+  return null;
+}
+
 export function searchCountries(query: string, limit = 12): CountryEntry[] {
   const needle = fold(query.trim());
   if (!needle) {

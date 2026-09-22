@@ -12,6 +12,7 @@ import {
   countryEntry,
   icaoCountryToIso2,
   isSpecialNationality,
+  resolveCountrySelection,
   searchCountries,
 } from "./icaoCountries";
 
@@ -84,6 +85,14 @@ describe("searchCountries", () => {
     expect(searchCountries("Greece")[0]?.alpha3).toBe("GRC");
     const kosovo = searchCountries("kosova", 8).map((entry) => entry.alpha3);
     expect(kosovo).toEqual(expect.arrayContaining(["RKS", "XKX"]));
+  });
+
+  it("resolves two-letter codes and names but rejects invalid or special codes", () => {
+    expect(resolveCountrySelection("TR")?.alpha3).toBe("TUR");
+    expect(resolveCountrySelection("Türkiye")?.alpha3).toBe("TUR");
+    expect(resolveCountrySelection("UTO")).toBeNull();
+    expect(resolveCountrySelection("XXA")).toBeNull();
+    expect(resolveCountrySelection("QQ")).toBeNull();
   });
 
   it("never talks to the network", () => {

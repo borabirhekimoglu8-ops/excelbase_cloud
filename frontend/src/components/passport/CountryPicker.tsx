@@ -2,7 +2,7 @@
 
 import { useId, useMemo, useState } from "react";
 
-import { countryEntry, searchCountries } from "@/lib/passport/icaoCountries";
+import { resolveCountrySelection, searchCountries } from "@/lib/passport/icaoCountries";
 
 export function CountryPicker({
   value,
@@ -28,10 +28,10 @@ export function CountryPicker({
         value={query}
         disabled={disabled}
         autoComplete="off"
-        onChange={(event) => setQuery(event.target.value.toLocaleUpperCase("tr-TR"))}
+        onChange={(event) => setQuery(event.target.value)}
         onBlur={() => {
-          const direct = countryEntry(query);
-          if (!direct || direct.kind === "special") {
+          const direct = resolveCountrySelection(query);
+          if (!direct) {
             setQuery(value);
             return;
           }

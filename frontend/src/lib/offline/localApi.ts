@@ -139,6 +139,7 @@ const DOCUMENT_PREFIX = "document:";
 const OFFICE_DOCUMENT_PREFIX = "workspace-document:";
 const PASSPORT_SOURCE_PREFIX = "passport-source:";
 const PASSPORT_PAGE_PREFIX = "passport-page:";
+const PASSPORT_ROW_PREFIX = "passport_row:";
 const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
 const MAX_PHOTO_BATCH_BYTES = 350 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
@@ -490,6 +491,8 @@ export async function localClearAll(): Promise<SimpleResult> {
   for (const key of metaKeys) {
     if (passengerMetaKeys.has(key) || key.startsWith(META_BATCH_PREFIX)) await removeMeta(key);
   }
+  const passportRows = await listEntities<{ id: string }>(PASSPORT_ROW_PREFIX);
+  await Promise.all(passportRows.map((row) => deleteEntity(`${PASSPORT_ROW_PREFIX}${row.id}`)));
   const [workFiles, officeDocuments, tasks, notes] = await Promise.all([
     workspaceEntities<WorkFile>(WORK_FILE_ENTITY_PREFIX, "work_file"),
     workspaceEntities<OfficeDocument>(OFFICE_DOCUMENT_ENTITY_PREFIX, "office_document"),
@@ -1429,6 +1432,31 @@ export async function localPassportStorePage(
 
 export async function localPassportPage(batchId: string, pageNo: number): Promise<Blob | null> {
   return (await getBinary(`${PASSPORT_PAGE_PREFIX}${batchId}:${pageNo}`))?.data ?? null;
+}
+
+type StoredPassportScanRow = import("@/lib/passport/passportTypes").PassportScanRow;
+
+function storedPassportRow(row: StoredPassportScanRow): StoredPassportScanRow {
+  return {
+    ...row,
+    previewUrl: "",
+    mrzCropUrl: undefined,
+  };
+}
+
+export async function localPassportPutRow(row: StoredPassportScanRow): Promise<string> {
+  const id = `${PASSPORT_ROW_PREFIX}${row.id}`;
+  await putEntity(id, storedPassportRow(row));
+  return id;
+}
+
+export async function localPassportRows(batchId: string): Promise<StoredPassportScanRow[]> {
+  const rows = await listEntities<StoredPassportScanRow>(PASSPORT_ROW_PREFIX);
+  return rows.filter((row) => row.batchId === batchId);
+}
+
+export async function localPassportRow(rowId: string): Promise<StoredPassportScanRow | null> {
+  return getEntity<StoredPassportScanRow>(`${PASSPORT_ROW_PREFIX}${rowId}`);
 }
 
 export async function localPassportPurgeExpiredImages(now = new Date()): Promise<number> {

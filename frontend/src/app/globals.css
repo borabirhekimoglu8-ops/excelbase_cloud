@@ -3474,6 +3474,10 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   padding: 0 8px;
   border: 1px solid var(--ido-border);
   border-radius: 6px;
+}
+.xb-passport-fields input[data-verification="visual_draft"] {
+  border-left: 3px solid var(--ido-orange);
+}
   background: rgba(0,0,0,.22);
   color: var(--ido-ink);
   font-size: 14px;
