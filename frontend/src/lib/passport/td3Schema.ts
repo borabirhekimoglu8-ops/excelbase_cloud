@@ -89,8 +89,13 @@ function valuesForCell(cell: Cell | undefined, alphabet: string): string[] {
   for (const candidate of cell.candidates) {
     const value = candidate.value.toUpperCase();
     if (allowed.has(value)) values.add(value);
-    for (const replacement of TD3_LOOKALIKES[value] ?? []) {
-      if (allowed.has(replacement)) values.add(replacement);
+    // Crossing the letter/digit boundary is deterministic when the field
+    // alphabet excludes the observed glyph. In an alphanumeric field, only
+    // open alternatives when independent OCR passes actually dispute a cell.
+    if (!allowed.has(value) || cell.disputed || cell.candidates.length > 1) {
+      for (const replacement of TD3_LOOKALIKES[value] ?? []) {
+        if (allowed.has(replacement)) values.add(replacement);
+      }
     }
   }
   return [...values];

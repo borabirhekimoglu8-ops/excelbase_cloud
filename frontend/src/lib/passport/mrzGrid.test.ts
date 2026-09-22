@@ -22,7 +22,7 @@ function symbolsFor(line: string, omitted = new Set<number>()): OcrSymbol[] {
 describe("MRZ fixed-pitch grid", () => {
   it("leaves missing chevrons empty without shifting later symbols", () => {
     const line = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
-    const omitted = new Set([1, 14, 15, 27, 28, 29]);
+    const omitted = new Set([1, 13, 14, 27, 28, 29]);
     const symbols = symbolsFor(line, omitted);
     const grid = fitGrid(symbols, 44, 44 * 14 + 24);
     expect(grid).not.toBeNull();
@@ -31,7 +31,7 @@ describe("MRZ fixed-pitch grid", () => {
     expect(cells[0].candidates[0]?.value).toBe("P");
     expect(cells[1].candidates).toHaveLength(0);
     expect(cells[2].candidates[0]?.value).toBe("U");
-    expect(cells[16].candidates[0]?.value).toBe("A");
+    expect(cells[15].candidates[0]?.value).toBe("A");
     expect(cells[30].index).toBe(30);
   });
 });
