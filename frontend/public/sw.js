@@ -17,15 +17,6 @@ const CORE_ASSETS = [
 const DOCUMENT_ASSETS = [
   "/pdfjs/pdf.worker.min.mjs",
 ];
-const OPTIONAL_OCR_ASSETS = [
-  "/tesseract/worker.min.js",
-  "/tesseract/tesseract-core-lstm.wasm.js",
-  "/tesseract/tesseract-core-lstm.wasm",
-  "/tesseract/tesseract-core-simd-lstm.wasm.js",
-  "/tesseract/tesseract-core-simd-lstm.wasm",
-  "/tesseract/lang-data/mrz.traineddata.gz",
-  "/tesseract/lang-data/eng.traineddata.gz",
-];
 
 function isCacheableResponse(response) {
   return response && response.ok && (response.type === "basic" || response.type === "default");
@@ -87,7 +78,7 @@ async function precacheShell() {
   // installation is retried instead of reporting a misleading offline-ready state.
   await Promise.all(discoveredAssets.map((url) => fetchAndCache(cache, url)));
   await Promise.all(DOCUMENT_ASSETS.map((url) => fetchAndCache(cache, url)));
-  await Promise.allSettled([...optionalAssets, ...OPTIONAL_OCR_ASSETS].map((url) => fetchAndCache(cache, url)));
+  await Promise.allSettled(optionalAssets.map((url) => fetchAndCache(cache, url)));
 }
 
 self.addEventListener("install", (event) => {

@@ -17,7 +17,7 @@ export function CountryPicker({
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
   const matches = useMemo(
-    () => searchCountries(query, 10).filter((entry) => entry.kind !== "special"),
+    () => searchCountries(query, 10),
     [query],
   );
   const showList = open && Boolean(query) && matches.length > 0 && query.toUpperCase() !== value;
@@ -70,7 +70,7 @@ export function CountryPicker({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => choose(entry.alpha3)}
               >
-                <strong>{entry.alpha3} · {entry.alpha2}</strong>
+                <strong>{entry.alpha3}{entry.alpha2 ? ` · ${entry.alpha2}` : " · Ülke Kodu 2 yok"}</strong>
                 <span>{entry.nameTr}</span>
               </button>
             </li>

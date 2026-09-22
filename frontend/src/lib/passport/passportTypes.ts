@@ -1,4 +1,4 @@
-import { icaoCountryToIso2, isSpecialNationality } from "./icaoCountries";
+import { countryEntry, icaoCountryToIso2, isSpecialNationality } from "./icaoCountries";
 
 export const PASSPORT_SCHEMA_VERSION = 2 as const;
 export const DOCUMENT_TYPES = ["Passport", "ID CARD"] as const;
@@ -66,6 +66,7 @@ export type PassportScanRow = {
   mrzCropUrl?: string;
   rawLines?: string[];
   sourceImageKey?: string;
+  sourceImageSize?: { width: number; height: number };
   failureStage?: PassportFailureStage;
 };
 
@@ -87,6 +88,15 @@ export function countryCode2ForRow(row: Pick<PassportScanRow, "nationality">): s
   return icaoCountryToIso2(row.nationality);
 }
 
+export function exportBlockReason(
+  row: Pick<PassportScanRow, "nationality">,
+): string {
+  const code = row.nationality.trim().toUpperCase();
+  if (!code || icaoCountryToIso2(code)) return "";
+  const nameTr = countryEntry(code)?.nameTr ?? "Bilinmeyen uyruk";
+  return `Uyruk ${code} (${nameTr}) bu şablonda temsil edilemiyor — Ülke Kodu 2 yok`;
+}
+
 export function rowReady(row: PassportScanRow): boolean {
   return (row.reviewStatus === "verified" || row.reviewStatus === "reviewed")
     && Boolean(
@@ -98,5 +108,6 @@ export function rowReady(row: PassportScanRow): boolean {
       && row.expiryDate.trim()
       && row.documentType,
     )
-    && !isSpecialNationality(row.nationality);
+    && !isSpecialNationality(row.nationality)
+    && !exportBlockReason(row);
 }

@@ -1,17 +1,17 @@
-export type PassportEngineProfile = {
-  id: string;
-  mrzLanguage: "mrz";
-  vizLanguage: "eng";
-  oem: "lstm-only";
-  dpi: 300;
-  maxWorkers: 1;
-};
+import type { OcrEngineInfo } from "./ocr/types";
 
-export const PASSPORT_ENGINE_PROFILE: PassportEngineProfile = Object.freeze({
-  id: "tesseract-6-mrz-eng-lstm-300dpi-v1",
-  mrzLanguage: "mrz",
-  vizLanguage: "eng",
-  oem: "lstm-only",
-  dpi: 300,
-  maxWorkers: 1,
-});
+const token = (value: string, fallback: string): string => (
+  value.trim().replace(/[^A-Za-z0-9._-]+/g, "-") || fallback
+);
+
+/** Queue identity includes the service-reported engine and raster contract. */
+export function passportEngineProfileId(engine: OcrEngineInfo): string {
+  return [
+    token(engine.name, "unknown"),
+    token(engine.version, "unknown"),
+    token(engine.lang ?? "en", "en"),
+    "r250",
+    "jpeg90",
+    "v1",
+  ].join("-");
+}

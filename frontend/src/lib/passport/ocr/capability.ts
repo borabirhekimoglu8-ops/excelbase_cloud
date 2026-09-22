@@ -83,7 +83,7 @@ export function detectOcrCapability(input: {
   }
 
   const canOcr = state === "ready";
-  const acceptImages = localOrigin && state !== "unsupported_device";
+  const acceptImages = canOcr;
   const copy = COPY[state];
   return {
     state,
@@ -97,7 +97,7 @@ export function detectOcrCapability(input: {
 }
 
 export function fileAcceptForCapability(capability: OcrCapability): string {
-  const base = ".pdf,application/pdf,.txt,text/plain";
+  const base = ".pdf,application/pdf";
   if (!capability.acceptImages) return base;
   return `${base},.jpg,.jpeg,.png,.heic,image/jpeg,image/png,image/heic`;
 }

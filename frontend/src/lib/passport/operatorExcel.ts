@@ -103,24 +103,31 @@ function copyBuffer(bytes: Uint8Array): ArrayBuffer {
  * stay blank so the operator can fill vehicle / GSM later.
  */
 export function createPassportOperatorXlsxBlob(rows: readonly PassportOperatorRow[]): Blob {
-  const data = rows.map((row) => [
-    cell(row.firstName),
-    cell(row.lastName),
-    formatOperatorDate(cell(row.birthDate)),
-    icaoCountryToIso2(cell(row.nationality)),
-    formatOperatorDate(cell(row.passportExpiry)),
-    formatOperatorDate(cell(row.visaStart)),
-    formatOperatorDate(cell(row.visaEnd)),
-    cell(row.passportNo).toLocaleUpperCase("tr-TR"),
-    formatOperatorSex(cell(row.sex)),
-    cell(row.vehicleMake),
-    cell(row.vehicleModel),
-    cell(row.vehicleType),
-    cell(row.plate).toLocaleUpperCase("tr-TR"),
-    cell(row.gsm),
-    cell(row.tcNo),
-    cell(row.documentType) || "Passport",
-  ]);
+  const data = rows.map((row) => {
+    const nationality = cell(row.nationality);
+    const countryCode2 = icaoCountryToIso2(nationality);
+    if (!countryCode2) {
+      throw new Error(`Uyruk ${nationality || "boş"} için Ülke Kodu 2 bulunamadı.`);
+    }
+    return [
+      cell(row.firstName),
+      cell(row.lastName),
+      formatOperatorDate(cell(row.birthDate)),
+      countryCode2,
+      formatOperatorDate(cell(row.passportExpiry)),
+      formatOperatorDate(cell(row.visaStart)),
+      formatOperatorDate(cell(row.visaEnd)),
+      cell(row.passportNo).toLocaleUpperCase("tr-TR"),
+      formatOperatorSex(cell(row.sex)),
+      cell(row.vehicleMake),
+      cell(row.vehicleModel),
+      cell(row.vehicleType),
+      cell(row.plate).toLocaleUpperCase("tr-TR"),
+      cell(row.gsm),
+      cell(row.tcNo),
+      cell(row.documentType) || "Passport",
+    ];
+  });
 
   const worksheet = XLSX.utils.aoa_to_sheet([
     [...PASSPORT_OPERATOR_HEADERS],

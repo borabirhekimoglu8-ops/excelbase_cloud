@@ -1,21 +1,39 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  DragEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { CountryPicker } from "@/components/passport/CountryPicker";
+import { OcrCapabilityCard } from "@/components/passport/OcrCapabilityCard";
 import { PassportQueuePanel } from "@/components/passport/PassportQueuePanel";
 import { PassportSourceViewer } from "@/components/passport/PassportSourceViewer";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { saveBlob } from "@/lib/offline/exporter";
 import {
   localPassportDeleteSource,
+  localPassportPage,
   localPassportPurgeExpiredImages,
   localPassportPutRow,
   localPassportStorePage,
   localPassportStoreSource,
 } from "@/lib/offline/localApi";
 import { isSpecialNationality } from "@/lib/passport/icaoCountries";
+import { detectOcrCapability, fileAcceptForCapability } from "@/lib/passport/ocr/capability";
+import { createLocalFastApiEngine } from "@/lib/passport/ocr/localFastApiEngine";
+import type { OcrCapability } from "@/lib/passport/ocr/types";
 import { createPassportOperatorXlsxBlob } from "@/lib/passport/operatorExcel";
+import {
+  createPackageCode,
+  exportPassportPackage,
+  importPassportPackage,
+} from "@/lib/passport/resultPackage";
 import {
   DOCUMENT_TYPES,
   rowsFromMrzText,
@@ -27,7 +45,11 @@ import {
   scanPassportImages,
   type PassportScanProgress,
 } from "@/lib/passport/scanPassportImages";
-import { countryCode2ForRow, rowReady } from "@/lib/passport/passportTypes";
+import {
+  countryCode2ForRow,
+  exportBlockReason,
+  rowReady,
+} from "@/lib/passport/passportTypes";
 import { useStore } from "@/lib/store";
 
 type PassportScanTabProps = {
@@ -53,15 +75,52 @@ function firstDraftRect(row: PassportScanRow) {
   return Object.values(row.provenance).find((item) => item?.verification === "visual_draft" && item.rect)?.rect;
 }
 
+function fallbackCapability(): OcrCapability {
+  if (typeof window === "undefined") {
+    return detectOcrCapability({
+      hostname: "",
+      protocol: "http:",
+      isSecureContext: false,
+      probeState: "unreachable",
+    });
+  }
+  return detectOcrCapability({
+    hostname: window.location.hostname,
+    protocol: window.location.protocol,
+    isSecureContext: window.isSecureContext,
+    maxTouchPoints: navigator.maxTouchPoints ?? 0,
+  });
+}
+
 export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
   const { notify } = useStore();
+  const engine = useMemo(() => createLocalFastApiEngine(), []);
+  const [capability, setCapability] = useState<OcrCapability>(fallbackCapability);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [mrzText, setMrzText] = useState("");
   const [progress, setProgress] = useState<PassportScanProgress | null>(null);
   const [rows, setRows] = useState<PassportScanRow[]>([]);
+  const [packageCode, setPackageCode] = useState("");
+  const [packageFile, setPackageFile] = useState<File | null>(null);
   const enqueueInFlight = useRef<Promise<void> | null>(null);
   const readyCount = useMemo(() => rows.filter(rowReady).length, [rows]);
+  const blockedExports = useMemo(
+    () => rows.map(exportBlockReason).filter(Boolean),
+    [rows],
+  );
+
+  const probe = useCallback(async () => {
+    const next = await engine.probe();
+    setCapability(next);
+    if (next.state === "engine_loading") {
+      setCapability(await engine.warmup());
+    }
+  }, [engine]);
+
+  useEffect(() => {
+    void probe();
+  }, [probe]);
 
   function applyText(text: string, sourceLabel: string): PassportScanRow[] {
     const next = rowsFromMrzText(text, sourceLabel);
@@ -93,6 +152,13 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
       notify("PDF, JPG, PNG veya HEIC pasaport görüntüsü seçin.", "error");
       return;
     }
+    if (!capability.canOcr && files.some((file) => !isPdf(file))) {
+      notify(
+        `${capability.title}: görüntüler için yerel OCR kurulumu, giriş ve loopback adresi gerekir. Metin katmanlı PDF veya MRZ yapıştırma kullanılabilir.`,
+        "error",
+      );
+      return;
+    }
 
     const batchId = `passport-${Date.now().toString(36)}`;
     const work = (async () => {
@@ -103,6 +169,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
         await localPassportStoreSource(batchId, files[0]);
         const nextRows = await scanPassportImages(files, setProgress, {
           batchId,
+          engine,
           onPage: async ({ batchId: pageBatchId, pageNo, blob }) => {
             await localPassportStorePage(pageBatchId, pageNo, blob);
           },
@@ -158,9 +225,44 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
     setRows((current) => current.filter((row) => row.id !== id));
   }
 
+  async function exportPackage() {
+    try {
+      const code = createPackageCode();
+      const blob = await exportPassportPackage(rows, code);
+      setPackageCode(code);
+      await saveBlob(blob, `pasaport-sonuc-paketi-${stamp()}.excelbase-passport`);
+      notify("Şifreli sonuç paketi indirildi. Paket kodunu ayrı kanaldan aktarın.", "ok");
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : "Paket oluşturulamadı.", "error");
+    }
+  }
+
+  async function importPackage() {
+    if (!packageFile || !packageCode.trim()) {
+      notify("Paket dosyasını ve paket kodunu girin.", "error");
+      return;
+    }
+    try {
+      const imported = await importPassportPackage(packageFile, packageCode.trim());
+      const hydrated = await Promise.all(imported.map(async (row) => {
+        if (!row.sourceImageKey) return row;
+        const page = await localPassportPage(row.batchId, row.pageNo);
+        return page ? { ...row, previewUrl: URL.createObjectURL(page) } : row;
+      }));
+      setRows((current) => [...current, ...hydrated]);
+      notify(`${hydrated.length} satır şifreli paketten içe aktarıldı.`, "ok");
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : "Paket içe aktarılamadı.", "error");
+    }
+  }
+
   async function downloadExcel() {
     if (!readyCount) {
-      notify("Alanları tamamlayın, geçerli uyruğu seçin ve “Kontrol ettim” kutusunu işaretleyin.", "error");
+      notify(
+        blockedExports[0]
+          ?? "Alanları tamamlayın, geçerli uyruğu seçin ve “Kontrol ettim” kutusunu işaretleyin.",
+        "error",
+      );
       return;
     }
     const payload = rows
@@ -181,7 +283,12 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
         createPassportOperatorXlsxBlob(payload),
         `pasaport-yolcu-listesi-${stamp()}.xlsx`,
       );
-      notify(`${payload.length} satırlık Excel indirildi.`, "ok");
+      notify(
+        blockedExports.length
+          ? `${payload.length} satırlık Excel indirildi; ${blockedExports.length} temsil edilemeyen uyruk satırı atlandı.`
+          : `${payload.length} satırlık Excel indirildi.`,
+        "ok",
+      );
     } catch (reason) {
       notify(reason instanceof Error ? reason.message : "Excel oluşturulamadı.", "error");
     }
@@ -200,6 +307,8 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
         </div>
       </section>
 
+      <OcrCapabilityCard capability={capability} onRefresh={() => void probe()} />
+
       <label
         className={`xb-photo-drop${dragging ? " dragging" : ""}${busy ? " busy" : ""}`}
         onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
@@ -207,12 +316,22 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
       >
-        <strong>{busy ? "Pasaportlar okunuyor…" : "PDF veya pasaport fotoğraflarını bırakın"}</strong>
-        <span>WhatsApp görüntü PDF · JPG · PNG · HEIC</span>
+        <strong>
+          {busy
+            ? "Pasaportlar okunuyor…"
+            : capability.canOcr
+              ? "PDF veya pasaport fotoğraflarını bırakın"
+              : "Metin katmanlı PDF bırakın"}
+        </strong>
+        <span>
+          {capability.canOcr
+            ? "WhatsApp görüntü PDF · JPG · PNG · HEIC"
+            : "Görüntü için yerel OCR kurulumu, giriş ve loopback gerekir"}
+        </span>
         <em>En fazla 30 PDF sayfası · tek motor · işlem cihazda</em>
         <input
           type="file"
-          accept=".pdf,application/pdf,.jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif"
+          accept={fileAcceptForCapability(capability)}
           multiple
           aria-label="Pasaport PDF veya görüntüleri seç"
           disabled={busy}
@@ -221,6 +340,47 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
       </label>
 
       <PassportQueuePanel progress={progress} busy={busy} />
+
+      <details className="ops-module-card xb-mrz-entry">
+        <summary>Şifreli sonuç paketi aktar</summary>
+        <div>
+          <p className="ops-eyebrow">Ofis PC ↔ yeni tarayıcı</p>
+          <h2>Kaynak sayfalar ve satırlar</h2>
+          <p>Paket şifrelidir; kodu dosyadan ayrı aktarın.</p>
+        </div>
+        <button
+          type="button"
+          disabled={!rows.length || busy}
+          onClick={() => void exportPackage()}
+        >
+          Şifreli paketi indir
+        </button>
+        <label>
+          <span>Paket kodu</span>
+          <input
+            aria-label="Paket kodu"
+            value={packageCode}
+            onChange={(event) => setPackageCode(event.target.value)}
+            autoComplete="off"
+          />
+        </label>
+        <label>
+          <span>Şifreli paket dosyası</span>
+          <input
+            type="file"
+            aria-label="Şifreli paket dosyası"
+            accept=".excelbase-passport,application/vnd.excelbase.passport+json"
+            onChange={(event) => setPackageFile(event.target.files?.[0] ?? null)}
+          />
+        </label>
+        <button
+          type="button"
+          disabled={!packageFile || !packageCode.trim() || busy}
+          onClick={() => void importPackage()}
+        >
+          Paketi içe aktar
+        </button>
+      </details>
 
       <details className="ops-module-card xb-mrz-entry">
         <summary>Alternatif: Live Text ile MRZ yapıştır</summary>
@@ -360,7 +520,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
                   </p>
                   {row.nationalitySpecial ? (
                     <p className="xb-passport-special">
-                      Özel/örnek uyruk kodu otomatik çevrilmedi. Gerçek uyruğu seçip kontrol edin.
+                      {exportBlockReason(row)}
                     </p>
                   ) : null}
                   {row.previewUrl ? (
@@ -370,8 +530,8 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
                         src={row.previewUrl}
                         alt={`Pasaport kaynak sayfası ${row.pageNo}`}
                         rect={firstDraftRect(row)}
-                        width={900}
-                        height={600}
+                        width={row.sourceImageSize?.width}
+                        height={row.sourceImageSize?.height}
                       />
                     </details>
                   ) : null}

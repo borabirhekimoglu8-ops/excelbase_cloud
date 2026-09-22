@@ -1,66 +1,86 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Cell } from "./mrzGrid";
 import {
-  classifyMrzRoles,
-  documentTypeFromMrzCode,
   revokePassportScanPreviews,
-  rowFromMrz,
+  rowsFromOcrResult,
   type PassportScanRow,
 } from "./scanPassportImages";
 
-const TD3_UPPER = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
-const TD3_LOWER = "L898902C36UTO7408122F1204159ZE184226B<<<<<10";
-
-function cells(line: string): Cell[] {
-  return [...line].map((value, index) => ({
-    index,
-    x0: index,
-    x1: index + 1,
-    candidates: [{ value, confidence: 99, passes: ["synthetic"] }],
-    disputed: false,
-  }));
-}
+const LINE1 = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
+const LINE2 = "L898902C36UTO7408122F1204159ZE184226B<<<<<10";
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("passport MRZ role gates", () => {
-  it("recognises TD3 and explicitly rejects TD1 identity cards", () => {
-    expect(classifyMrzRoles(cells(TD3_UPPER), cells(TD3_LOWER))).toBe("td3");
-    const td1Upper = `I<TUR${"ADA<YILMAZ".padEnd(39, "<")}`;
-    expect(classifyMrzRoles(cells(td1Upper), cells(TD3_LOWER))).toBe("td1");
-    expect(documentTypeFromMrzCode("I<")).toBe("ID CARD");
-  });
-});
-
-describe("safe failed rows", () => {
-  it("keeps every passport field empty when the locator returns no MRZ", () => {
-    const row = rowFromMrz(
-      "sentetik.jpg",
-      "blob:sentetik",
-      null,
-      ["MRZ alanı bulunamadı — alanlar boş bırakıldı"],
+describe("PP-OCR line pipeline", () => {
+  it("builds a verified row and keeps the service-reported source dimensions", () => {
+    const rows = rowsFromOcrResult(
+      "synthetic.jpg",
+      "blob:synthetic",
+      "synthetic-batch",
+      1,
+      {
+        pageId: "page-1",
+        engine: { name: "paddleocr", version: "PP-OCRv6", lang: "en" },
+        width: 1600,
+        height: 1000,
+        durationMs: 25,
+        lines: [
+          { text: LINE1, box: [[100, 800], [1500, 800], [1500, 840], [100, 840]], score: 0.98 },
+          { text: LINE2, box: [[100, 850], [1500, 850], [1500, 890], [100, 890]], score: 0.97 },
+        ],
+      },
     );
-    expect(row.status).toBe("failed");
-    expect(row.firstName).toBe("");
-    expect(row.lastName).toBe("");
-    expect(row.passportNo).toBe("");
-    expect(row.countryCode2).toBe("");
-    expect(row.tcNo).toBe("");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      status: "ok",
+      lastName: "ERIKSSON",
+      passportNo: "L898902C3",
+      nationality: "UTO",
+      countryCode2: "",
+      sourceImageSize: { width: 1600, height: 1000 },
+    });
+  });
+
+  it("uses PP-OCR boxes only as visual drafts when no MRZ pair verifies", () => {
+    const rows = rowsFromOcrResult(
+      "viz-only.jpg",
+      "blob:viz",
+      "synthetic-batch",
+      1,
+      {
+        pageId: "page-1",
+        engine: { name: "paddleocr", version: "PP-OCRv6", lang: "en" },
+        width: 1200,
+        height: 800,
+        durationMs: 20,
+        lines: [
+          { text: "Surname", box: [[20, 20], [120, 20], [120, 50], [20, 50]], score: 0.99 },
+          { text: "YILMAZ", box: [[160, 20], [280, 20], [280, 50], [160, 50]], score: 0.96 },
+        ],
+      },
+    );
+    expect(rows[0].lastName).toBe("YILMAZ");
+    expect(rows[0].provenance.lastName).toMatchObject({
+      source: "viz",
+      verification: "visual_draft",
+      rect: { x: 160, y: 20, width: 120, height: 30 },
+    });
+    expect(rows[0].reviewStatus).toBe("needs_review");
   });
 });
 
 describe("revokePassportScanPreviews", () => {
-  it("revokes both source and optional MRZ crop object URLs", () => {
+  it("revokes a shared source URL only once", () => {
     const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
-    const row = {
-      previewUrl: "blob:source",
-      mrzCropUrl: "blob:mrz-crop",
-    } as PassportScanRow;
-    revokePassportScanPreviews([row]);
+    const rows = [
+      { previewUrl: "blob:source", mrzCropUrl: "blob:crop" },
+      { previewUrl: "blob:source" },
+    ] as PassportScanRow[];
+    revokePassportScanPreviews(rows);
+    expect(revoke).toHaveBeenCalledTimes(2);
     expect(revoke).toHaveBeenCalledWith("blob:source");
-    expect(revoke).toHaveBeenCalledWith("blob:mrz-crop");
+    expect(revoke).toHaveBeenCalledWith("blob:crop");
   });
 });

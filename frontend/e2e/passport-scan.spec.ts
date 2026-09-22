@@ -16,11 +16,11 @@ test("pasaport WhatsApp PDF ve görüntü ekranı açılır", async ({ page }) =
   await expect(page.getByLabel("MRZ satırlarını yapıştır")).toBeHidden();
   await expect(page.locator(".xb-photo-drop input[type='file']")).toHaveAttribute(
     "accept",
-    /\.pdf.*\.jpg.*\.png.*\.heic/,
+    /^\.pdf,application\/pdf$/,
   );
 });
 
-test("yapıştırılan MRZ alanlarını doğrular ve Excel indirir", async ({ page }) => {
+test("UTO gerçek durumunu korur ve ülke kodu olmayan Excel satırını engeller", async ({ page }) => {
   await page.goto("/");
   await completeSetup(page, "Ada Yılmaz");
   await openGateVisa(page);
@@ -34,10 +34,9 @@ test("yapıştırılan MRZ alanlarını doğrular ve Excel indirir", async ({ pa
   const passportNo = page.locator(".xb-passport-rows input").nth(2);
   await expect(passportNo).toHaveValue(/U1000001/i);
   // UTO is the fictional ICAO sample state. Unknown codes must stay blank.
+  await expect(page.getByRole("combobox", { name: "Uyruk" })).toHaveValue("UTO");
   await expect(page.getByLabel("Uyruktan türetilen ülke kodu 2")).toHaveValue("");
-  await expect(page.getByText(/Özel\/örnek uyruk kodu/)).toBeVisible();
-  await page.getByRole("combobox", { name: "Uyruk" }).fill("TUR");
-  await page.getByRole("option", { name: /TUR · TR/ }).click();
+  await expect(page.getByText(/Uyruk UTO \(Ütopya \(ICAO örnek belge\)\).*Ülke Kodu 2 yok/)).toBeVisible();
   await expect(page.getByLabel("TC.No")).toBeVisible();
   await expect(page.locator(".xb-passport-rows select")).toHaveValue("Passport");
   // Visa date inputs were removed from the scan UI (template columns stay in Excel).
@@ -46,10 +45,5 @@ test("yapıştırılan MRZ alanlarını doğrular ve Excel indirir", async ({ pa
 
   const excelButton = page.getByRole("button", { name: "Excel indir" });
   await expect(excelButton).toBeDisabled();
-  await page.getByLabel("Kontrol ettim").check();
-  await expect(excelButton).toBeEnabled();
-  const downloadPromise = page.waitForEvent("download");
-  await excelButton.click();
-  const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/^pasaport-yolcu-listesi-\d{4}-\d{2}-\d{2}\.xlsx$/);
+  await expect(page.getByLabel("Kontrol ettim")).toBeChecked();
 });

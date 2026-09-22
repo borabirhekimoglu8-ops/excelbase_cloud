@@ -100,4 +100,13 @@ describe("operatorExcel", () => {
     expect(formatOperatorSex("F")).toBe("K");
     expect(formatOperatorDate("2026-07-16")).toBe("16.07.2026");
   });
+
+  it("refuses special nationalities that have no ISO-2 representation", () => {
+    expect(() => createPassportOperatorXlsxBlob([{
+      firstName: "ADA",
+      lastName: "YILMAZ",
+      nationality: "UTO",
+      passportNo: "U1000001",
+    }])).toThrow(/Ülke Kodu 2 bulunamadı/);
+  });
 });
