@@ -36,7 +36,9 @@ test("UTO gerçek durumunu korur ve ülke kodu olmayan Excel satırını engelle
   // UTO is the fictional ICAO sample state. Unknown codes must stay blank.
   await expect(page.getByRole("combobox", { name: "Uyruk" })).toHaveValue("UTO");
   await expect(page.getByLabel("Uyruktan türetilen ülke kodu 2")).toHaveValue("");
-  await expect(page.getByText(/Uyruk UTO \(Ütopya \(ICAO örnek belge\)\).*Ülke Kodu 2 yok/)).toBeVisible();
+  await expect(page.getByText(
+    /Uyruk UTO \(Ütopya \(ICAO örnek belge\)\).*Ülke Kodu 2 yok/,
+  ).first()).toBeVisible();
   await expect(page.getByLabel("TC.No")).toBeVisible();
   await expect(page.locator(".xb-passport-rows select")).toHaveValue("Passport");
   // Visa date inputs were removed from the scan UI (template columns stay in Excel).
