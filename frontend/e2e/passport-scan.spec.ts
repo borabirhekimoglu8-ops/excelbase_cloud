@@ -12,11 +12,10 @@ test("pasaport MRZ metin ekranı açılır", async ({ page }) => {
   await page.getByRole("button", { name: /Pasaport MRZ/i }).click();
   await expect(page.getByRole("heading", { name: /Pasaport MRZ → Excel/i })).toBeVisible();
   await expect(page.getByLabel("MRZ satırlarını yapıştır")).toBeVisible();
-  await expect(page.getByText("Metin katmanlı PDF veya TXT")).toBeVisible();
-  await expect(page.locator(".xb-photo-drop input[type='file']")).toHaveAttribute(
-    "accept",
-    ".pdf,application/pdf,.txt,text/plain",
-  );
+  await expect(page.getByText(/PDF, TXT|Metin katmanlı PDF/)).toBeVisible();
+  const accept = await page.locator(".xb-photo-drop input[type='file']").getAttribute("accept");
+  expect(accept ?? "").toContain(".pdf");
+  await expect(page.getByRole("heading", { name: /Servis bağlı değil|Bu adreste OCR|Bu cihazda OCR|Yerel OCR/ })).toBeVisible();
 });
 
 test("yapıştırılan MRZ alanlarını doğrular ve Excel indirir", async ({ page }) => {
@@ -41,6 +40,7 @@ test("yapıştırılan MRZ alanlarını doğrular ve Excel indirir", async ({ pa
   await expect(page.getByLabel(/Vize Başlangıç/i)).toHaveCount(0);
   await expect(page.getByLabel(/Vize Bitiş/i)).toHaveCount(0);
 
+  await page.getByRole("button", { name: "Satırı onayla" }).click();
   const excelButton = page.getByRole("button", { name: "Excel indir" });
   await expect(excelButton).toBeEnabled();
   const downloadPromise = page.waitForEvent("download");

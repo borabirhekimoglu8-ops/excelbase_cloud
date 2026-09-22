@@ -94,6 +94,14 @@ Kişisel makinede buluta veri göndermeden çalışmak için:
 3. İsteğe bağlı yerel model: `EXCELBASE_ASSISTANT_PROVIDER=ollama`, `EXCELBASE_ASSISTANT_MODEL=llama3.2`, `EXCELBASE_OLLAMA_BASE_URL=http://127.0.0.1:11434`. Loopback dışı Ollama adresleri reddedilir.
 4. Asistan ekranındaki **İş klasörü kataloğu** paneli indeks, arama ve modelsiz düzen önerilerini sunar.
 
+## Pasaport PDF → yolcu listesi (yerel OCR)
+
+Ofis bilgisayarında `EXCELBASE_PASSPORT_OCR=1` ve `./run.sh` (veya `.\run.ps1`) ile yerel PP-OCRv6 açılır. Servis yalnız `127.0.0.1` dinler; pasaport görüntüsü Render’a veya üçüncü tarafa gitmez. İlk kurulumda model iner, sonraki OCR internet gerektirmez. GPU zorunlu değildir.
+
+- Desteklenen: Windows / macOS / Linux masaüstü, tarayıcıda `http://127.0.0.1:8000`.
+- Desteklenmeyen: iPhone/Android üzerindeki localhost (ofis PC değildir) ve HTTPS canlı PWA’dan `http://127.0.0.1` çağrısı. Bu durumda MRZ yapıştırın veya ofis PC’den şifreli sonuç paketi aktarın. Tarayıcı güvenliğini kapatmayın.
+- Excel varsayılanı yalnız kullanıcı onaylı ve zorunlu alanları tamam kayıtlardır. Gate Visa liste yükleme akışı değişmez.
+
 `render.yaml` şu güvenli varsayılanları tanımlar:
 
 - sağlayıcı: `anthropic`

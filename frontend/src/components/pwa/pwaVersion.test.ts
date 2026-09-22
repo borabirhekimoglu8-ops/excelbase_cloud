@@ -18,7 +18,7 @@ describe("offline PWA shell version", () => {
 
     const bootstrapVersion = shellVersion(bootstrap, "PwaBootstrap.tsx");
     const workerVersion = shellVersion(worker, "sw.js");
-    expect(bootstrapVersion).toBe("8.1.0");
+    expect(bootstrapVersion).toBe("8.2.0");
     expect(workerVersion).toBe(bootstrapVersion);
   });
 });

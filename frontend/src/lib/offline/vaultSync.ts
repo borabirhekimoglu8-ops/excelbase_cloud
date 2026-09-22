@@ -3,7 +3,7 @@
  * a random token. It never sees the PIN, the recovery key or the DEK.
  */
 const TOKEN_META = "vault-sync-token";
-const TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+export const TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 export function formatSyncToken(raw: string): string {
   const compact = raw.replace(/[^A-Za-z0-9]/g, "").toUpperCase();

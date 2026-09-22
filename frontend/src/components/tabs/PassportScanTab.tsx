@@ -1,18 +1,28 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { OcrCapabilityCard } from "@/components/passport/OcrCapabilityCard";
+import { PassportBatchProgress } from "@/components/passport/PassportBatchProgress";
+import { PassportReviewPanel } from "@/components/passport/PassportReviewPanel";
+import { ResultPackageDialog } from "@/components/passport/ResultPackageDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { saveBlob } from "@/lib/offline/exporter";
-import { icaoCountryToIso2 } from "@/lib/passport/icaoCountries";
+import { fileKindSupported, persistPasteMrz, retryPassportPage, runPassportBatch, type BatchPageView } from "@/lib/passport/batch";
+import { exportExclusionReason, type PassportCandidate, type PassportFieldName } from "@/lib/passport/candidates";
+import { detectOcrCapability, fileAcceptForCapability } from "@/lib/passport/ocr/capability";
+import { createLocalFastApiEngine } from "@/lib/passport/ocr/localFastApiEngine";
+import type { OcrCapability } from "@/lib/passport/ocr/types";
 import { createPassportOperatorXlsxBlob } from "@/lib/passport/operatorExcel";
 import {
-  DOCUMENT_TYPES,
-  rowsFromMrzText,
-  type PassportDocumentType,
-  type PassportScanRow,
-} from "@/lib/passport/parseMrzText";
-import { extractTextFromPdf } from "@/lib/passport/pdfExtractText";
+  listPassportCandidates,
+  listPassportPages,
+  markInterruptedPages,
+  patchCandidateField,
+  readPageImage,
+  setCandidateStatus,
+  vaultIsUnlocked,
+} from "@/lib/passport/store";
 import { useStore } from "@/lib/store";
 
 type PassportScanTabProps = {
@@ -24,86 +34,165 @@ function stamp(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
-function rowReady(row: PassportScanRow): boolean {
-  return Boolean(
-    row.firstName.trim()
-    && row.lastName.trim()
-    && row.passportNo.trim()
-    && icaoCountryToIso2(row.countryCode2).length === 2
-    && row.birthDate.trim()
-    && row.expiryDate.trim()
-    && row.documentType,
-  );
-}
-
-function isPdf(file: File): boolean {
-  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-}
-
-function isText(file: File): boolean {
-  return file.type === "text/plain" || file.name.toLowerCase().endsWith(".txt");
+function fallbackCapability(): OcrCapability {
+  if (typeof window === "undefined") {
+    return detectOcrCapability({ hostname: "", protocol: "http:", isSecureContext: false, probeState: "unreachable" });
+  }
+  return detectOcrCapability({
+    hostname: window.location.hostname,
+    protocol: window.location.protocol,
+    isSecureContext: window.isSecureContext,
+    maxTouchPoints: navigator.maxTouchPoints ?? 0,
+  });
 }
 
 export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
   const { notify } = useStore();
+  const engine = useMemo(() => createLocalFastApiEngine(), []);
+  const [capability, setCapability] = useState<OcrCapability>(fallbackCapability);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [mrzText, setMrzText] = useState("");
-  const [progress, setProgress] = useState("");
-  const [rows, setRows] = useState<PassportScanRow[]>([]);
-  const readyCount = useMemo(() => rows.filter(rowReady).length, [rows]);
+  const [candidates, setCandidates] = useState<PassportCandidate[]>([]);
+  const [pages, setPages] = useState<BatchPageView[]>([]);
+  const [focusId, setFocusId] = useState("");
+  const [focusField, setFocusField] = useState<PassportFieldName | null>(null);
+  const [pageImage, setPageImage] = useState("");
+  const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const filesRef = useRef<Map<string, File>>(new Map());
 
-  function applyText(text: string, sourceLabel: string): PassportScanRow[] {
-    const next = rowsFromMrzText(text, sourceLabel);
-    if (!next.length) {
-      notify("İki adet 44 karakterlik TD3 MRZ satırı bulunamadı. Metni yeniden kopyalayıp yapıştırın.", "error");
-      return [];
+  const approvedReady = useMemo(
+    () => candidates.filter((row) => row.status === "user-approved" && !exportExclusionReason(row)),
+    [candidates],
+  );
+  const excluded = useMemo(
+    () => candidates.map((row) => ({ id: row.id, reason: exportExclusionReason(row) })).filter((row) => row.reason),
+    [candidates],
+  );
+
+  const reload = useCallback(async () => {
+    if (!(await vaultIsUnlocked())) {
+      setCandidates([]);
+      return;
     }
-    setRows(next);
-    const verified = next.filter((row) => row.status === "ok").length;
-    notify(`${verified} doğrulandı · ${next.length - verified} kontrol gerekli`, "ok");
-    return next;
-  }
+    const [rows, storedPages] = await Promise.all([listPassportCandidates(), listPassportPages()]);
+    setCandidates(rows);
+    setPages((current) => {
+      if (current.some((page) => page.status === "processing" || page.status === "queued")) return current;
+      return storedPages.map((page) => ({
+        pageId: page.id,
+        jobId: page.job_id,
+        label: `sayfa ${page.page_index + 1}`,
+        status: page.status,
+        error: page.error,
+        attempt: page.attempt,
+        candidateCount: page.candidate_ids.length,
+      }));
+    });
+    setFocusId((current) => current || rows[0]?.id || "");
+  }, []);
 
-  function processPaste() {
-    applyText(mrzText, "Yapıştırılan MRZ");
+  const probe = useCallback(async () => {
+    const next = await engine.probe();
+    setCapability(next);
+    if (next.state === "engine_loading") void engine.warmup().then(setCapability);
+  }, [engine]);
+
+  useEffect(() => {
+    void probe();
+    void (async () => {
+      if (await vaultIsUnlocked()) {
+        await markInterruptedPages();
+        await reload();
+      }
+    })();
+    const onVault = () => { void reload(); };
+    window.addEventListener("excelbase:vault-change", onVault);
+    return () => window.removeEventListener("excelbase:vault-change", onVault);
+  }, [probe, reload]);
+
+  useEffect(() => {
+    let revoked = "";
+    const active = candidates.find((item) => item.id === focusId);
+    if (!active?.page_id) {
+      setPageImage("");
+      return;
+    }
+    void readPageImage(active.page_id).then((blob) => {
+      if (!blob) {
+        setPageImage("");
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      revoked = url;
+      setPageImage(url);
+    });
+    void listPassportPages().then((stored) => {
+      const page = stored.find((item) => item.id === active.page_id);
+      setPageSize(page?.image_size ?? null);
+    });
+    return () => {
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [candidates, focusId]);
+
+  async function processPaste() {
+    setBusy(true);
+    try {
+      if (!(await vaultIsUnlocked())) {
+        notify("Kasa kilitliyken kayıt yazılmaz. Önce kasayı açın.", "error");
+        return;
+      }
+      const result = await persistPasteMrz(mrzText);
+      notify(`${result.added} satır eklendi.`, result.added ? "ok" : "error");
+      if (!result.added) notify("İki adet 44 karakterlik TD3 MRZ satırı bulunamadı. Metni yeniden kopyalayıp yapıştırın.", "error");
+      await reload();
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : "MRZ işlenemedi.", "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function runFiles(files: File[]) {
     if (!files.length) return;
-    const unsupported = files.find((file) => !isPdf(file) && !isText(file));
+    const unsupported = files.find((file) => !fileKindSupported(file, capability.acceptImages));
     if (unsupported) {
-      notify("JPG ve görseller okunmaz. iPhone Live Text ile MRZ’yi kopyalayıp yukarıya yapıştırın.", "error");
+      notify(
+        capability.acceptImages
+          ? "Yalnız PDF, TXT, JPG, PNG veya HEIC yükleyin."
+          : "Bu cihazda görüntü OCR’si yok. PDF/TXT veya Live Text ile MRZ yapıştırın.",
+        "error",
+      );
       return;
     }
-
+    if (!(await vaultIsUnlocked())) {
+      notify("Kasa kilitliyken kayıt yazılmaz. Önce kasayı açın.", "error");
+      return;
+    }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setBusy(true);
-    setProgress("Metin katmanı okunuyor…");
     try {
-      const extracted: string[] = [];
-      const nextRows: PassportScanRow[] = [];
-      for (const file of files) {
-        setProgress(`${file.name} · metin katmanı okunuyor…`);
-        const text = isPdf(file) ? await extractTextFromPdf(file) : await file.text();
-        extracted.push(text);
-        nextRows.push(...rowsFromMrzText(text, file.name));
-      }
-      setMrzText(extracted.filter(Boolean).join("\n\n"));
-      if (!nextRows.length) {
-        notify(
-          "PDF’de seçilebilir MRZ metni bulunamadı. Fotoğrafta Live Text ile MRZ’yi kopyalayıp yapıştırın.",
-          "error",
-        );
-        return;
-      }
-      setRows(nextRows);
-      const verified = nextRows.filter((row) => row.status === "ok").length;
-      notify(`${verified} doğrulandı · ${nextRows.length - verified} kontrol gerekli`, "ok");
+      const result = await runPassportBatch({
+        files,
+        canOcr: capability.canOcr,
+        recognize: capability.canOcr ? (image, pageId, signal) => engine.recognizePage(image, pageId, signal) : null,
+        concurrency: 1,
+        signal: controller.signal,
+        onProgress: setPages,
+      });
+      result.job.sources.forEach((source, index) => {
+        filesRef.current.set(source.fileId, files[index] ?? files[0]);
+      });
+      notify(`${result.pages.length} sayfa işlendi.`, "ok");
+      await reload();
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : "PDF metni okunamadı.", "error");
+      notify(reason instanceof Error ? reason.message : "Dosyalar işlenemedi.", "error");
     } finally {
       setBusy(false);
-      setProgress("");
     }
   }
 
@@ -119,37 +208,68 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
     void runFiles(Array.from(event.dataTransfer.files ?? []));
   }
 
-  function patchRow(id: string, patch: Partial<PassportScanRow>) {
-    setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  async function onPatch(id: string, field: PassportFieldName, value: string) {
+    await patchCandidateField(id, field, value);
+    await reload();
   }
 
-  function removeRow(id: string) {
-    setRows((current) => current.filter((row) => row.id !== id));
+  async function onApprove(id: string) {
+    await setCandidateStatus(id, "user-approved", "operator");
+    await reload();
+  }
+
+  async function onReject(id: string) {
+    await setCandidateStatus(id, "rejected", "");
+    await reload();
+  }
+
+  function onNextIssue() {
+    const order: PassportFieldName[] = ["surname", "givenNames", "passportNo", "countryCode2", "birthDate", "expiryDate"];
+    const start = Math.max(0, candidates.findIndex((item) => item.id === focusId));
+    for (let offset = 0; offset < candidates.length; offset += 1) {
+      const row = candidates[(start + offset) % candidates.length];
+      if (row.status === "user-approved") continue;
+      for (const field of order) {
+        if (!row.fields[field].normalized || row.fields[field].validation !== "verified") {
+          setFocusId(row.id);
+          setFocusField(field);
+          return;
+        }
+      }
+    }
+  }
+
+  async function onRetry(pageId: string) {
+    const stored = (await listPassportPages()).find((page) => page.id === pageId);
+    const file = stored ? filesRef.current.get(stored.file_id) : undefined;
+    if (!stored || !file) {
+      notify("Yeniden deneme için kaynak dosya bu oturumda yok.", "error");
+      return;
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+    await retryPassportPage(stored, file, capability.canOcr, capability.canOcr ? engine.recognizePage.bind(engine) : null, controller.signal);
+    await reload();
   }
 
   async function downloadExcel() {
-    if (!readyCount) {
-      notify("Her satırda ad, soyad, pasaport no, ülke kodu (2), doğum, bitiş ve doküman tipi olmalı.", "error");
+    if (!approvedReady.length) {
+      notify("Excel’e yalnız onaylı ve zorunlu alanları tamam kayıtlar girer.", "error");
       return;
     }
-    const payload = rows
-      .filter(rowReady)
-      .map((row) => ({
-        firstName: row.firstName.trim(),
-        lastName: row.lastName.trim(),
-        birthDate: row.birthDate.trim(),
-        countryCode2: icaoCountryToIso2(row.countryCode2),
-        passportExpiry: row.expiryDate.trim(),
-        passportNo: row.passportNo.trim(),
-        sex: row.sex.trim(),
-        tcNo: row.tcNo.trim(),
-        documentType: row.documentType,
-      }));
+    const payload = approvedReady.map((row) => ({
+      firstName: row.fields.givenNames.normalized,
+      lastName: row.fields.surname.normalized,
+      birthDate: row.fields.birthDate.normalized,
+      countryCode2: row.fields.countryCode2.normalized,
+      passportExpiry: row.fields.expiryDate.normalized,
+      passportNo: row.fields.passportNo.normalized,
+      sex: row.fields.sex.normalized,
+      tcNo: row.fields.tcNo.normalized,
+      documentType: row.fields.documentType.normalized,
+    }));
     try {
-      await saveBlob(
-        createPassportOperatorXlsxBlob(payload),
-        `pasaport-yolcu-listesi-${stamp()}.xlsx`,
-      );
+      await saveBlob(createPassportOperatorXlsxBlob(payload), `pasaport-yolcu-listesi-${stamp()}.xlsx`);
       notify(`${payload.length} satırlık Excel indirildi.`, "ok");
     } catch (reason) {
       notify(reason instanceof Error ? reason.message : "Excel oluşturulamadı.", "error");
@@ -163,11 +283,13 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
           <p className="ops-eyebrow">Pasaport</p>
           <h1>Pasaport MRZ → Excel</h1>
           <p>
-            Pasaportun altındaki iki MRZ satırını yapıştırın veya metin katmanlı PDF seçin.
-            Doğrulanan alanları kontrol edip Gate Visa Excel’ini indirin.
+            Ofis PC’de çok sayfalı PDF veya görüntü yükleyin; MRZ önce okunur, gerekirse yerel PP-OCRv6 çalışır.
+            Canlı HTTPS adreste OCR yoktur — şifreli paket aktarın.
           </p>
         </div>
       </section>
+
+      <OcrCapabilityCard capability={capability} onRefresh={() => void probe()} />
 
       <section className="ops-module-card xb-mrz-entry">
         <div>
@@ -188,11 +310,11 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
             spellCheck={false}
           />
         </label>
-        <button type="button" className="primary" disabled={busy || !mrzText.trim()} onClick={processPaste}>
+        <button type="button" className="primary" disabled={busy || !mrzText.trim()} onClick={() => void processPaste()}>
           Satırları işle
         </button>
         <p className="xb-mrz-help">
-          OCR yoktur. Metin ve PDF metin katmanı yalnızca bu cihazda işlenir; pasaport verisi sunucuya gönderilmez.
+          Yeni yükleme önceki satırları silmez. Kayıtlar kasa açıkken şifreli saklanır.
         </p>
       </section>
 
@@ -200,15 +322,19 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
         className={`xb-photo-drop${dragging ? " dragging" : ""}${busy ? " busy" : ""}`}
         onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
         onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
+        onDragLeave={() => setDragging(false)}
       >
-        <strong>{busy ? "Metin okunuyor…" : "Metin katmanlı PDF veya TXT"}</strong>
-        <span>PDF taranmış görüntü ise Live Text ile kopyalayıp yukarıya yapıştırın</span>
-        <em>En fazla 30 PDF sayfası · işlem cihazda</em>
+        <strong>{busy ? "İşleniyor…" : capability.acceptImages ? "PDF, TXT veya pasaport görüntüsü" : "Metin katmanlı PDF veya TXT"}</strong>
+        <span>
+          {capability.canOcr
+            ? "Metin yoksa sayfa bu bilgisayarda OCR edilir"
+            : "Taranmış görüntü için ofis PC’de yerel OCR veya Live Text"}
+        </span>
+        <em>En fazla 80 PDF sayfası · ekleme (öncekiler silinmez)</em>
         <input
           type="file"
-          accept=".pdf,application/pdf,.txt,text/plain"
+          accept={fileAcceptForCapability(capability)}
           multiple
           aria-label="Pasaport PDF veya metin dosyaları seç"
           disabled={busy}
@@ -216,24 +342,33 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
         />
       </label>
 
-      {progress ? <p className="xb-passport-progress" aria-live="polite">{progress}</p> : null}
+      <PassportBatchProgress
+        pages={pages}
+        onRetry={(pageId) => void onRetry(pageId)}
+        onCancel={() => abortRef.current?.abort()}
+      />
 
-      {rows.length === 0 && !busy ? (
+      <ResultPackageDialog candidates={candidates} onImported={() => void reload()} notify={notify} />
+
+      {candidates.length === 0 && !busy ? (
         <EmptyState
           title="Henüz MRZ işlenmedi"
-          body="İki MRZ satırını yapıştırın veya seçilebilir metin içeren PDF yükleyin."
+          body="İki MRZ satırını yapıştırın, metin katmanlı PDF yükleyin veya ofis PC’de yerel OCR kullanın."
         />
       ) : null}
 
-      {rows.length > 0 && (
+      {candidates.length > 0 && (
         <section className="ops-module-card">
           <div className="ops-section-heading">
             <div>
-              <p className="ops-eyebrow">Sonuç</p>
-              <h2>{readyCount}/{rows.length} satır Excel’e hazır</h2>
+              <p className="ops-eyebrow">Kontrol</p>
+              <h2>{approvedReady.length}/{candidates.length} satır Excel’e hazır</h2>
+              {excluded.length ? (
+                <p>{excluded.length} kayıt dışarıda: {Array.from(new Set(excluded.map((item) => item.reason))).join(", ")}</p>
+              ) : null}
             </div>
             <div className="xb-passport-actions">
-              <button type="button" className="primary" disabled={!readyCount || busy} onClick={() => void downloadExcel()}>
+              <button type="button" className="primary" disabled={!approvedReady.length || busy} onClick={() => void downloadExcel()}>
                 Excel indir
               </button>
               {onOpenImport ? (
@@ -241,86 +376,18 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
               ) : null}
             </div>
           </div>
-
-          <ul className="xb-passport-rows">
-            {rows.map((row) => (
-              <li key={row.id} data-status={row.status}>
-                <div className="xb-passport-thumb" aria-label={row.status === "ok" ? "Doğrulandı" : "Kontrol gerekli"}>
-                  <strong aria-hidden="true">{row.status === "ok" ? "✓" : "!"}</strong>
-                  <span>{row.status === "ok" ? "Doğrulandı" : "Kontrol"}</span>
-                </div>
-                <div className="xb-passport-fields">
-                  <label>
-                    <span>Yolcu Adı</span>
-                    <input value={row.firstName} onChange={(event) => patchRow(row.id, { firstName: event.target.value })} autoCapitalize="characters" />
-                  </label>
-                  <label>
-                    <span>Yolcu Soyadı</span>
-                    <input value={row.lastName} onChange={(event) => patchRow(row.id, { lastName: event.target.value })} autoCapitalize="characters" />
-                  </label>
-                  <label>
-                    <span>Pasaport No</span>
-                    <input
-                      value={row.passportNo}
-                      onChange={(event) => patchRow(row.id, { passportNo: event.target.value.toLocaleUpperCase("tr-TR") })}
-                      autoCapitalize="characters"
-                      autoCorrect="off"
-                    />
-                  </label>
-                  <label>
-                    <span>Ülke Kodu 2</span>
-                    <input
-                      value={row.countryCode2}
-                      maxLength={2}
-                      onChange={(event) => patchRow(row.id, {
-                        countryCode2: event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2),
-                      })}
-                      autoCapitalize="characters"
-                      autoCorrect="off"
-                      spellCheck={false}
-                    />
-                  </label>
-                  <label>
-                    <span>TC.No</span>
-                    <input
-                      value={row.tcNo}
-                      inputMode="numeric"
-                      maxLength={11}
-                      onChange={(event) => patchRow(row.id, { tcNo: event.target.value.replace(/\D/g, "").slice(0, 11) })}
-                      autoComplete="off"
-                    />
-                  </label>
-                  <label>
-                    <span>Doğum Tarihi</span>
-                    <input type="date" value={row.birthDate} onChange={(event) => patchRow(row.id, { birthDate: event.target.value })} />
-                  </label>
-                  <label>
-                    <span>Pasaport Bitiş Tar.</span>
-                    <input type="date" value={row.expiryDate} onChange={(event) => patchRow(row.id, { expiryDate: event.target.value })} />
-                  </label>
-                  <label>
-                    <span>Doküman Tipi</span>
-                    <select
-                      value={row.documentType}
-                      onChange={(event) => patchRow(row.id, { documentType: event.target.value as PassportDocumentType })}
-                    >
-                      {DOCUMENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
-                    </select>
-                  </label>
-                  <p className="xb-passport-meta">
-                    {row.filename}{row.warnings[0] ? ` · ${row.warnings[0]}` : ""}
-                  </p>
-                  {row.status !== "ok" ? (
-                    <details className="xb-passport-debug">
-                      <summary>MRZ ayrıntısı</summary>
-                      <div><code>{`${row.mrzLine1}\n${row.mrzLine2}`}</code></div>
-                    </details>
-                  ) : null}
-                </div>
-                <button type="button" className="danger" onClick={() => removeRow(row.id)} aria-label="Satırı sil">Sil</button>
-              </li>
-            ))}
-          </ul>
+          <PassportReviewPanel
+            candidates={candidates.filter((row) => row.status !== "rejected")}
+            focusId={focusId}
+            focusField={focusField}
+            pageImage={pageImage}
+            pageSize={pageSize}
+            onFocus={(id, field) => { setFocusId(id); setFocusField(field); }}
+            onPatch={(id, field, value) => void onPatch(id, field, value)}
+            onApprove={(id) => void onApprove(id)}
+            onReject={(id) => void onReject(id)}
+            onNextIssue={onNextIssue}
+          />
         </section>
       )}
     </div>
