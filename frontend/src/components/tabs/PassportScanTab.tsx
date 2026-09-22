@@ -4,6 +4,7 @@ import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "re
 
 import { IMAGE_ACCEPT } from "@/lib/imageFormat";
 import { saveBlob } from "@/lib/offline/exporter";
+import { icaoCountryToIso2 } from "@/lib/passport/icaoCountries";
 import { createPassportOperatorXlsxBlob } from "@/lib/passport/operatorExcel";
 import {
   DOCUMENT_TYPES,
@@ -31,7 +32,7 @@ function rowReady(row: PassportScanRow): boolean {
     row.firstName.trim()
     && row.lastName.trim()
     && row.passportNo.trim()
-    && row.countryCode2.trim().length === 2
+    && icaoCountryToIso2(row.countryCode2).length === 2
     && row.birthDate.trim()
     && row.expiryDate.trim()
     && row.documentType,
@@ -124,10 +125,11 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
         firstName: row.firstName.trim(),
         lastName: row.lastName.trim(),
         birthDate: row.birthDate.trim(),
-        countryCode2: row.countryCode2.trim().toUpperCase(),
+        countryCode2: icaoCountryToIso2(row.countryCode2),
         passportExpiry: row.expiryDate.trim(),
         passportNo: row.passportNo.trim(),
         sex: row.sex.trim(),
+        tcNo: row.tcNo.trim(),
         documentType: row.documentType,
       }));
     try {
@@ -255,6 +257,18 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
                       autoCapitalize="characters"
                       autoCorrect="off"
                       spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    <span>TC.No</span>
+                    <input
+                      value={row.tcNo}
+                      inputMode="numeric"
+                      maxLength={11}
+                      onChange={(event) => patchRow(row.id, {
+                        tcNo: event.target.value.replace(/\D/g, "").slice(0, 11),
+                      })}
+                      autoComplete="off"
                     />
                   </label>
                   <label>

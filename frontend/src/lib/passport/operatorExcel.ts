@@ -3,11 +3,14 @@
  * identical to the agency template the operator already uses.
  *
  * The sheet is one piece: every column below stays, even when the UI only
- * asks the operator to fill the critical MRZ fields. Unused columns
- * (vize, araç, GSM, TC) are written as empty cells — never dropped.
+ * asks the operator to fill the critical MRZ fields. Unused columns (vize,
+ * araç, GSM) are written as empty cells — never dropped. A verified Turkish
+ * identity number can populate TC.No.
  */
 
 import * as XLSX from "@e965/xlsx";
+
+import { icaoCountryToIso2 } from "./icaoCountries";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -54,82 +57,6 @@ export type PassportOperatorRow = {
   documentType?: string;
 };
 
-/** ICAO 9303 alpha-3 → ISO 3166-1 alpha-2 for the "Ülke Kodu 2" column. */
-const ICAO3_TO_ISO2: Record<string, string> = {
-  TUR: "TR",
-  GRC: "GR",
-  DEU: "DE",
-  GBR: "GB",
-  USA: "US",
-  FRA: "FR",
-  ITA: "IT",
-  ESP: "ES",
-  NLD: "NL",
-  BEL: "BE",
-  AUT: "AT",
-  CHE: "CH",
-  RUS: "RU",
-  UKR: "UA",
-  AZE: "AZ",
-  GEO: "GE",
-  IRN: "IR",
-  IRQ: "IQ",
-  SYR: "SY",
-  BGR: "BG",
-  ROU: "RO",
-  POL: "PL",
-  SWE: "SE",
-  NOR: "NO",
-  DNK: "DK",
-  FIN: "FI",
-  PRT: "PT",
-  IRL: "IE",
-  CAN: "CA",
-  AUS: "AU",
-  NZL: "NZ",
-  CHN: "CN",
-  JPN: "JP",
-  KOR: "KR",
-  IND: "IN",
-  PAK: "PK",
-  AFG: "AF",
-  EGY: "EG",
-  MAR: "MA",
-  TUN: "TN",
-  LBN: "LB",
-  JOR: "JO",
-  ISR: "IL",
-  SAU: "SA",
-  ARE: "AE",
-  QAT: "QA",
-  KWT: "KW",
-  BHR: "BH",
-  OMN: "OM",
-  CYP: "CY",
-  MLT: "MT",
-  ALB: "AL",
-  MKD: "MK",
-  SRB: "RS",
-  BIH: "BA",
-  MNE: "ME",
-  XKX: "XK",
-  MDA: "MD",
-  BLR: "BY",
-  KAZ: "KZ",
-  UZB: "UZ",
-  TKM: "TM",
-  KGZ: "KG",
-  TJK: "TJ",
-  D: "DE", // legacy single-letter Germany in some MRZs
-};
-
-export function nationalityToCountryCode2(nationality: string): string {
-  const raw = nationality.trim().toUpperCase();
-  if (!raw) return "";
-  if (raw.length === 2) return raw;
-  return ICAO3_TO_ISO2[raw] ?? raw.slice(0, 2);
-}
-
 /** YYYY-MM-DD → DD.MM.YYYY for Turkish operator sheets. */
 export function formatOperatorDate(iso: string): string {
   const trimmed = iso.trim();
@@ -170,14 +97,14 @@ function copyBuffer(bytes: Uint8Array): ArrayBuffer {
  * Builds the agency passport list workbook.
  *
  * Header row is exactly `PASSPORT_OPERATOR_HEADERS`. Empty optional columns
- * stay blank so the operator can fill vehicle / GSM / TC later.
+ * stay blank so the operator can fill vehicle / GSM later.
  */
 export function createPassportOperatorXlsxBlob(rows: readonly PassportOperatorRow[]): Blob {
   const data = rows.map((row) => [
     cell(row.firstName),
     cell(row.lastName),
     formatOperatorDate(cell(row.birthDate)),
-    cell(row.countryCode2),
+    icaoCountryToIso2(cell(row.countryCode2)),
     formatOperatorDate(cell(row.passportExpiry)),
     formatOperatorDate(cell(row.visaStart)),
     formatOperatorDate(cell(row.visaEnd)),
