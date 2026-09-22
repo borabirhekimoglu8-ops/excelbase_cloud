@@ -70,8 +70,8 @@ Lanes first; Fable only on hard gates; never “think hard” on opaque Auto alo
 | I2 | Mid feature / CI triage | `gpt-5.6-sol-medium` | **must** Task if parent opaque |
 | I3 | Multi-file feature impl | `gpt-5.6-sol-high` | **must** Task |
 | I4 | Hard impl / OCR first pass | `gpt-5.6-sol-xhigh` | **must** Task; one then reassess |
-| R1 | Architecture (no trust/PII gate) | `claude-opus-5-thinking-high` | **must** Task |
-| R2 | Normal bugbot / non-sensitive review | `claude-opus-5-thinking-high` | **must** Task |
+| R1 | Architecture (no trust/PII gate) | `claude-opus-5.5-high` | **must** Task; fallback `claude-opus-5-thinking-high` if 5.5 unavailable |
+| R2 | Normal bugbot / non-sensitive review | `claude-opus-5.5-high` | **must** Task |
 | B1 | Browser / GUI QA | `claude-sonnet-5-thinking-high` | **must** Task; xhigh if flaky |
 | V1 | Video / screenshot review | `gemini-3.8-flash-high` | **must** Task |
 | L1 | Huge transcript/log first pass | `muse-spark-1.3-high` | **must** Task if large |
@@ -84,7 +84,7 @@ Lanes first; Fable only on hard gates; never “think hard” on opaque Auto alo
 
 ### Catalog (allowed Task slugs only)
 
-`inherit` · `grok-4.7-{low,medium,high,xhigh}[-fast]` · `cursor-grok-4.6-{low,medium,high,xhigh}[-fast]` · `composer-2.5[-fast]` · `gpt-5.6-sol-{none,low,medium,high,xhigh,max}[-fast]` · `gpt-5.6-terra-{none,low,medium,high,xhigh,max}[-fast]` · `claude-opus-5-thinking-{low,medium,high,xhigh,max}[-fast]` · `claude-sonnet-5-thinking-{low,medium,high,xhigh,max}` · `claude-fable-5-1-thinking-{low,medium,high,xhigh,max}` · `gemini-3.8-flash-{low,medium,high}` · `muse-spark-1.3-{minimal,low,medium,high,xhigh,max}`
+`inherit` · `grok-4.7-{low,medium,high,xhigh}[-fast]` · `cursor-grok-4.6-{low,medium,high,xhigh}[-fast]` · `composer-2.5[-fast]` · `gpt-5.6-sol-{none,low,medium,high,xhigh,max}[-fast]` · `gpt-5.6-terra-{none,low,medium,high,xhigh,max}[-fast]` · `claude-opus-5.5-{low,medium,high,xhigh,max}[-fast]` · `claude-opus-5-thinking-{low,medium,high,xhigh,max}[-fast]` · `claude-sonnet-5-thinking-{low,medium,high,xhigh,max}` · `claude-fable-5-1-thinking-{low,medium,high,xhigh,max}` · `gemini-3.8-flash-{low,medium,high}` · `muse-spark-1.3-{minimal,low,medium,high,xhigh,max}`
 
 Effort: `high` = serious default · `xhigh` = hard multi-step · `max` = crisis only · `*-fast` only for user speed + E0/E1 swarm or B1 time-box — **never** on F-gates / auth / OCR / KVKK.
 
@@ -108,13 +108,13 @@ Auto-pin Fable **without waiting** only if **all** of A+B+C:
 | F6 | Trust-boundary + residency/tenancy/local-cloud | `claude-fable-5-1-thinking-xhigh` |
 | F7 | Bugbot on F2–F5 paths | `claude-fable-5-1-thinking-high` |
 | F8 | User said `fable` | named tier or `thinking-high` |
-| F9 | Same gate failed on Opus/Sol-xhigh | escalate **one** step once |
+| F9 | Same gate failed on Opus 5.5 / Sol-xhigh | escalate **one** step once |
 
 **Not Fable:** generic architecture/UI; first-pass OCR (I4); quality words alone; explore/CI/browser/video/docs.
 
 **Pairing:** E1 Composer → one Fable/Opus synthesis → Sol impl. Browser/video = B1/V1.
 
-**Blocked:** fable→Opus-max chain→Sol-max; log it. **Cost-down:** keep F1–F5/F7; soften F6/F9.
+**Blocked:** fable → `claude-opus-5.5-max`→`xhigh`→`high` then `claude-opus-5-thinking-max`→`xhigh`→`high` then Sol-max; log it. **Cost-down:** keep F1–F5/F7; soften F6/F9.
 
 ---
 
@@ -159,7 +159,7 @@ Rules:
 
 ## 7. Fallbacks
 
-Same family first: Fable→Opus-max… · Sol→Terra · Grok `grok-4.7-xhigh`→`grok-4.7-high`→`grok-4.7-medium` then `cursor-grok-4.6-xhigh`→`cursor-grok-4.6-high`→`cursor-grok-4.6-medium` · Sonnet→medium · Composer→Terra · Gemini→Sonnet · Muse→Composer.  
+Same family first: Fable → `claude-opus-5.5-max`→`claude-opus-5.5-xhigh`→`claude-opus-5.5-high`→`claude-opus-5.5-medium` then `claude-opus-5-thinking-max`→`claude-opus-5-thinking-xhigh`→`claude-opus-5-thinking-high`→`claude-opus-5-thinking-medium` → Sol high (code) / Sonnet high (UI) · Sol→Terra · Grok `grok-4.7-xhigh`→`grok-4.7-high`→`grok-4.7-medium` then `cursor-grok-4.6-xhigh`→`cursor-grok-4.6-high`→`cursor-grok-4.6-medium` · Sonnet→medium · Composer→Terra · Gemini→Sonnet · Muse→Composer.  
 Hard last resort: Opus ↔ Sol ↔ Grok. No fast/none/low on F-gates.
 
 ---
