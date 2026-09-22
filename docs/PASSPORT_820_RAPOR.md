@@ -2,9 +2,17 @@
 
 ## Sonuç
 
-Bu koşuda PDF/görüntü → Excel için gerçek bir OCR motoru çalıştırılmadı.
-PP-OCRv6 protokolü **NOT RUN** durumundadır; bu nedenle görüntüden OCR başarısı
-kanıtı yoktur. Depodaki `.txt` dosyaları yalnız
+PDF raster → OCR → doğrulanmış satır yolunda çalışan motor PaddleOCR 3.7.0
+üzerindeki **PP-OCRv6** oldu. Görüntü kanıtı,
+`tests/passport_ocr_protocol/generate_and_run.py` işaretli pytest protokolünün
+ürettiği `ppocrv6-synthetic.json` dosyasıdır. Protokol temiz PNG, JPEG q=35,
+±3° eğim, PDF-raster ve VIZ-only sentetik görüntüleri gerçek motordan geçirdi.
+Frontend `engineProtocol.test.ts`, PDF-raster sonucunu PP-OCR satır
+boru hattına verip doğrulanmış `UTO` satırını yeniden üretir.
+
+Bu sentetik satır ülke olmayan UTO kodunu taşıdığı için Excel dosyasına
+bilinçli olarak alınmadı; başarılı bir motor-kaynaklı Excel indirme iddiası
+yoktur. Depodaki `.txt` dosyaları ise yalnız
 `text_fixture_expected_output` etiketli ayrıştırıcı beklenen çıktılarıdır.
 
 Uygulamanın görüntü yolu artık yalnız loopback FastAPI üzerindeki PaddleOCR /
@@ -22,7 +30,7 @@ Canlıya dağıtım: yok
 - Gerçek PP-OCRv6 görüntü protokolü:
   `tests/passport_ocr_protocol/generate_and_run.py`.
 - Durum:
-  `frontend/src/lib/passport/__fixtures__/engine-runs/README.md` — **NOT RUN**.
+  `frontend/src/lib/passport/__fixtures__/engine-runs/README.md` — **RUN**.
 - Protokol yalnız `paddleocr` gerçekten kurulup motor başlatılabildiğinde
   `ppocrv6-synthetic.json` üretir. Sahte sonuç yazmaz.
 - Sentetik set Ada Yılmaz / `U1000001` / `UTO` / `XXA` kullanır; temiz PNG,
@@ -76,5 +84,7 @@ Vault-sync bu koşuda çalıştırılmadı.
 
 ## Doğrulama kaydı
 
-Bu bölüm yalnız gerçekten çalıştırılan komutların sonucu ile güncellenmelidir.
-PP-OCRv6 protokolü çalışmadığı sürece “görüntü OCR başarılı” sonucu yazılamaz.
+- Gerçek PP-OCRv6 sentetik görüntü protokolü: 1 geçti.
+- Protokol sonucu tüketen frontend testi: PDF-raster satırı doğrulandı.
+- Görüntü kanıtı yalnız sentetik protokole aittir; gerçek operatör belgesi
+  çalıştırılmadı.

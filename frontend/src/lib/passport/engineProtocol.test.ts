@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { rowsFromOcrResult } from "./scanPassportImages";
+
 const directory = resolve(
   process.cwd(),
   "src/lib/passport/__fixtures__/engine-runs",
@@ -17,8 +19,11 @@ describe("PP-OCRv6 synthetic image protocol evidence", () => {
       synthetic_only: boolean;
       variants: Array<{
         variant: string;
-        engine: { name: string; version: string };
-        lines: unknown[];
+        engine: { name: string; version: string; lang?: string };
+        width: number;
+        height: number;
+        duration_ms: number;
+        lines: Array<{ text: string; box: number[][]; score: number | null }>;
       }>;
     };
     expect(payload.evidence).toBe("actual_ppocrv6_synthetic_image_run");
@@ -34,8 +39,32 @@ describe("PP-OCRv6 synthetic image protocol evidence", () => {
     for (const variant of payload.variants) {
       expect(variant.engine.name).toBe("paddleocr");
       expect(variant.engine.version).toContain("PP-OCRv6");
-      expect(Array.isArray(variant.lines)).toBe(true);
+      expect(variant.lines.length).toBeGreaterThan(0);
     }
+
+    const pdfRaster = payload.variants.find(
+      (item) => item.variant === "image_pdf_raster_250dpi_2600_jpeg90",
+    );
+    expect(pdfRaster).toBeDefined();
+    const rows = rowsFromOcrResult(
+      "synthetic-pdf-raster.jpg",
+      "blob:synthetic",
+      "synthetic-engine-run",
+      1,
+      {
+        pageId: pdfRaster!.variant,
+        engine: pdfRaster!.engine,
+        width: pdfRaster!.width,
+        height: pdfRaster!.height,
+        durationMs: pdfRaster!.duration_ms,
+        lines: pdfRaster!.lines,
+      },
+    );
+    expect(rows.some((row) => (
+      row.status === "ok"
+      && row.passportNo === "U1000001"
+      && row.nationality === "UTO"
+    ))).toBe(true);
   });
 
   it.skipIf(hasResult)("states clearly that image-engine evidence was not run", () => {

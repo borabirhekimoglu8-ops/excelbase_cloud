@@ -2,11 +2,17 @@
 
 ## Hangi motor çalıştı, hangi görüntü testi kanıtlıyor?
 
-Bu koşuda PP-OCRv6 çalışmadı; görüntü OCR kanıtı yoktur.
-`frontend/src/lib/passport/__fixtures__/engine-runs/README.md` durumu
-**NOT RUN** olarak kaydeder. `compressed-pages/*.txt` dosyaları yalnız
-ayrıştırıcı için beklenen/kaydedilmiş metin çıktılarıdır; görüntü veya OCR
-motoru kanıtı değildir.
+PDF-raster → OCR → doğrulanmış satır yolunda PaddleOCR 3.7.0 üzerindeki
+**PP-OCRv6** çalıştı. Görüntü kanıtı, işaretli pytest
+`tests/passport_ocr_protocol/generate_and_run.py` ve onun ürettiği
+`frontend/src/lib/passport/__fixtures__/engine-runs/ppocrv6-synthetic.json`
+dosyasıdır. `engineProtocol.test.ts` gerçek PDF-raster motor çıktısını frontend
+satır boru hattında doğrular.
+
+Sentetik satır UTO taşıdığı için Excel şablonunda temsil edilemez ve indirme
+bilinçli olarak kapalıdır. Dolayısıyla motor-kaynaklı başarılı Excel dosyası
+iddiası yoktur. `compressed-pages/*.txt` dosyaları yalnız ayrıştırıcı için
+beklenen/kaydedilmiş metin çıktılarıdır; görüntü veya OCR motoru kanıtı değildir.
 
 Görüntü yolu yalnız yerel FastAPI içindeki PaddleOCR / PP-OCRv6 servisidir.
 Tesseract bağımlılığı, worker/WASM varlıkları ve tanıma yolu yoktur; motor
