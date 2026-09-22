@@ -92,6 +92,23 @@ describe("operatorExcel", () => {
     expect(sheet.P2.v).toBe("ID CARD");
   });
 
+  it("prefixes formula-like OCR text so Excel does not execute it", async () => {
+    const blob = createPassportOperatorXlsxBlob([
+      {
+        firstName: "=1+1",
+        lastName: "YILMAZ",
+        birthDate: "1990-01-02",
+        countryCode2: "TR",
+        passportExpiry: "2031-01-02",
+        passportNo: "U0000123",
+      },
+    ]);
+    const workbook = XLSX.read(await blob.arrayBuffer(), { type: "array" });
+    const sheet = workbook.Sheets.Yolcular;
+    expect(String(sheet.A2.v)).toBe("'=1+1");
+    expect(String(sheet.H2.v)).toBe("U0000123");
+  });
+
   it("maps nationality and sex for the operator sheet", () => {
     expect(icaoCountryToIso2("TUR")).toBe("TR");
     expect(icaoCountryToIso2("EST")).toBe("EE");

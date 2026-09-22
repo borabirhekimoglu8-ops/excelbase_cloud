@@ -34,8 +34,7 @@ function pageText(items: readonly unknown[]): string {
   return lines.join("\n");
 }
 
-/** Read a PDF text layer locally. Scanned/image-only PDFs intentionally return no text. */
-export async function extractTextFromPdf(file: Blob): Promise<string> {
+export async function extractTextPerPage(file: Blob, maxPages = MAX_PDF_PAGES): Promise<string[]> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   if (typeof window !== "undefined") {
     pdfjs.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs";
@@ -49,9 +48,9 @@ export async function extractTextFromPdf(file: Blob): Promise<string> {
 
   try {
     pdf = await loadingTask.promise;
-    if (pdf.numPages > MAX_PDF_PAGES) {
+    if (pdf.numPages > maxPages) {
       throw new Error(
-        `Bir PDF en fazla ${MAX_PDF_PAGES} sayfa olabilir (${pdf.numPages} sayfa bulundu).`,
+        `Bir PDF en fazla ${maxPages} sayfa olabilir (${pdf.numPages} sayfa bulundu).`,
       );
     }
 
@@ -65,11 +64,16 @@ export async function extractTextFromPdf(file: Blob): Promise<string> {
         page.cleanup();
       }
     }
-    return pages.join("\n");
+    return pages;
   } finally {
     if (pdf) await pdf.destroy();
     else await loadingTask.destroy();
   }
+}
+
+/** Read a PDF text layer locally. Scanned/image-only PDFs intentionally return no text. */
+export async function extractTextFromPdf(file: Blob): Promise<string> {
+  return (await extractTextPerPage(file)).join("\n");
 }
 
 export async function rowsFromPdfText(

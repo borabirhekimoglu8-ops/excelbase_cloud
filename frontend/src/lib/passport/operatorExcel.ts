@@ -74,8 +74,19 @@ export function formatOperatorSex(sex: string): string {
   return value;
 }
 
+/** Prevent OCR/user text from becoming an Excel formula. */
+export function sanitizeExcelText(value: string): string {
+  const text = value == null ? "" : String(value);
+  if (!text) return "";
+  const first = text[0];
+  if (first === "=" || first === "+" || first === "-" || first === "@" || first === "\t" || first === "\r") {
+    return `'${text}`;
+  }
+  return text;
+}
+
 function cell(value: unknown): string {
-  return value == null ? "" : String(value).trim();
+  return sanitizeExcelText(value == null ? "" : String(value).trim());
 }
 
 function workbookBytes(workbook: XLSX.WorkBook): Uint8Array {

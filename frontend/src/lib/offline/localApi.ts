@@ -32,6 +32,8 @@ import type {
   UserView,
 } from "@/lib/api";
 import { newId } from "@/lib/id";
+import { PASSPORT_PREFS_META } from "@/lib/passport/keys";
+import { clearPassportVaultRecords } from "@/lib/passport/store";
 import {
   IMAGE_FORMAT_LABEL,
   imageMimeFromFilename,
@@ -132,7 +134,7 @@ const META_LAST_UNDO = "last-undo";
 const META_AUDIT = "audit-trail";
 const META_LAST_BACKUP = "last-backup-at";
 const META_BATCH_PREFIX = "import-batch:";
-const APP_VERSION = "8.1.0-offline";
+const APP_VERSION = "8.2.0-offline";
 const SOURCE_PREFIX = "source:";
 const PHOTO_PREFIX = "photo:";
 const DOCUMENT_PREFIX = "document:";
@@ -469,6 +471,7 @@ export async function localBulkDelete(ids: number[]): Promise<SimpleResult> {
 }
 
 export async function localClearAll(): Promise<SimpleResult> {
+  await clearPassportVaultRecords();
   const [binaryIds, metaKeys] = await Promise.all([listBinaryIds(), listMetaKeys()]);
   for (const id of binaryIds) {
     if (!id.startsWith(OFFICE_DOCUMENT_PREFIX)) await deleteBinary(id);
@@ -483,7 +486,7 @@ export async function localClearAll(): Promise<SimpleResult> {
     META_LAST_UNDO,
   ]);
   for (const key of metaKeys) {
-    if (passengerMetaKeys.has(key) || key.startsWith(META_BATCH_PREFIX)) await removeMeta(key);
+    if (passengerMetaKeys.has(key) || key.startsWith(META_BATCH_PREFIX) || key === PASSPORT_PREFS_META) await removeMeta(key);
   }
   const [workFiles, officeDocuments, tasks, notes] = await Promise.all([
     workspaceEntities<WorkFile>(WORK_FILE_ENTITY_PREFIX, "work_file"),

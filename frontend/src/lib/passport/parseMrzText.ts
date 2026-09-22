@@ -74,7 +74,7 @@ function lineCandidates(text: string): { upper: Candidate[]; lower: Candidate[] 
   return { upper, lower };
 }
 
-function allTd3Lines(text: string): Td3TextLines[] {
+export function allTd3Lines(text: string): Td3TextLines[] {
   const { upper, lower } = lineCandidates(text);
   const pairs: Td3TextLines[] = [];
   const usedLower = new Set<number>();

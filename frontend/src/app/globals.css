@@ -3445,6 +3445,64 @@ button:disabled, .disabled { opacity: .45; cursor: not-allowed; pointer-events: 
   .xb-passport-thumb strong { width: 56px; height: 56px; }
 }
 
+.xb-ocr-capability[data-state="ready"] { border-color: rgba(61,214,140,.35); }
+.xb-ocr-capability[data-state="engine_missing"],
+.xb-ocr-capability[data-state="service_unreachable"],
+.xb-ocr-capability[data-state="engine_error"] { border-color: rgba(244,119,33,.4); }
+.xb-ocr-capability[data-state="not_local_origin"],
+.xb-ocr-capability[data-state="unsupported_device"] { border-color: rgba(255,107,116,.35); }
+.xb-ocr-engine, .xb-ocr-error { margin: 0; color: var(--muted); font-size: var(--type-12); }
+.xb-ocr-login, .xb-passport-package { display: grid; gap: 10px; }
+.xb-passport-batch-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.xb-passport-batch-list li {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--ido-border);
+  border-radius: var(--ido-radius-sm);
+}
+.xb-passport-batch-list li[data-status="error"] { border-color: rgba(255,107,116,.35); }
+.xb-passport-batch-list li[data-status="processing"] { border-color: rgba(244,119,33,.4); }
+.xb-passport-review { display: grid; gap: 12px; }
+.xb-passport-split {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(0, 1.2fr);
+  gap: 12px;
+  align-items: start;
+}
+.xb-passport-page {
+  position: relative;
+  min-height: 180px;
+  border: 1px solid var(--ido-border);
+  border-radius: var(--ido-radius-sm);
+  background: rgba(0,0,0,.22);
+  overflow: hidden;
+}
+.xb-passport-page img { display: block; width: 100%; height: auto; }
+.xb-passport-page-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: var(--type-12);
+}
+.xb-passport-hotspot {
+  position: absolute;
+  border: 2px solid var(--ido-primary);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.xb-passport-rows > li[data-status="conflict"] { border-color: rgba(244,119,33,.45); }
+.xb-passport-rows > li[data-status="user-approved"] { border-color: rgba(61,214,140,.35); }
+.xb-passport-row-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.xb-package-code { color: var(--ink); font-size: var(--type-12); }
+.xb-package-import { display: grid; gap: 4px; font-size: var(--type-12); }
+@media (max-width: 860px) {
+  .xb-passport-split { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xb-passport-hotspot { transition: none; }
+}
+
 .xb-photo-match-list {
   list-style: none;
   margin: 0;
