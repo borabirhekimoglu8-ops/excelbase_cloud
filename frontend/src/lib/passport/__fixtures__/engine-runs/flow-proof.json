@@ -1,0 +1,17 @@
+{
+  "evidence": "real_fastapi_ppocrv6_browser_flow",
+  "synthetic_only": true,
+  "source_pdf": "sources/tur-image-pdf-250dpi.pdf",
+  "base_url": "http://127.0.0.1:8000",
+  "api_mocked": false,
+  "initial_review_status": "verified",
+  "outcome": "automatically_correct",
+  "edited_fields": [],
+  "excel_downloaded": true,
+  "excel_assertions": {
+    "first_name": "ADA",
+    "last_name": "YILMAZ",
+    "country_code_2": "TR",
+    "passport_no": "U1000001"
+  }
+}
