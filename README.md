@@ -21,8 +21,21 @@ Excelbase Operations; iş dosyalarını, C kodlarını, görevleri, notları, ev
 - Uygulama kabuğu ilk başarılı açılıştan sonra çevrimdışı çalışır.
 
 8.2.0 ile WhatsApp’tan gelen görüntü PDF’leri ve JPG/PNG/HEIC pasaport fotoğrafları,
-tek bir cihaz-içi OCR kuyruğunda Pasaport → Excel akışına alınır. Kaynak sayfalar
-şifreli kasada tutulur; Live Text ile MRZ yapıştırma yalnız alternatif yöntemdir.
+ofis PC’deki loopback FastAPI PP-OCRv6 kuyruğunda Pasaport → Excel akışına
+alınır. Kaynak sayfalar şifreli kasada tutulur; Live Text ile MRZ yapıştırma
+alternatif yöntemdir. Tesseract çalışma zamanı veya geri dönüş yolu yoktur.
+
+Yerel görüntü OCR kurulumu:
+
+1. `.env` içinde `BIND_ADDRESS=127.0.0.1`,
+   `EXCELBASE_ASSISTANT_OPEN_ACCESS=0` ve `EXCELBASE_PASSPORT_OCR=1` ayarlayın.
+2. `./run.sh` (Windows: `run.ps1`) ile uygulamayı başlatın ve yerel servis
+   oturumunu açın.
+3. Aynı PC’de `http://127.0.0.1:8000` adresini kullanın. Canlı HTTPS PWA veya
+   LAN adresi yerel pasaport OCR servisine bağlanmaz.
+
+Motor hazır değilken görüntüler reddedilir; metin katmanlı PDF ve MRZ
+yapıştırma çalışmaya devam eder.
 
 ## iPhone'a kurulum
 

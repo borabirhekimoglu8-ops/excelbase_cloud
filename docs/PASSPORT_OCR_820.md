@@ -1,35 +1,59 @@
 # Pasaport OCR 8.2.0
 
-Birincil operatör yolu WhatsApp görüntü PDF’i veya JPG/PNG/HEIC fotoğrafını
-**Pasaport → Excel** alanına bırakmaktır. Sayfalar tek Tesseract işçisiyle sırayla
-ve yalnız cihazda işlenir. Live Text ile iki MRZ satırı yapıştırma, kapalı
-“Alternatif” bölümündedir.
+## Hangi motor çalıştı, hangi görüntü testi kanıtlıyor?
 
-MRZ doğrulanamazsa etiketlere bağlı görsel alanlar taslak gösterilir. Taslaklar
-MRZ doğrulaması sayılmaz; operatör kaynak sayfayı karşılaştırıp “Kontrol ettim”
-demeden Excel’e girmez. Uyruk, MRZ satır 2 kaynağıdır; düzenleyen devlet ülke
-kodu üretmez. UTO/XXA gibi özel kodlar boş kalır ve operatör gerçek uyruğu
-seçer.
+Bu koşuda PP-OCRv6 çalışmadı; görüntü OCR kanıtı yoktur.
+`frontend/src/lib/passport/__fixtures__/engine-runs/README.md` durumu
+**NOT RUN** olarak kaydeder. `compressed-pages/*.txt` dosyaları yalnız
+ayrıştırıcı için beklenen/kaydedilmiş metin çıktılarıdır; görüntü veya OCR
+motoru kanıtı değildir.
 
-Kaynak ülke tablosu `icaoCountries.ts` içindeki tek tablodur. ISO 3166-1,
-UN M49/İngilizce ad anlık görüntüsü, CLDR Türkçe adları ve ICAO Doc 9303
-istisnalarının bağlantı/lisans notları `COUNTRY_TABLE_SOURCES` içindedir.
+Görüntü yolu yalnız yerel FastAPI içindeki PaddleOCR / PP-OCRv6 servisidir.
+Tesseract bağımlılığı, worker/WASM varlıkları ve tanıma yolu yoktur; motor
+hazır değilse görüntü reddedilir.
 
-## Sabit sıkıştırılmış sayfa tanısı
+## Ofis PC kurulumu
 
-Orijinal operatör WhatsApp PDF’leri depoda yoktu; aynı beş sentetik dosya
-`frontend/src/lib/passport/__fixtures__/compressed-pages/` altında kilitlendi.
-Profil: `tesseract-6-mrz-eng-lstm-300dpi-v1`. Sonuç **2/5**; başarısız
-sayfalara başarı yakıştırılmaz. Hash’ler dosya baytlarından üretilir.
+`.env`:
 
-| Sayfa | Sonuç | Aşama | Neden |
-|---|---|---|---|
-| 1 | Başarılı | — | MRZ bandı ve iki 44 hücreli satır doğrulandı |
-| 2 | Başarılı | — | Yön düzeltildi ve kontrol basamakları doğrulandı |
-| 3 | Başarısız | `field_matching` (`mrz_parser` sonrası) | Ad ve soyad tek çözümle doğrulanamadı |
-| 4 | Başarısız | `text_detection` | Sıkıştırma sonrası MRZ bandı ayırt edilemedi |
-| 5 | Başarısız | `character_recognition` | Karakterler 44 hücreli ızgaraya oturmadı |
+```dotenv
+BIND_ADDRESS=127.0.0.1
+EXCELBASE_ASSISTANT_OPEN_ACCESS=0
+EXCELBASE_PASSPORT_OCR=1
+EXCELBASE_PASSPORT_OCR_VERSIONS=PP-OCRv6
+EXCELBASE_PASSPORT_OCR_LANG=en
+```
 
-Linux bulut VM’de birim kontrolleri çalıştırıldı. Windows ortamına erişim yok;
-Windows kurulumu ve uçtan uca test **yapılmadı**. macOS testi Windows
-pilotunun ön koşulu değildir ve macOS desteği iddia edilmez.
+`./run.sh` veya Windows’ta `run.ps1` ile başlatın, yerel servis oturumunu açın
+ve uygulamayı `http://127.0.0.1:8000` adresinden kullanın. Görüntü OCR’si LAN
+hostundan veya canlı HTTPS PWA’dan çağrılmaz. Metin katmanlı PDF ve MRZ
+yapıştırma, motor hazır değilken de kullanılabilir.
+
+## Akış
+
+- PDF metin katmanı önce tarayıcıda denenir.
+- Metin yoksa sayfa 250 dpi, en fazla 2600 px uzun kenar ve JPEG 0.9 ile
+  rasterleştirilir.
+- Tek kuyruk işçisi göreli `/api/passport-ocr/v1/` uçlarını çağırır.
+- MRZ doğrulanamazsa PP-OCR satır kutuları yalnız etiketli VIZ taslağına
+  dönüştürülür.
+- Gerçek kaynak boyutu ve alan dikdörtgeni şifreli kasada satırla birlikte
+  saklanır.
+
+## Uyruk
+
+UTO/XXA gibi ülke olmayan ICAO durumları listelenir ve aynen korunur. ISO-2
+uydurulmaz; bu satırlar Excel şablonunda temsil edilemediği için dışa aktarılmaz.
+
+## Kanıt protokolü
+
+```bash
+python3 -m pytest -m engine tests/passport_ocr_protocol/generate_and_run.py
+```
+
+Komut yalnız gerçek PaddleOCR kurulumu varsa JSON kanıt üretir; motor yoksa
+atlar ve NOT RUN durumunu korur. Sentetik ad ve numaralar dışında veri
+kullanılmaz.
+
+Windows test edilmedi. Bu durum Tesseract geri dönüşü eklemek için gerekçe
+değildir. Vault-sync ve canlı HTTPS aktarımı da bu koşuda çalıştırılmadı.
