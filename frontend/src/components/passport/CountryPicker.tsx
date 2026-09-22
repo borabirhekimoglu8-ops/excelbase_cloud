@@ -15,7 +15,18 @@ export function CountryPicker({
 }) {
   const listId = useId();
   const [query, setQuery] = useState(value);
-  const matches = useMemo(() => searchCountries(query, 10), [query]);
+  const [open, setOpen] = useState(false);
+  const matches = useMemo(
+    () => searchCountries(query, 10).filter((entry) => entry.kind !== "special"),
+    [query],
+  );
+  const showList = open && Boolean(query) && matches.length > 0 && query.toUpperCase() !== value;
+
+  function choose(alpha3: string) {
+    setQuery(alpha3);
+    setOpen(false);
+    onChange(alpha3);
+  }
 
   return (
     <div className="xb-country-picker">
@@ -24,34 +35,40 @@ export function CountryPicker({
         aria-label="Uyruk"
         aria-autocomplete="list"
         aria-controls={listId}
-        aria-expanded={Boolean(query && matches.length)}
+        aria-expanded={showList}
         value={query}
         disabled={disabled}
         autoComplete="off"
-        onChange={(event) => setQuery(event.target.value)}
-        onBlur={() => {
-          const direct = resolveCountrySelection(query);
-          if (!direct) {
-            setQuery(value);
-            return;
+        onFocus={() => setOpen(true)}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setOpen(false);
+          if (event.key === "Enter") {
+            event.preventDefault();
+            const resolved = resolveCountrySelection(query);
+            if (resolved) choose(resolved.alpha3);
           }
-          setQuery(direct.alpha3);
-          onChange(direct.alpha3);
+        }}
+        onBlur={() => {
+          const resolved = resolveCountrySelection(query);
+          if (resolved) choose(resolved.alpha3);
+          else setQuery(value);
+          setOpen(false);
         }}
       />
-      {query && matches.length ? (
+      {showList ? (
         <ul id={listId} role="listbox">
-          {matches.filter((entry) => entry.kind !== "special").map((entry) => (
+          {matches.map((entry) => (
             <li key={`${entry.kind}-${entry.alpha3}`}>
               <button
                 type="button"
                 role="option"
                 aria-selected={entry.alpha3 === value}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  setQuery(entry.alpha3);
-                  onChange(entry.alpha3);
-                }}
+                onClick={() => choose(entry.alpha3)}
               >
                 <strong>{entry.alpha3} · {entry.alpha2}</strong>
                 <span>{entry.nameTr}</span>
