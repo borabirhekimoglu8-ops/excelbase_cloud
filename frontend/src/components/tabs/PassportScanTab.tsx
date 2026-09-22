@@ -20,6 +20,7 @@ import {
   markInterruptedPages,
   patchCandidateField,
   readPageImage,
+  readSourceFile,
   setCandidateStatus,
   vaultIsUnlocked,
 } from "@/lib/passport/store";
@@ -241,7 +242,15 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
 
   async function onRetry(pageId: string) {
     const stored = (await listPassportPages()).find((page) => page.id === pageId);
-    const file = stored ? filesRef.current.get(stored.file_id) : undefined;
+    let file = stored ? filesRef.current.get(stored.file_id) : undefined;
+    if (!file && stored) {
+      const blob = await readSourceFile(stored.file_id);
+      if (blob) {
+        const name = stored.file_id.endsWith(".txt") ? "kaynak.txt" : "kaynak.pdf";
+        file = new File([blob], name, { type: blob.type || "application/pdf" });
+        filesRef.current.set(stored.file_id, file);
+      }
+    }
     if (!stored || !file) {
       notify("Yeniden deneme için kaynak dosya bu oturumda yok.", "error");
       return;

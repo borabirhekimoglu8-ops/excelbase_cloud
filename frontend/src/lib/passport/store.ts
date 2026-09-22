@@ -174,6 +174,11 @@ export async function readPageImage(pageId: string): Promise<Blob | null> {
   return binary?.data ?? null;
 }
 
+export async function readSourceFile(fileId: string): Promise<Blob | null> {
+  const binary = await getBinary(`${PASSPORT_SOURCE_BINARY_PREFIX}${fileId}`);
+  return binary?.data ?? null;
+}
+
 export async function deleteNonApprovedCandidates(page: PassportOcrPage): Promise<PassportOcrPage> {
   const kept: string[] = [];
   for (const id of page.candidate_ids) {

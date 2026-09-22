@@ -124,7 +124,7 @@ from .workstation.schemas import (
     WorkstationRootRequest,
     WorkstationSearchRequest,
 )
-from .passportocr.security import require_local_ocr_session
+from .passportocr.security import is_loopback_client, require_local_ocr_session
 from .passportocr.service import ocr_state, recognize_image, warmup as warmup_passport_ocr
 from .passportocr.engine import EngineUnavailable
 from .workstation.service import (
@@ -288,7 +288,7 @@ def assistant_session(request: Request, response: Response) -> AssistantSessionR
     actor = optional_assistant_actor(request)
     if actor is None and assistant_settings().open_access and assistant_network_allowed(request):
         actor, token = issue_open_assistant_session()
-        _set_assistant_session_cookie(response, token)
+        _set_assistant_session_cookie(request, response, token)
         request.state.actor = actor
         return AssistantSessionResponse(
             setup_required=False,
@@ -317,7 +317,7 @@ def assistant_session_setup(
     require_bootstrap_token(payload.bootstrap_token)
     actor = setup_admin(payload.display_name, payload.pin)
     token = issue_assistant_session(actor)
-    _set_assistant_session_cookie(response, token)
+    _set_assistant_session_cookie(request, response, token)
     request.state.actor = actor
     return AssistantSessionResponse(
         setup_required=False,
@@ -337,7 +337,7 @@ def assistant_session_login(
     """Authenticate an existing user without minting a global app session."""
     actor = authenticate(payload.pin, request.client.host if request.client else "unknown")
     token = issue_assistant_session(actor)
-    _set_assistant_session_cookie(response, token)
+    _set_assistant_session_cookie(request, response, token)
     request.state.actor = actor
     return AssistantSessionResponse(
         setup_required=False,
@@ -350,19 +350,20 @@ def assistant_session_login(
 
 @app.post("/api/assistant/v1/session/logout", response_model=SimpleResult)
 def assistant_session_logout(
+    request: Request,
     response: Response,
     _actor: Actor = Depends(require_assistant_session),
 ) -> SimpleResult:
     response.delete_cookie(
         ASSISTANT_SESSION_COOKIE,
         path=ASSISTANT_SESSION_PATH,
-        secure=os.environ.get("APP_ENV", "development").lower() == "production",
+        secure=_cookie_secure(request),
         httponly=True,
         samesite="strict",
     )
     # Otherwise logging out cannot clear a session an older build issued, and
     # "log out and back in" -- the natural way to recover -- would not work.
-    _clear_legacy_assistant_session_cookies(response)
+    _clear_legacy_assistant_session_cookies(request, response)
     return SimpleResult(ok=True, message="Sonnet oturumu kapatıldı.")
 
 
@@ -750,19 +751,31 @@ async def assistant_chat(
 
 
 # ---------------------------------------------------------------- authentication
-def _set_session_cookie(response: Response, token: str) -> None:
+def _cookie_secure(request: Request) -> bool:
+    """Secure except for plain HTTP that reached the process on loopback.
+
+    uvicorn rewrites scheme/client from X-Forwarded-* only for trusted
+    proxies (127.0.0.1 by default), so a same-host TLS terminator still
+    yields https here and Render, whose proxy is not loopback, stays Secure.
+    """
+    if os.environ.get("APP_ENV", "development").lower() != "production":
+        return False
+    return not (request.url.scheme == "http" and is_loopback_client(request))
+
+
+def _set_session_cookie(request: Request, response: Response, token: str) -> None:
     response.set_cookie(
         key=SESSION_COOKIE,
         value=token,
         max_age=SESSION_DAYS * 24 * 60 * 60,
         httponly=True,
-        secure=os.environ.get("APP_ENV", "development").lower() == "production",
+        secure=_cookie_secure(request),
         samesite="lax",
         path="/",
     )
 
 
-def _clear_legacy_assistant_session_cookies(response: Response) -> None:
+def _clear_legacy_assistant_session_cookies(request: Request, response: Response) -> None:
     """Remove session cookies left at paths this app no longer issues under.
 
     Cookies are keyed by name *and* path, so a build that changes the path
@@ -774,20 +787,20 @@ def _clear_legacy_assistant_session_cookies(response: Response) -> None:
         response.delete_cookie(
             ASSISTANT_SESSION_COOKIE,
             path=legacy_path,
-            secure=os.environ.get("APP_ENV", "development").lower() == "production",
+            secure=_cookie_secure(request),
             httponly=True,
             samesite="strict",
         )
 
 
-def _set_assistant_session_cookie(response: Response, token: str) -> None:
-    _clear_legacy_assistant_session_cookies(response)
+def _set_assistant_session_cookie(request: Request, response: Response, token: str) -> None:
+    _clear_legacy_assistant_session_cookies(request, response)
     response.set_cookie(
         key=ASSISTANT_SESSION_COOKIE,
         value=token,
         max_age=ASSISTANT_SESSION_SECONDS,
         httponly=True,
-        secure=os.environ.get("APP_ENV", "development").lower() == "production",
+        secure=_cookie_secure(request),
         samesite="strict",
         path=ASSISTANT_SESSION_PATH,
     )
@@ -804,10 +817,10 @@ def auth_status(request: Request) -> AuthStatusResponse:
 
 
 @app.post("/api/auth/setup", response_model=AuthStatusResponse)
-def auth_setup(payload: AuthSetupRequest, response: Response) -> AuthStatusResponse:
+def auth_setup(payload: AuthSetupRequest, request: Request, response: Response) -> AuthStatusResponse:
     require_bootstrap_token(payload.bootstrap_token)
     actor = setup_admin(payload.display_name, payload.pin)
-    _set_session_cookie(response, issue_session(actor))
+    _set_session_cookie(request, response, issue_session(actor))
     return AuthStatusResponse(
         setup_required=False,
         authenticated=True,
@@ -818,7 +831,7 @@ def auth_setup(payload: AuthSetupRequest, response: Response) -> AuthStatusRespo
 @app.post("/api/auth/login", response_model=AuthStatusResponse)
 def auth_login(payload: AuthLoginRequest, request: Request, response: Response) -> AuthStatusResponse:
     actor = authenticate(payload.pin, request.client.host if request.client else "unknown")
-    _set_session_cookie(response, issue_session(actor))
+    _set_session_cookie(request, response, issue_session(actor))
     return AuthStatusResponse(
         setup_required=False,
         authenticated=True,

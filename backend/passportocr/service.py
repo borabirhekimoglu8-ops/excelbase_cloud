@@ -118,7 +118,7 @@ def set_engine_for_tests(engine: OcrEngine, state: str = "ready", detail: str = 
 
 def warmup(settings: PassportOcrSettings | None = None) -> dict[str, Any]:
     resolved = settings or passport_ocr_settings()
-    global _load_thread
+    global _load_thread, _engine_state, _engine_detail
     with _engine_lock:
         if _engine_state == "ready" and _engine is not None:
             return ocr_state(resolved)

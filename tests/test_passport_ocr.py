@@ -14,7 +14,7 @@ from backend.main import app
 from backend.passportocr.engine import EngineUnavailable, OcrLine
 from backend.passportocr.paddle_engine import lines_from_predict_result
 from backend.passportocr.security import local_ocr_gate_state, require_local_ocr_session
-from backend.passportocr.service import recognize_image, reset_engine_for_tests, set_engine_for_tests
+from backend.passportocr.service import recognize_image, reset_engine_for_tests, set_engine_for_tests, warmup
 
 
 SYNTHETIC_LINE = "P<TURYILMAZ<<ADA<<<<<<<<<<<<<<<<<<<<<<<<<<<"
@@ -209,3 +209,10 @@ def test_recognize_image_in_memory_only():
     result = recognize_image(_png_bytes(), "p1", _settings())
     assert result["page_id"] == "p1"
     assert result["lines"][0]["text"] == SYNTHETIC_LINE
+
+
+def test_warmup_does_not_raise_unbound_local():
+    payload = warmup(_settings())
+    assert payload["state"] in {"engine_loading", "ready", "engine_missing", "engine_error"}
+    again = warmup(_settings())
+    assert again["state"] in {"engine_loading", "ready", "engine_missing", "engine_error"}
