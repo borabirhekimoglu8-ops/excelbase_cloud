@@ -37,6 +37,10 @@ function rowReady(row: PassportScanRow): boolean {
   );
 }
 
+async function yieldForProgressPaint(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
 export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
   const { notify } = useStore();
   const [busy, setBusy] = useState(false);
@@ -55,6 +59,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
     setBusy(true);
     setProgress({ done: 0, total: files.length, current: "Hazırlanıyor…" });
     try {
+      await yieldForProgressPaint();
       const next = await scanPassportImages(files, setProgress);
       revokePassportScanPreviews(rows);
       setRows(next);

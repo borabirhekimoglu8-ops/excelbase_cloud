@@ -54,7 +54,7 @@ export type PassportScanProgress = {
 type ImageInput = { filename: string; blob: Blob };
 
 /** Vertical start ratios for MRZ band crops (passport layout varies by phone framing). */
-const MRZ_BAND_TOPS = [0.72, 0.68, 0.75, 0.62, 0.55, 0.48] as const;
+const MRZ_BAND_TOPS = [0.72, 0.68, 0.75, 0.62, 0.55] as const;
 
 /** Put the band that worked most recently first without changing the fallback order. */
 export function orderedMrzBandTops(preferred: number | null): readonly number[] {
@@ -64,19 +64,30 @@ export function orderedMrzBandTops(preferred: number | null): readonly number[] 
   return [preferred, ...MRZ_BAND_TOPS.filter((top) => top !== preferred)];
 }
 
-/** A long, filler-heavy line is enough evidence that the page is already upright. */
+/** A substantial MRZ-like line is enough evidence that the page is already upright. */
 export function hasMrzLikeSignal(text: string): boolean {
   return text.split(/\r?\n/).some((rawLine) => {
     const line = rawLine.toUpperCase().replace(/[^A-Z0-9<]/g, "");
     if (line.length < 30) return false;
+    const alphanumerics = line.match(/[A-Z0-9]/g)?.length ?? 0;
     const fillers = line.match(/</g)?.length ?? 0;
-    return fillers >= 3 && fillers / line.length >= 0.08;
+    return alphanumerics >= 20 && fillers >= 3 && fillers / line.length < 0.5;
   });
+}
+
+/** True when a parse is strong enough to skip more expensive OCR fallbacks. */
+export function isUsefulMrzParse(best: MrzParseResult | null): boolean {
+  if (!best) return false;
+  if (best.valid) return true;
+  const passportNumber = best.passportNumber.trim();
+  return passportNumber.length >= 6
+    && best.surname.trim().length >= 2
+    && /[A-Z0-9]/.test(passportNumber);
 }
 
 /** Do not rotate a weak-but-useful passport parse into a worse result. */
 export function shouldTryPassportRotations(best: MrzParseResult | null, sawMrzSignal: boolean): boolean {
-  if (best?.passportNumber) return false;
+  if (isUsefulMrzParse(best)) return false;
   return best === null || !sawMrzSignal;
 }
 
@@ -314,10 +325,24 @@ export function betterMrz(current: MrzParseResult | null, next: MrzParseResult |
   if (!current) return next;
   if (next.valid && !current.valid) return next;
   if (current.valid && !next.valid) return current;
-  if (next.passportNumber && !current.passportNumber) return next;
-  if (current.passportNumber && !next.passportNumber) return current;
+  const meaningfulFieldCount = (parsed: MrzParseResult): number => [
+    parsed.surname.trim().length >= 2,
+    parsed.givenNames.trim().length >= 2,
+    parsed.passportNumber.trim().length >= 6,
+    Boolean(parsed.birthDate),
+    Boolean(parsed.expiryDate),
+  ].filter(Boolean).length;
+  const currentFields = meaningfulFieldCount(current);
+  const nextFields = meaningfulFieldCount(next);
+  if (nextFields > currentFields) return next;
+  if (currentFields > nextFields) return current;
   if (next.warnings.length < current.warnings.length) return next;
   return current;
+}
+
+/** Let React paint progress and let pointer events run between OCR attempts. */
+async function yieldToMainThread(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 function rowFromMrz(
@@ -388,19 +413,21 @@ async function scanCanvas(
   for (const top of orderedMrzBandTops(preferredTopRatio)) {
     const band = cropBand(canvas, top, bandCanvas);
     if (!band) continue;
+    await yieldToMainThread();
     const text = await ocrText(band, slotIndex);
     sawMrzSignal ||= hasMrzLikeSignal(text);
     const parsed = extractTd3FromOcrText(text);
     const nextBest = betterMrz(best, parsed);
-    if (nextBest === parsed && parsed?.passportNumber) successfulTopRatio = top;
+    if (nextBest === parsed && parsed?.valid) successfulTopRatio = top;
     best = nextBest;
     if (best?.valid) return { best, sawMrzSignal, successfulTopRatio };
   }
 
   // A weak band parse is still more useful than paying for another full-page OCR.
-  if (!best?.passportNumber) {
+  if (!isUsefulMrzParse(best)) {
     const fullPage = prepareFullPageFallback(canvas);
     if (fullPage) {
+      await yieldToMainThread();
       const text = await ocrText(fullPage, slotIndex);
       sawMrzSignal ||= hasMrzLikeSignal(text);
       best = betterMrz(best, extractTd3FromOcrText(text));
@@ -424,6 +451,7 @@ async function scanOne(
     const prepared = await preparePassportCanvas(image.blob);
     if (!prepared) {
       // Canvas unavailable (rare) — fall back to raw blob OCR.
+      await yieldToMainThread();
       const raw = extractTd3FromOcrText(await ocrText(image.blob, slotIndex));
       return {
         row: rowFromMrz(image.filename, previewUrl, raw, raw ? [] : ["Görüntü işlenemedi; ham OCR denendi"]),
@@ -442,7 +470,7 @@ async function scanOne(
         const rotatedResult = await scanCanvas(rotated, slotIndex, preferredTopRatio);
         best = betterMrz(best, rotatedResult.best);
         successfulTopRatio = rotatedResult.successfulTopRatio ?? successfulTopRatio;
-        if (best?.valid || best?.passportNumber) break;
+        if (isUsefulMrzParse(best)) break;
       }
     }
 
@@ -476,11 +504,11 @@ export async function scanPassportImages(
   if (!images.length) {
     throw new Error("Pasaport görüntüsü bulunamadı. JPG/PNG veya bunları içeren ZIP seçin.");
   }
-  const workerCount = Math.min(MAX_OCR_WORKERS, images.length);
-  // Warm the bounded pool so the first photos do not stall on WASM download
-  // while progress still shows "Hazırlanıyor…".
+  const wantsSecondWorker = images.length > 1;
+  // Only the first worker blocks startup. A second lane may join after its
+  // worker is ready; if that initialization fails, lane zero drains the queue.
   try {
-    await Promise.all(Array.from({ length: workerCount }, (_, index) => getWorker(index)));
+    await getWorker(0);
   } catch (reason) {
     await terminatePassportOcr();
     const detail = reason instanceof Error ? reason.message : "bilinmeyen hata";
@@ -491,25 +519,41 @@ export async function scanPassportImages(
   let nextIndex = 0;
   let done = 0;
   let preferredTopRatio: number | null = null;
+  const activeFilenames = new Map<number, string>();
+
+  const emitProgress = (preferredSlot?: number): void => {
+    const current = preferredSlot === undefined
+      ? activeFilenames.values().next().value ?? ""
+      : activeFilenames.get(preferredSlot) ?? activeFilenames.values().next().value ?? "";
+    onProgress?.({ done, total: images.length, current });
+  };
 
   // Each lane owns one worker: images overlap, but crops for one image stay serial.
-  await Promise.all(Array.from({ length: workerCount }, async (_, slotIndex) => {
+  const runLane = async (slotIndex: number): Promise<void> => {
     while (nextIndex < images.length) {
       const index = nextIndex;
       nextIndex += 1;
       const image = images[index];
-      onProgress?.({ done, total: images.length, current: image.filename });
+      activeFilenames.set(slotIndex, image.filename);
+      emitProgress(slotIndex);
+      await yieldToMainThread();
       const result = await scanOne(image, slotIndex, preferredTopRatio);
       rows[index] = result.row;
       if (result.successfulTopRatio !== null) preferredTopRatio = result.successfulTopRatio;
       done += 1;
-      onProgress?.({
-        done,
-        total: images.length,
-        current: done === images.length ? "" : image.filename,
-      });
+      activeFilenames.delete(slotIndex);
+      emitProgress();
     }
-  }));
+  };
+
+  const lanes: Promise<void>[] = [runLane(0)];
+  if (wantsSecondWorker) {
+    const secondLane = getWorker(1)
+      .then(() => runLane(1))
+      .catch(() => undefined);
+    lanes.push(secondLane);
+  }
+  await Promise.all(lanes);
   return rows;
 }
 

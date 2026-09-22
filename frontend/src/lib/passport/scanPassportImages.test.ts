@@ -4,6 +4,7 @@ import { parseTd3Mrz, type MrzParseResult } from "./mrz";
 import {
   betterMrz,
   hasMrzLikeSignal,
+  isUsefulMrzParse,
   orderedMrzBandTops,
   shouldTryPassportRotations,
 } from "./scanPassportImages";
@@ -19,11 +20,15 @@ function sampleMrz(): MrzParseResult {
 
 describe("orderedMrzBandTops", () => {
   it("starts with common lower-page passport bands", () => {
-    expect(orderedMrzBandTops(null)).toEqual([0.72, 0.68, 0.75, 0.62, 0.55, 0.48]);
+    expect(orderedMrzBandTops(null)).toEqual([0.72, 0.68, 0.75, 0.62, 0.55]);
   });
 
   it("tries the last successful session band first without duplicates", () => {
-    expect(orderedMrzBandTops(0.55)).toEqual([0.55, 0.72, 0.68, 0.75, 0.62, 0.48]);
+    expect(orderedMrzBandTops(0.55)).toEqual([0.55, 0.72, 0.68, 0.75, 0.62]);
+  });
+
+  it("ignores unknown preferred bands", () => {
+    expect(orderedMrzBandTops(0.99)).toEqual(orderedMrzBandTops(null));
   });
 });
 
@@ -34,6 +39,43 @@ describe("hasMrzLikeSignal", () => {
 
   it("rejects ordinary biodata labels", () => {
     expect(hasMrzLikeSignal("PASSPORT\nSURNAME ERIKSSON\nDATE OF BIRTH 12 AUG 1974")).toBe(false);
+  });
+
+  it("rejects filler-only lines with a stray document character or digit", () => {
+    expect(hasMrzLikeSignal(`P${"<".repeat(43)}\n1${"<".repeat(43)}`)).toBe(false);
+  });
+});
+
+describe("isUsefulMrzParse", () => {
+  it("accepts valid parses and complete weak parses", () => {
+    const parsed = sampleMrz();
+    expect(isUsefulMrzParse(parsed)).toBe(true);
+    expect(isUsefulMrzParse({
+      ...parsed,
+      valid: false,
+      warnings: ["sentetik kontrol uyarısı"],
+    })).toBe(true);
+  });
+
+  it("rejects null, short junk numbers, filler numbers, and missing surnames", () => {
+    const parsed = sampleMrz();
+    expect(isUsefulMrzParse(null)).toBe(false);
+    expect(isUsefulMrzParse({
+      ...parsed,
+      valid: false,
+      passportNumber: "1",
+      surname: "",
+    })).toBe(false);
+    expect(isUsefulMrzParse({
+      ...parsed,
+      valid: false,
+      passportNumber: "<<<<<<",
+    })).toBe(false);
+    expect(isUsefulMrzParse({
+      ...parsed,
+      valid: false,
+      surname: " ",
+    })).toBe(false);
   });
 });
 
@@ -53,6 +95,17 @@ describe("shouldTryPassportRotations", () => {
     expect(shouldTryPassportRotations(incomplete, true)).toBe(false);
     expect(shouldTryPassportRotations(incomplete, false)).toBe(true);
   });
+
+  it("does not let a junk passport number suppress rotation recovery", () => {
+    const junk = {
+      ...sampleMrz(),
+      valid: false,
+      surname: "",
+      passportNumber: "1",
+      warnings: [],
+    };
+    expect(shouldTryPassportRotations(junk, false)).toBe(true);
+  });
 });
 
 describe("betterMrz", () => {
@@ -61,5 +114,26 @@ describe("betterMrz", () => {
     const empty = { ...parsed, valid: false, passportNumber: "", warnings: [] };
     const weak = { ...parsed, valid: false, warnings: ["sentetik kontrol uyarısı"] };
     expect(betterMrz(empty, weak)).toBe(weak);
+  });
+
+  it("prefers a filled weak parse over zero-warning junk", () => {
+    const parsed = sampleMrz();
+    const realWeak = {
+      ...parsed,
+      valid: false,
+      warnings: ["sentetik kontrol uyarısı 1", "sentetik kontrol uyarısı 2"],
+    };
+    const junk = {
+      ...parsed,
+      valid: false,
+      surname: "",
+      givenNames: "",
+      passportNumber: "1",
+      birthDate: "",
+      expiryDate: "",
+      warnings: [],
+    };
+    expect(betterMrz(junk, realWeak)).toBe(realWeak);
+    expect(betterMrz(realWeak, junk)).toBe(realWeak);
   });
 });
