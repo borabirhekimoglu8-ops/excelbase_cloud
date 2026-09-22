@@ -11,7 +11,7 @@ test("pasaport WhatsApp PDF ve görüntü ekranı açılır", async ({ page }) =
   await openGateVisa(page);
   await page.getByRole("button", { name: /Pasaport → Excel/i }).click();
   await expect(page.getByRole("heading", { name: /Pasaport → Excel/i })).toBeVisible();
-  await expect(page.getByText("PDF veya pasaport fotoğraflarını bırakın")).toBeVisible();
+  await expect(page.getByText("Metin katmanlı PDF bırakın")).toBeVisible();
   await expect(page.getByText("Alternatif: Live Text ile MRZ yapıştır")).toBeVisible();
   await expect(page.getByLabel("MRZ satırlarını yapıştır")).toBeHidden();
   await expect(page.locator(".xb-photo-drop input[type='file']")).toHaveAttribute(

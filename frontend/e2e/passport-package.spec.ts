@@ -75,7 +75,7 @@ test("mock OCR package moves encrypted rows and source image across fresh contex
       mimeType: "image/png",
       buffer: PNG_1X1,
     });
-    await expect(pageA.locator(".xb-passport-rows")).toContainText("YILMAZ");
+    await expect(pageA.getByLabel("Yolcu Soyadı")).toHaveValue("YILMAZ");
 
     await pageA.getByText("Şifreli sonuç paketi aktar").click();
     const downloadPromise = pageA.waitForEvent("download");
@@ -97,7 +97,7 @@ test("mock OCR package moves encrypted rows and source image across fresh contex
     await pageB.getByLabel("Şifreli paket dosyası").setInputFiles(packagePath!);
     await pageB.getByRole("button", { name: "Paketi içe aktar" }).click();
 
-    await expect(pageB.locator(".xb-passport-rows")).toContainText("YILMAZ");
+    await expect(pageB.getByLabel("Yolcu Soyadı")).toHaveValue("YILMAZ");
     await pageB.getByText("Kaynak sayfayı göster").click();
     await expect(pageB.locator(".xb-passport-viewer img")).toHaveAttribute("src", /^blob:/);
     await expect(pageB.locator(".xb-passport-field-rect")).toBeVisible();
