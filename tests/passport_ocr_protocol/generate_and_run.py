@@ -36,8 +36,10 @@ SOURCE_DIR = OUTPUT_DIR / "sources"
 STATUS_FILE = OUTPUT_DIR / "README.md"
 RESULT_FILE = OUTPUT_DIR / "ppocrv6-synthetic.json"
 
-LINE1 = "P<UTOYILMAZ<<ADA<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
-LINE2 = "U1000001<6UTO9001011F301231610000000146<<<44"
+UTO_LINE1 = "P<UTOYILMAZ<<ADA<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+UTO_LINE2 = "U1000001<6UTO9001011F301231610000000146<<<44"
+TUR_LINE1 = "P<TURYILMAZ<<ADA<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+TUR_LINE2 = "U1000001<6TUR9001011F301231610000000146<<<44"
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,7 @@ class Variant:
     source_kind: str
     source_bytes: bytes
     processed_image: bytes
+    nationality: str
     raster: dict[str, int] | None = None
 
 
@@ -64,26 +67,61 @@ def _font(size: int, mono: bool = False) -> ImageFont.FreeTypeFont | ImageFont.I
     return ImageFont.load_default()
 
 
-def _passport(viz_only: bool = False) -> Image.Image:
-    image = Image.new("RGB", (1600, 1000 if not viz_only else 520), "#f5f1df")
+def _passport(
+    nationality: str,
+    *,
+    line1: str = "",
+    line2: str = "",
+    native: bool = False,
+) -> Image.Image:
+    width, height = (2600, 1625) if native else (1600, 1000)
+    if not line1:
+        height = 760
+    scale = width / 1600
+    image = Image.new("RGB", (width, height), "#f5f1df")
     draw = ImageDraw.Draw(image)
-    draw.text((90, 70), "PASSPORT / PASAPORT", fill="#152a38", font=_font(52))
+    draw.text(
+        (round(90 * scale), round(70 * scale)),
+        "PASSPORT / PASAPORT",
+        fill="#152a38",
+        font=_font(round(52 * scale)),
+    )
     fields = [
         ("Surname / Soyadı", "YILMAZ"),
         ("Given names / Adları", "ADA"),
         ("Passport No", "U1000001"),
-        ("Nationality", "XXA" if viz_only else "UTO"),
+        ("Nationality", nationality),
         ("Date of birth", "01.01.1990"),
         ("Date of expiry", "31.12.2030"),
     ]
     for index, (label, value) in enumerate(fields):
-        y = 170 + index * 82
-        draw.text((100, y), label, fill="#405462", font=_font(27))
-        draw.text((520, y), value, fill="#101820", font=_font(34))
-    if not viz_only:
-        draw.rectangle((70, 790, 1530, 950), outline="#273d49", width=3)
-        draw.text((95, 810), LINE1, fill="#101820", font=_font(28, mono=True))
-        draw.text((95, 870), LINE2, fill="#101820", font=_font(28, mono=True))
+        y = round((170 + index * 82) * scale)
+        draw.text((round(100 * scale), y), label, fill="#405462", font=_font(round(27 * scale)))
+        draw.text((round(520 * scale), y), value, fill="#101820", font=_font(round(34 * scale)))
+    if line1 and line2:
+        draw.rectangle(
+            (
+                round(70 * scale),
+                round(790 * scale),
+                round(1530 * scale),
+                round(950 * scale),
+            ),
+            outline="#273d49",
+            width=max(3, round(3 * scale)),
+        )
+        mrz_size = max(48 if native else 28, round(28 * scale))
+        draw.text(
+            (round(95 * scale), round(810 * scale)),
+            line1,
+            fill="#101820",
+            font=_font(mrz_size, mono=True),
+        )
+        draw.text(
+            (round(95 * scale), round(870 * scale)),
+            line2,
+            fill="#101820",
+            font=_font(mrz_size, mono=True),
+        )
     return image
 
 
@@ -97,16 +135,18 @@ def _bytes(image: Image.Image, kind: str, quality: int = 90) -> bytes:
 
 
 def _variants() -> list[Variant]:
-    clean = _passport()
-    plus = clean.rotate(3, expand=True, fillcolor="white")
-    minus = clean.rotate(-3, expand=True, fillcolor="white")
+    tur_clean = _passport("TUR", line1=TUR_LINE1, line2=TUR_LINE2, native=True)
+    uto = _passport("UTO", line1=UTO_LINE1, line2=UTO_LINE2)
+    plus = uto.rotate(3, expand=True, fillcolor="white")
+    minus = uto.rotate(-3, expand=True, fillcolor="white")
 
-    # Equivalent to the browser contract: 250 dpi, long edge <=2600, JPEG 0.9.
-    pdf_raster = clean.resize((2600, 1625), Image.Resampling.LANCZOS)
+    # Native 2600x1625 source, embedded as an image-only 250 dpi PDF page.
+    pdf_raster = tur_clean
     pdf_buffer = io.BytesIO()
     pdf_raster.save(pdf_buffer, format="PDF", resolution=250)
     pdf_bytes = pdf_buffer.getvalue()
     assert pdf_bytes.startswith(b"%PDF")
+    assert b"/Font" not in pdf_bytes
 
     def image_variant(
         name: str,
@@ -114,22 +154,21 @@ def _variants() -> list[Variant]:
         source_kind: str,
         image: Image.Image,
         image_format: str,
+        nationality: str,
         quality: int = 90,
     ) -> Variant:
         source = _bytes(image, image_format, quality)
-        return Variant(name, filename, source_kind, source, source)
+        return Variant(name, filename, source_kind, source, source, nationality)
 
     return [
-        image_variant("clean_png", "clean.png", "png", clean, "PNG"),
-        image_variant("jpeg_q35", "jpeg-q35.jpg", "jpeg", clean, "JPEG", 35),
-        image_variant("skew_plus_3_png", "skew-plus-3.png", "png", plus, "PNG"),
-        image_variant("skew_minus_3_png", "skew-minus-3.png", "png", minus, "PNG"),
+        image_variant("tur_clean_png", "tur-clean.png", "png", tur_clean, "PNG", "TUR"),
         Variant(
-            "image_pdf_raster_250dpi_2600_jpeg90",
-            "image-pdf-250dpi.pdf",
+            "tur_image_pdf_raster_250dpi_2600_jpeg90",
+            "tur-image-pdf-250dpi.pdf",
             "image_pdf",
             pdf_bytes,
             _bytes(pdf_raster, "JPEG", 90),
+            "TUR",
             {
                 "dpi": 250,
                 "long_edge_max": 2600,
@@ -138,12 +177,16 @@ def _variants() -> list[Variant]:
                 "processed_height": 1625,
             },
         ),
+        image_variant("uto_jpeg_q35", "uto-jpeg-q35.jpg", "jpeg", uto, "JPEG", "UTO", 35),
+        image_variant("uto_skew_plus_3_png", "uto-skew-plus-3.png", "png", plus, "PNG", "UTO"),
+        image_variant("uto_skew_minus_3_png", "uto-skew-minus-3.png", "png", minus, "PNG", "UTO"),
         image_variant(
             "viz_only_xxa_crop_png",
             "viz-only-xxa-crop.png",
             "png",
-            _passport(viz_only=True),
+            _passport("XXA"),
             "PNG",
+            "XXA",
         ),
     ]
 
@@ -241,31 +284,41 @@ def _find_mrz_pair(lines: list[dict[str, Any]]) -> dict[str, Any]:
         and not line.startswith(("P<", "PA", "PO"))
     ]
     fallback: dict[str, Any] | None = None
+    saw_line1_charset = False
     for upper in uppers:
         for lower in lowers:
             for repaired_upper in _repair_td3_length(upper):
                 for repaired_lower in _repair_td3_length(lower):
+                    if not re.fullmatch(r"[A-Z<]{44}", repaired_upper):
+                        saw_line1_charset = True
+                        continue
                     parsed = _parse_td3(repaired_upper, repaired_lower)
                     if parsed is None:
                         continue
-                    fallback = parsed
+                    fallback = {
+                        **parsed,
+                        "reject_reason": None if parsed["verified"] else "checksum",
+                    }
                     if parsed["verified"]:
-                        return parsed
-    return fallback or {
+                        return fallback
+    if fallback:
+        return fallback
+    return {
         "pair_found": False,
         "verified": False,
         "status": "not_found",
+        "reject_reason": "line1_charset" if saw_line1_charset else "not_found",
         "fields": {},
         "checks": {},
     }
 
 
-def _expected_fields(viz_only: bool) -> dict[str, str]:
+def _expected_fields(nationality: str) -> dict[str, str]:
     return {
         "surname": "YILMAZ",
         "given_names": "ADA",
         "passport_no": "U1000001",
-        "nationality": "XXA" if viz_only else "UTO",
+        "nationality": nationality,
         "date_of_birth": "1990-01-01",
         "date_of_birth_mrz": "900101",
         "date_of_expiry": "2030-12-31",
@@ -358,7 +411,7 @@ def test_generate_and_run_ppocrv6_image_protocol() -> None:
             source_path = SOURCE_DIR / variant.source_filename
             source_path.write_bytes(variant.source_bytes)
             payload = recognize_image(variant.processed_image, variant.name, settings)
-            expected = _expected_fields(variant.name == "viz_only_xxa_crop_png")
+            expected = _expected_fields(variant.nationality)
             parser_result = _find_mrz_pair(payload["lines"])
             results.append(
                 {
@@ -414,3 +467,7 @@ def test_generate_and_run_ppocrv6_image_protocol() -> None:
         encoding="utf-8",
     )
     assert len(results) == 6
+    tur_results = [item for item in results if item["expected_fields"]["nationality"] == "TUR"]
+    assert len(tur_results) == 2
+    assert all(item["parser_result"]["pair_found"] for item in tur_results)
+    assert all(item["parser_result"]["verified"] for item in tur_results)
