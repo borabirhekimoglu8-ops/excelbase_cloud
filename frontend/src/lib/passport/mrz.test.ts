@@ -1,89 +1,73 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  extractTd3FromOcrText,
-  mrzCheckDigit,
-  mrzDateToIso,
-  parseTd3Mrz,
-  parseTd3WithRepair,
-} from "./mrz";
+import { mrzCheckDigit, mrzDateToIso, parseTd3FromCells } from "./mrz";
+import type { Cell } from "./mrzGrid";
 
-// ICAO sample TD3 from Doc 9303.
 const LINE1 = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
 const LINE2 = "L898902C36UTO7408122F1204159ZE184226B<<<<<10";
 
-describe("mrzCheckDigit", () => {
+function cells(line: string): Cell[] {
+  return [...line].map((value, index) => ({
+    index,
+    x0: index,
+    x1: index + 1,
+    candidates: [{ value, confidence: 99, passes: ["synthetic"] }],
+    disputed: false,
+  }));
+}
+
+function turkishFixture(): [string, string] {
+  const upper = "P<TURYILMAZ<<ADA".padEnd(44, "<");
+  const passport = "U1000001<";
+  const birth = "900101";
+  const expiry = "301231";
+  const personal = "10000000146<<<";
+  const passportPart = `${passport}${mrzCheckDigit(passport)}`;
+  const birthPart = `${birth}${mrzCheckDigit(birth)}`;
+  const expiryPart = `${expiry}${mrzCheckDigit(expiry)}`;
+  const personalPart = `${personal}${mrzCheckDigit(personal)}`;
+  const composite = `${passportPart}${birthPart}${expiryPart}${personalPart}`;
+  const lower = `${passportPart}TUR${birthPart}F${expiryPart}${personalPart}`
+    + mrzCheckDigit(composite);
+  return [upper, lower];
+}
+
+describe("MRZ primitives", () => {
   it("matches the ICAO sample passport number check", () => {
     expect(mrzCheckDigit("L898902C3")).toBe("6");
   });
-});
 
-describe("mrzDateToIso", () => {
-  it("maps YYMMDD with a 1950–2049 pivot", () => {
+  it("keeps the display pivot and rejects invalid calendar dates", () => {
     expect(mrzDateToIso("740812")).toBe("1974-08-12");
     expect(mrzDateToIso("120415")).toBe("2012-04-15");
+    expect(mrzDateToIso("230231")).toBe("");
   });
 });
 
-describe("parseTd3Mrz", () => {
-  it("reads the ICAO sample passport", () => {
-    const parsed = parseTd3Mrz(LINE1, LINE2);
-    expect(parsed).not.toBeNull();
+describe("parseTd3FromCells", () => {
+  it("reads a fully verified ICAO sample", () => {
+    const parsed = parseTd3FromCells(
+      cells(LINE1),
+      cells(LINE2),
+      new Date("2026-09-22T00:00:00Z"),
+    );
     expect(parsed?.surname).toBe("ERIKSSON");
     expect(parsed?.givenNames).toBe("ANNA MARIA");
     expect(parsed?.passportNumber).toBe("L898902C3");
-    expect(parsed?.nationality).toBe("UTO");
-    expect(parsed?.birthDate).toBe("1974-08-12");
-    expect(parsed?.sex).toBe("F");
-    expect(parsed?.expiryDate).toBe("2012-04-15");
-    expect(parsed?.valid).toBe(true);
-  });
-});
-
-describe("extractTd3FromOcrText", () => {
-  it("finds MRZ lines inside noisy OCR output", () => {
-    const text = [
-      "REPUBLIC OF UTOPIA",
-      "PASSPORT",
-      "Surname / Nom ERIKSSON",
-      LINE1,
-      LINE2,
-      "Authority",
-    ].join("\n");
-    const parsed = extractTd3FromOcrText(text);
-    expect(parsed?.passportNumber).toBe("L898902C3");
-    expect(parsed?.surname).toBe("ERIKSSON");
-    expect(parsed?.valid).toBe(true);
+    expect(parsed?.verified).toBe(true);
   });
 
-  it("recovers phone-photo OCR with a stray prefix and O/0 nationality swap", () => {
-    const text = [
-      "PASSPORTPASAPORT",
-      "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<LLL<<",
-      "1L898902C36UT07408122F1204159ZE184226B<<<<<10",
-    ].join("\n");
-    const parsed = extractTd3FromOcrText(text);
-    expect(parsed?.passportNumber).toBe("L898902C3");
-    expect(parsed?.surname).toBe("ERIKSSON");
-    expect(parsed?.nationality).toBe("UTO");
-    expect(parsed?.valid).toBe(true);
-  });
-});
-
-describe("parseTd3WithRepair", () => {
-  it("removes one leading junk glyph from each line", () => {
-    const parsed = parseTd3WithRepair(`X${LINE1}`, `7${LINE2}`);
-    expect(parsed?.valid).toBe(true);
-    expect(parsed?.passportNumber).toBe("L898902C3");
-    expect(parsed?.surname).toBe("ERIKSSON");
-  });
-
-  it("restores one omitted filler without guessing passport fields", () => {
-    const shortenedLine1 = `${LINE1.slice(0, 40)}${LINE1.slice(41)}`;
-    const shortenedLine2 = `${LINE2.slice(0, 39)}${LINE2.slice(40)}`;
-    const parsed = parseTd3WithRepair(shortenedLine1, shortenedLine2);
-    expect(parsed?.valid).toBe(true);
-    expect(parsed?.line1).toBe(LINE1);
-    expect(parsed?.line2).toBe(LINE2);
+  it("returns a TC number only for a valid TUR personal number", () => {
+    const [upper, lower] = turkishFixture();
+    const parsed = parseTd3FromCells(
+      cells(upper),
+      cells(lower),
+      new Date("2026-09-22T00:00:00Z"),
+    );
+    expect(parsed?.surname).toBe("YILMAZ");
+    expect(parsed?.givenNames).toBe("ADA");
+    expect(parsed?.passportNumber).toBe("U1000001");
+    expect(parsed?.nationalId).toBe("10000000146");
+    expect(parsed?.verified).toBe(true);
   });
 });

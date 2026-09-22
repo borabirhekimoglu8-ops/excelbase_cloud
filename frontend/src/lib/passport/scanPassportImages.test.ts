@@ -1,54 +1,54 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { parseTd3Mrz, type MrzParseResult } from "./mrz";
+import type { Cell } from "./mrzGrid";
 import {
-  betterMrz,
+  classifyMrzRoles,
   documentTypeFromMrzCode,
   revokePassportScanPreviews,
+  rowFromMrz,
   type PassportScanRow,
 } from "./scanPassportImages";
 
-const LINE1 = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
-const LINE2 = "L898902C36UTO7408122F1204159ZE184226B<<<<<10";
+const TD3_UPPER = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
+const TD3_LOWER = "L898902C36UTO7408122F1204159ZE184226B<<<<<10";
 
-function sampleMrz(): MrzParseResult {
-  const parsed = parseTd3Mrz(LINE1, LINE2);
-  if (!parsed) throw new Error("Synthetic MRZ fixture must parse");
-  return parsed;
+function cells(line: string): Cell[] {
+  return [...line].map((value, index) => ({
+    index,
+    x0: index,
+    x1: index + 1,
+    candidates: [{ value, confidence: 99, passes: ["synthetic"] }],
+    disputed: false,
+  }));
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("documentTypeFromMrzCode", () => {
-  it("maps identity cards separately and defaults travel documents to passport", () => {
+describe("passport MRZ role gates", () => {
+  it("recognises TD3 and explicitly rejects TD1 identity cards", () => {
+    expect(classifyMrzRoles(cells(TD3_UPPER), cells(TD3_LOWER))).toBe("td3");
+    const td1Upper = `I<TUR${"ADA<YILMAZ".padEnd(39, "<")}`;
+    expect(classifyMrzRoles(cells(td1Upper), cells(TD3_LOWER))).toBe("td1");
     expect(documentTypeFromMrzCode("I<")).toBe("ID CARD");
-    expect(documentTypeFromMrzCode("P<")).toBe("Passport");
   });
 });
 
-describe("betterMrz", () => {
-  it("always prefers a valid check-digit parse", () => {
-    const valid = sampleMrz();
-    const weak = { ...valid, valid: false, warnings: ["sentetik kontrol uyarısı"] };
-    expect(betterMrz(weak, valid)).toBe(valid);
-    expect(betterMrz(valid, weak)).toBe(valid);
-  });
-
-  it("keeps the more complete weak parse", () => {
-    const parsed = sampleMrz();
-    const complete = { ...parsed, valid: false, warnings: ["sentetik uyarı"] };
-    const sparse = {
-      ...complete,
-      surname: "",
-      givenNames: "",
-      passportNumber: "1",
-      birthDate: "",
-      expiryDate: "",
-      warnings: [],
-    };
-    expect(betterMrz(sparse, complete)).toBe(complete);
+describe("safe failed rows", () => {
+  it("keeps every passport field empty when the locator returns no MRZ", () => {
+    const row = rowFromMrz(
+      "sentetik.jpg",
+      "blob:sentetik",
+      null,
+      ["MRZ alanı bulunamadı — alanlar boş bırakıldı"],
+    );
+    expect(row.status).toBe("failed");
+    expect(row.firstName).toBe("");
+    expect(row.lastName).toBe("");
+    expect(row.passportNo).toBe("");
+    expect(row.countryCode2).toBe("");
+    expect(row.tcNo).toBe("");
   });
 });
 

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import * as XLSX from "@e965/xlsx";
 
+import { icaoCountryToIso2 } from "./icaoCountries";
 import {
   PASSPORT_OPERATOR_HEADERS,
   createPassportOperatorXlsxBlob,
   formatOperatorDate,
   formatOperatorSex,
-  nationalityToCountryCode2,
 } from "./operatorExcel";
 
 describe("operatorExcel", () => {
@@ -47,10 +47,11 @@ describe("operatorExcel", () => {
         firstName: "ANNA MARIA",
         lastName: "ERIKSSON",
         birthDate: "1974-08-12",
-        countryCode2: nationalityToCountryCode2("TUR"),
+        countryCode2: icaoCountryToIso2("TUR"),
         passportExpiry: "2030-04-15",
         passportNo: "U12345678",
         sex: "F",
+        tcNo: "10000000146",
       },
     ]);
     const workbook = XLSX.read(await blob.arrayBuffer(), { type: "array" });
@@ -69,14 +70,14 @@ describe("operatorExcel", () => {
     expect(sheet.L2.v).toBe("");
     expect(sheet.M2.v).toBe("");
     expect(sheet.N2.v).toBe("");
-    expect(sheet.O2.v).toBe("");
+    expect(sheet.O2.v).toBe("10000000146");
     expect(sheet.P2.v).toBe("Passport");
   });
 
   it("writes ID CARD when the operator selects it", async () => {
     const blob = createPassportOperatorXlsxBlob([
       {
-        firstName: "AYSE",
+        firstName: "ADA",
         lastName: "YILMAZ",
         birthDate: "1990-01-02",
         countryCode2: "TR",
@@ -92,8 +93,9 @@ describe("operatorExcel", () => {
   });
 
   it("maps nationality and sex for the operator sheet", () => {
-    expect(nationalityToCountryCode2("TUR")).toBe("TR");
-    expect(nationalityToCountryCode2("GR")).toBe("GR");
+    expect(icaoCountryToIso2("TUR")).toBe("TR");
+    expect(icaoCountryToIso2("EST")).toBe("EE");
+    expect(icaoCountryToIso2("XYZ")).toBe("");
     expect(formatOperatorSex("M")).toBe("E");
     expect(formatOperatorSex("F")).toBe("K");
     expect(formatOperatorDate("2026-07-16")).toBe("16.07.2026");

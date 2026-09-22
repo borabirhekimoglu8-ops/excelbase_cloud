@@ -1,4 +1,4 @@
-import type { MrzBand, MrzLineSlice } from "./mrzLocator";
+import { inkMask, type MrzBand, type MrzLineSlice } from "./mrzLocator";
 
 export type QuarterTurn = 0 | 1 | 2 | 3;
 
@@ -155,13 +155,14 @@ export function cropDeskewed(
 export function lineCanvas(
   source: HTMLCanvasElement,
   slice: Pick<MrzLineSlice, "top" | "bottom">,
+  sharedScale?: number,
 ): HTMLCanvasElement | null {
   const top = Math.max(0, Math.floor(slice.top));
   const bottom = Math.min(source.height, Math.ceil(slice.bottom));
   const sourceHeight = bottom - top;
   if (sourceHeight < 1) return null;
   const targetHeight = Math.max(sourceHeight, 96);
-  const scale = Math.min(targetHeight / sourceHeight, 3, 2400 / source.width);
+  const scale = sharedScale ?? Math.min(targetHeight / sourceHeight, 3, 2400 / source.width);
   const horizontalPadding = Math.max(8, Math.round(source.width * 0.012 * scale));
   const verticalPadding = Math.max(5, Math.round(sourceHeight * 0.12 * scale));
   const output = document.createElement("canvas");
@@ -184,6 +185,66 @@ export function lineCanvas(
     Math.round(source.width * scale),
     Math.round(sourceHeight * scale),
   );
+  return output;
+}
+
+/** Extract both TD3 lines with one scale so their 44-cell pitch is identical. */
+export function lineCanvases(
+  source: HTMLCanvasElement,
+  slices: readonly Pick<MrzLineSlice, "top" | "bottom">[],
+): [HTMLCanvasElement, HTMLCanvasElement] | null {
+  if (slices.length !== 2) return null;
+  const heights = slices.map((slice) => (
+    Math.min(source.height, Math.ceil(slice.bottom)) - Math.max(0, Math.floor(slice.top))
+  ));
+  if (heights.some((height) => height < 1)) return null;
+  const scale = Math.min(
+    Math.max(1, 96 / Math.min(...heights)),
+    3,
+    2400 / source.width,
+  );
+  const first = lineCanvas(source, slices[0], scale);
+  const second = lineCanvas(source, slices[1], scale);
+  return first && second ? [first, second] : null;
+}
+
+/** Render the locator's local-contrast ink mask as a black/white OCR pass. */
+export function binarizedLineCanvas(source: HTMLCanvasElement): HTMLCanvasElement | null {
+  const gray = canvasGray(source);
+  if (!gray) return null;
+  const mask = inkMask(gray, source.width, source.height);
+  const output = document.createElement("canvas");
+  output.width = source.width;
+  output.height = source.height;
+  const context = output.getContext("2d");
+  if (!context) return null;
+  const image = context.createImageData(output.width, output.height);
+  for (let index = 0; index < mask.length; index += 1) {
+    const shade = mask[index] ? 0 : 255;
+    const target = index * 4;
+    image.data[target] = shade;
+    image.data[target + 1] = shade;
+    image.data[target + 2] = shade;
+    image.data[target + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+  return output;
+}
+
+export function scaleLineCanvas(
+  source: HTMLCanvasElement,
+  multiplier = 1.5,
+): HTMLCanvasElement | null {
+  const output = document.createElement("canvas");
+  output.width = Math.max(1, Math.round(source.width * multiplier));
+  output.height = Math.max(1, Math.round(source.height * multiplier));
+  const context = output.getContext("2d");
+  if (!context) return null;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, output.width, output.height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(source, 0, 0, output.width, output.height);
   return output;
 }
 

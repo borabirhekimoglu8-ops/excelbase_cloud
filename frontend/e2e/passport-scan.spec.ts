@@ -33,7 +33,10 @@ test("pasaport JPG MRZ okur", async ({ page }) => {
   const passportNo = page.locator(".xb-passport-rows input").nth(2);
   await expect(passportNo).toHaveValue(/L898902C3/i, { timeout: 30_000 });
   const country = page.locator(".xb-passport-rows input").nth(3);
-  await expect(country).toHaveValue(/^[A-Z]{2}$/);
+  // UTO is the fictional ICAO sample state. Unknown codes must stay blank.
+  await expect(country).toHaveValue("");
+  await country.fill("TR");
+  await expect(page.getByLabel("TC.No")).toBeVisible();
   await expect(page.locator(".xb-passport-rows select")).toHaveValue("Passport");
   // Visa date inputs were removed from the scan UI (template columns stay in Excel).
   await expect(page.getByLabel(/Vize Başlangıç/i)).toHaveCount(0);
