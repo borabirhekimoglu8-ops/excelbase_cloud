@@ -9,7 +9,11 @@ test("pasaport tarama ekranı açılır", async ({ page }) => {
   await openGateVisa(page);
   await page.getByRole("button", { name: /Pasaport JPG/i }).click();
   await expect(page.getByRole("heading", { name: /Pasaport JPG → Excel/i })).toBeVisible();
-  await expect(page.getByText(/Pasaport JPG veya ZIP bırakın/i)).toBeVisible();
+  await expect(page.getByText("Pasaport JPG, PDF veya ZIP")).toBeVisible();
+  await expect(page.locator(".xb-photo-drop input[type='file']")).toHaveAttribute(
+    "accept",
+    /(?:^|,)\.pdf,application\/pdf(?:,|$)/,
+  );
 });
 
 test("pasaport JPG MRZ okur", async ({ page }) => {

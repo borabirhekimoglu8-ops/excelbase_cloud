@@ -3,7 +3,7 @@
  * Passenger records are handled by the application data layer. This worker
  * only keeps the static application shell available when the network is down.
  */
-const SHELL_VERSION = "2026.09.22.1";
+const SHELL_VERSION = "2026.09.22.2";
 const CACHE_PREFIX = "excelbase-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const CORE_ASSETS = [
@@ -21,6 +21,7 @@ const OCR_ASSETS = [
   "/tesseract/tesseract-core-lstm.wasm.js",
   "/tesseract/tesseract-core-lstm.wasm",
   "/tesseract/lang-data/mrz.traineddata.gz",
+  "/pdfjs/pdf.worker.min.mjs",
 ];
 
 function isCacheableResponse(response) {
