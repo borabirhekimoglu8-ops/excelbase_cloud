@@ -64,7 +64,7 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
   async function runScan(files: File[]) {
     if (!files.length) return;
     setBusy(true);
-    setProgress({ done: 0, total: files.length, current: "Hazırlanıyor…" });
+    setProgress({ done: 0, total: 0, current: "Dosyalar açılıyor…" });
     try {
       await yieldForProgressPaint();
       const next = await scanPassportImages(files, setProgress);
@@ -162,14 +162,14 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
       >
-        <strong>{busy ? "Okunuyor…" : "Pasaport JPG veya ZIP bırakın"}</strong>
-        <span>Biyometrik sayfa · alttaki iki MRZ satırı net görünsün · toplu seçim veya ZIP</span>
-        <em>İşlem cihazda yapılır; fotoğraflar sunucuya gönderilmez</em>
+        <strong>{busy ? "Okunuyor…" : "Pasaport JPG, PDF veya ZIP"}</strong>
+        <span>Biyometrik sayfa · alttaki iki MRZ satırı net görünsün · toplu seçim veya ZIP bırakın</span>
+        <em>İşlem cihazda yapılır; pasaport sayfaları sunucuya gönderilmez</em>
         <input
           type="file"
-          accept={`${IMAGE_ACCEPT},.zip,application/zip`}
+          accept={`${IMAGE_ACCEPT},.pdf,application/pdf,.zip,application/zip`}
           multiple
-          aria-label="Pasaport fotoğrafları seç"
+          aria-label="Pasaport dosyaları seç"
           disabled={busy}
           onChange={onPick}
         />
@@ -177,8 +177,8 @@ export function PassportScanTab({ onOpenImport }: PassportScanTabProps) {
 
       {progress && (
         <p className="xb-passport-progress" aria-live="polite">
-          {progress.done}/{progress.total}
-          {progress.current ? ` · ${progress.current}` : ""}
+          {progress.total > 0 ? `${progress.done}/${progress.total}` : ""}
+          {progress.current ? `${progress.total > 0 ? " · " : ""}${progress.current}` : ""}
         </p>
       )}
 

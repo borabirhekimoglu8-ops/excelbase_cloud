@@ -30,6 +30,7 @@ import {
   type QuarterTurn,
 } from "@/lib/passport/mrzCanvas";
 import { findMrzBand, splitLines, type MrzBand } from "@/lib/passport/mrzLocator";
+import { rasterizePdfToImages } from "@/lib/passport/pdfToImages";
 import { normalizePhoto } from "@/lib/photoNormalize";
 
 export type PassportScanStatus = "ok" | "weak" | "failed";
@@ -80,6 +81,10 @@ function newId(): string {
   return `ps-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function isPdfFilename(filename: string): boolean {
+  return filename.toLocaleLowerCase("en-US").endsWith(".pdf");
+}
+
 async function collectImages(files: File[]): Promise<ImageInput[]> {
   const output: ImageInput[] = [];
   for (const file of files) {
@@ -89,16 +94,32 @@ async function collectImages(files: File[]): Promise<ImageInput[]> {
       try {
         const entries = await reader.getEntries();
         for (const entry of entries) {
-          if (entry.directory || !isImageFilename(entry.filename) || !entry.getData) continue;
+          if (
+            entry.directory
+            || (!isImageFilename(entry.filename) && !isPdfFilename(entry.filename))
+            || !entry.getData
+          ) continue;
           const leaf = entry.filename.split("/").pop() || entry.filename;
           if (leaf.startsWith(".")) continue;
           const bytes = await entry.getData(new Uint8ArrayWriter());
           const copy = new Uint8Array(bytes);
+          if (isPdfFilename(entry.filename)) {
+            output.push(...await rasterizePdfToImages(
+              new Blob([copy], { type: "application/pdf" }),
+              leaf,
+            ));
+            continue;
+          }
           output.push({ filename: leaf, blob: new Blob([copy], { type: "application/octet-stream" }) });
         }
       } finally {
         await reader.close();
       }
+      continue;
+    }
+
+    if (isPdfFilename(file.name) || file.type.toLocaleLowerCase("en-US") === "application/pdf") {
+      output.push(...await rasterizePdfToImages(file, file.name));
       continue;
     }
 
@@ -483,8 +504,11 @@ export async function scanPassportImages(
 ): Promise<PassportScanRow[]> {
   const images = await collectImages(files);
   if (!images.length) {
-    throw new Error("Pasaport görüntüsü bulunamadı. JPG/PNG veya bunları içeren ZIP seçin.");
+    throw new Error(
+      "Pasaport görüntüsü bulunamadı. JPG/PNG/WEBP/HEIC, PDF veya bunları içeren ZIP seçin.",
+    );
   }
+  onProgress?.({ done: 0, total: images.length, current: "OCR hazırlanıyor…" });
   const wantsSecondWorker = images.length > 1;
   try {
     await getWorker(0);
